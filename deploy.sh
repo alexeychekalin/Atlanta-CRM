@@ -84,28 +84,35 @@ log "PostgreSQL запущен"
 step "4/8 • Настройка базы данных"
 # ─────────────────────────────────────────────
 if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
-  warn "Пользователь $DB_USER уже существует, пропускаю создание"
+  warn "Пользователь $DB_USER уже существует — обновляю пароль"
+  sudo -u postgres psql -c "ALTER USER $DB_USER WITH PASSWORD '$DB_PASS';"
 else
-  sudo -u postgres psql <<EOF
-CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';
-CREATE DATABASE $DB_NAME OWNER $DB_USER;
-GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
-\c $DB_NAME
-GRANT ALL ON SCHEMA public TO $DB_USER;
-EOF
-  log "БД $DB_NAME и пользователь $DB_USER созданы"
+  sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';"
+  log "Пользователь $DB_USER создан"
 fi
 
-# Применить схему
+# Создать БД если не существует
+if sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1; then
+  warn "База $DB_NAME уже существует"
+else
+  sudo -u postgres psql -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;"
+  log "База $DB_NAME создана"
+fi
+
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
+sudo -u postgres psql -d $DB_NAME -c "GRANT ALL ON SCHEMA public TO $DB_USER;"
+log "Права выданы"
+
+# Применить схему (через peer auth — без пароля)
 log "Применяю схему БД..."
-PGPASSWORD=$DB_PASS psql -h localhost -U $DB_USER -d $DB_NAME -f "$APP_DIR/server/src/db/schema.sql" 2>/dev/null
+sudo -u postgres psql -d $DB_NAME -f "$APP_DIR/server/src/db/schema.sql" 2>&1 | tail -5
 log "Схема применена"
 
 # Применить миграции
 log "Применяю миграции..."
 for migration in "$APP_DIR"/server/src/db/migration_*.sql; do
   if [ -f "$migration" ]; then
-    PGPASSWORD=$DB_PASS psql -h localhost -U $DB_USER -d $DB_NAME -f "$migration" 2>/dev/null
+    sudo -u postgres psql -d $DB_NAME -f "$migration" 2>&1 | tail -2
     log "  $(basename $migration)"
   fi
 done
