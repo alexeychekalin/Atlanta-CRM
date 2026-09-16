@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Нет подключения — CRM «Атланта»</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0a0e1a;
+      color: #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      text-align: center;
+      padding: 24px;
+    }
+    .offline-card {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      border-radius: 24px;
+      padding: 48px 32px;
+      max-width: 400px;
+      backdrop-filter: blur(12px);
+    }
+    .offline-icon {
+      font-size: 4rem;
+      margin-bottom: 16px;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.95); }
+    }
+    h1 { font-size: 1.4rem; margin-bottom: 8px; font-weight: 700; }
+    p { color: #94a3b8; font-size: 0.9rem; line-height: 1.5; margin-bottom: 24px; }
+    .btn {
+      display: inline-block;
+      background: linear-gradient(135deg, #14b8a6, #3b82f6);
+      color: white;
+      padding: 12px 32px;
+      border-radius: 12px;
+      border: none;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .btn:hover { opacity: 0.9; }
+  </style>
+</head>
+<body>
+  <div class="offline-card">
+    <div class="offline-icon">📶</div>
+    <h1>Нет подключения к сети</h1>
+    <p>Проверьте интернет-соединение и попробуйте снова. Данные будут доступны после восстановления связи.</p>
+    <button class="btn" onclick="window.location.reload()">Повторить</button>
+  </div>
+</body>
+</html>

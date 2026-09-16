@@ -1,0 +1,22 @@
+{
+  "name": "atlanta-crm",
+  "version": "1.0.0",
+  "description": "CRM-система «Атланта» — управление клиентами, заказами, компонентами, чертежами и отчётами",
+  "main": "server/src/index.js",
+  "scripts": {
+    "start": "node server/src/index.js",
+    "dev": "cd server && npm run dev",
+    "db:init": "cd server && npm run db:init",
+    "db:migrate": "cd server && node src/db/migrate_roles.js",
+    "postinstall": "cd server && npm install"
+  },
+  "keywords": [
+    "crm",
+    "manufacturing",
+    "drawings",
+    "orders",
+    "b2b"
+  ],
+  "author": "Atlanta CRM Team",
+  "license": "ISC"
+}

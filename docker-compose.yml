@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: atlanta_crm_app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://atlanta_user:atlanta_pass@db:5432/atlanta_crm
+      - JWT_SECRET=atlanta_production_jwt_secret_key_2026
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/server/uploads
+
+  db:
+    image: postgres:17-alpine
+    container_name: atlanta_crm_db
+    restart: always
+    environment:
+      - POSTGRES_USER=atlanta_user
+      - POSTGRES_PASSWORD=atlanta_pass
+      - POSTGRES_DB=atlanta_crm
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./server/src/db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlanta_user -d atlanta_crm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  uploads_data:

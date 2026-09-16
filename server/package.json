@@ -1,0 +1,25 @@
+{
+  "name": "atlanta-crm-server",
+  "version": "1.0.0",
+  "description": "CRM система «Атланта» — сервер",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "NODE_ENV=production node src/index.js",
+    "dev": "node --watch src/index.js",
+    "db:init": "node src/db/seed.js",
+    "db:schema": "psql $DATABASE_URL -f src/db/schema.sql"
+  },
+  "dependencies": {
+    "archiver": "^5.3.2",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.2.0",
+    "pdfkit": "^0.15.0",
+    "pdfkit-table": "^0.1.99",
+    "pg": "^8.13.0"
+  }
+}

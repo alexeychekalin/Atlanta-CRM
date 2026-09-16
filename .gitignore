@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Environment files
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+!server/.env.example
+
+# User uploads and runtime files
+server/uploads/*
+!server/uploads/.gitkeep
+uploads/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Archives & Temporary files
+*.zip
+*.tar.gz
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE & Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Antigravity artifacts
+.gemini/
