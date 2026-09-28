@@ -119,10 +119,11 @@ done
 log "Все миграции применены"
 
 # Выдать права на все таблицы и последовательности
+sudo -u postgres psql -d $DB_NAME -c "GRANT USAGE ON SCHEMA public TO $DB_USER;"
 sudo -u postgres psql -d $DB_NAME -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO $DB_USER;"
 sudo -u postgres psql -d $DB_NAME -c "GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;"
-sudo -u postgres psql -d $DB_NAME -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;"
-sudo -u postgres psql -d $DB_NAME -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;"
+sudo -u postgres psql -d $DB_NAME -c "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;"
+sudo -u postgres psql -d $DB_NAME -c "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;"
 log "Права на таблицы выданы"
 
 # ─────────────────────────────────────────────
@@ -150,8 +151,15 @@ log "Директории uploads созданы"
 log "Заполняю тестовые данные (seed)..."
 cd "$APP_DIR/server"
 node src/db/seed.js 2>/dev/null || warn "Seed уже был применён или произошла ошибка"
+
+# Миграция ролей (добавляет guest и др.)
+node src/db/migrate_roles.js 2>/dev/null || warn "Миграция ролей: ошибка или уже применена"
 cd "$APP_DIR"
 log "Данные загружены"
+
+# Повторно выдать права (seed/migrate_roles могли создать записи)
+sudo -u postgres psql -d $DB_NAME -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO $DB_USER;" 2>/dev/null
+sudo -u postgres psql -d $DB_NAME -c "GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;" 2>/dev/null
 
 # Права
 chown -R $APP_USER:$APP_USER "$APP_DIR"
