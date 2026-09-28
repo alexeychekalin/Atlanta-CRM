@@ -915,7 +915,7 @@ const OrdersPage = {
   },
 
   async deleteOrder(id) {
-    if (!confirm('Удалить этот заказ?')) return;
+    if (!await ConfirmDialog.delete('Удалить этот заказ?')) return;
     try {
       await API.del(`/orders/${id}`);
       Toast.success('Заказ удалён');

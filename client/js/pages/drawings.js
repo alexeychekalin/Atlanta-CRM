@@ -738,7 +738,7 @@ const DrawingsPage = {
   },
 
   async deleteDrawing(id) {
-    if (!confirm('Вы уверены, что хотите удалить этот чертёж?')) return;
+    if (!await ConfirmDialog.delete('Вы уверены, что хотите удалить этот чертёж?')) return;
 
     try {
       await API.del(`/drawings/${id}`);

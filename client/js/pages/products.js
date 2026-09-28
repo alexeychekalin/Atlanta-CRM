@@ -157,7 +157,7 @@ const ProductsPage = {
   },
 
   async deleteProduct(id) {
-    if (!confirm('Удалить товар/услугу?')) return;
+    if (!await ConfirmDialog.delete('Удалить товар/услугу?')) return;
     try {
       await API.del(`/products/${id}`);
       Toast.success('Товар удалён');

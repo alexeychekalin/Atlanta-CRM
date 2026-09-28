@@ -620,7 +620,7 @@ const ComponentsCatalogPage = {
   },
 
   async deleteCategory(id) {
-    if (!confirm('Удалить категорию?')) return;
+    if (!await ConfirmDialog.delete('Удалить категорию?')) return;
     try {
       await API.del(`/component-categories/${id}`);
       Toast.success('Категория удалена');
@@ -769,7 +769,7 @@ const ComponentsCatalogPage = {
   },
 
   async deleteComponent(id) {
-    if (!confirm('Удалить компонент?')) return;
+    if (!await ConfirmDialog.delete('Удалить компонент?')) return;
     try {
       await API.del(`/components/${id}`);
       Toast.success('Компонент удалён');
@@ -856,7 +856,7 @@ const ComponentsCatalogPage = {
   },
 
   async deleteModification(componentId, modId) {
-    if (!confirm('Удалить модификацию?')) return;
+    if (!await ConfirmDialog.delete('Удалить модификацию?')) return;
     try {
       await API.del(`/components/${componentId}/modifications/${modId}`);
       Toast.success('Модификация удалена');
@@ -894,7 +894,7 @@ const ComponentsCatalogPage = {
   },
 
   async deleteModImage(componentId, modId, imgId) {
-    if (!confirm('Удалить фото?')) return;
+    if (!await ConfirmDialog.delete('Удалить фото?')) return;
     try {
       await API.del(`/components/${componentId}/modifications/${modId}/images/${imgId}`);
       Toast.success('Фото удалено');
@@ -980,7 +980,7 @@ const ComponentsCatalogPage = {
   },
 
   async deleteDoc(componentId, docId) {
-    if (!confirm('Удалить документ?')) return;
+    if (!await ConfirmDialog.delete('Удалить документ?')) return;
     try {
       await API.del(`/components/${componentId}/documents/${docId}`);
       Toast.success('Документ удалён');

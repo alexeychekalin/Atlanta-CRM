@@ -810,7 +810,7 @@ const ClientProfilePage = {
   },
 
   async deleteContact(contactId) {
-    if (!confirm('Удалить контакт?')) return;
+    if (!await ConfirmDialog.delete('Удалить контакт?')) return;
     try {
       await API.del(`/clients/${this.clientId}/contacts/${contactId}`);
       Toast.success('Контакт удалён');
@@ -1010,7 +1010,7 @@ const ClientProfilePage = {
   },
 
   async deleteTimelineEvent(eventId) {
-    if (!confirm('Удалить событие?')) return;
+    if (!await ConfirmDialog.delete('Удалить событие?')) return;
     try {
       await API.del(`/clients/${this.clientId}/timeline/${eventId}`);
       Toast.success('Удалено');
@@ -1096,13 +1096,13 @@ const ClientProfilePage = {
   },
 
   async deleteDrawing(id) {
-    if (!confirm('Удалить чертёж?')) return;
+    if (!await ConfirmDialog.delete('Удалить чертёж?')) return;
     try { await API.del(`/clients/${this.clientId}/documents/drawings/${id}`); Toast.success('Удалено'); this.switchTab('drawings'); }
     catch (err) { Toast.error(err.message); }
   },
 
   async deleteDocument(id) {
-    if (!confirm('Удалить документ?')) return;
+    if (!await ConfirmDialog.delete('Удалить документ?')) return;
     try { await API.del(`/clients/${this.clientId}/documents/${id}`); Toast.success('Удалено'); this.switchTab('documents'); }
     catch (err) { Toast.error(err.message); }
   },

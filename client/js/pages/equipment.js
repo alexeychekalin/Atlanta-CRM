@@ -604,7 +604,7 @@ const EquipmentPage = {
           <button class="btn btn-primary" style="flex:1;padding:10px 16px;font-size:0.95rem" onclick="EquipmentPage.createOrderFromCart()" ${cart.length === 0 ? 'disabled' : ''}>
             📋 Создать заказ
           </button>
-          <button class="btn btn-secondary" style="padding:10px 12px" onclick="if(confirm('Очистить корзину?'))EquipmentPage.clearCart()" ${cart.length === 0 ? 'disabled' : ''} title="Очистить корзину">
+          <button class="btn btn-secondary" style="padding:10px 12px" onclick="ConfirmDialog.delete('Очистить корзину?').then(ok => ok && EquipmentPage.clearCart())" ${cart.length === 0 ? 'disabled' : ''} title="Очистить корзину">
             🗑️
           </button>
         </div>
@@ -728,7 +728,7 @@ const EquipmentPage = {
   },
 
   async deleteManufacturer(id) {
-    if (!confirm('Удалить производителя и всю его продукцию?')) return;
+    if (!await ConfirmDialog.delete('Удалить производителя и всю его продукцию?')) return;
     try {
       await API.del(`/manufacturers/${id}`);
       Toast.success('Удалено');
@@ -826,7 +826,7 @@ const EquipmentPage = {
   },
 
   async deleteProduct(productId, mfrId) {
-    if (!confirm('Удалить продукцию?')) return;
+    if (!await ConfirmDialog.delete('Удалить продукцию?')) return;
     try {
       await API.del(`/manufacturer-products/${productId}`);
       Toast.success('Удалено');
@@ -1002,7 +1002,7 @@ const EquipmentPage = {
   },
 
   async unlinkComponent(productId, linkId, mfrId) {
-    if (!confirm('Отвязать компонент от продукции?')) return;
+    if (!await ConfirmDialog.delete('Отвязать компонент от продукции?')) return;
     try {
       await API.del(`/manufacturer-products/${productId}/components/${linkId}`);
       Toast.success('Компонент отвязан');

@@ -579,7 +579,7 @@ const SettingsPage = {
   },
 
   async deleteRole(id) {
-    if (!confirm('Вы уверены, что хотите удалить эту роль?')) return;
+    if (!await ConfirmDialog.delete('Вы уверены, что хотите удалить эту роль?')) return;
     try {
       await API.del(`/roles/${id}`);
       Toast.success('Роль удалена');
@@ -765,7 +765,7 @@ const SettingsPage = {
   },
 
   async deleteUser(id) {
-    if (!confirm('Вы уверены, что хотите удалить этого пользователя?')) return;
+    if (!await ConfirmDialog.delete('Вы уверены, что хотите удалить этого пользователя?')) return;
     try {
       await API.del(`/users/${id}`);
       Toast.success('Пользователь удалён');
@@ -894,7 +894,7 @@ const SettingsPage = {
   },
 
   async deletePrincipal(id) {
-    if (!confirm('Удалить принципала?')) return;
+    if (!await ConfirmDialog.delete('Удалить принципала?')) return;
     try {
       await API.del(`/principals/${id}`);
       Toast.success('Принципал удалён');
@@ -1017,7 +1017,7 @@ const SettingsPage = {
   },
 
   async deleteStatus(id) {
-    if (!confirm('Удалить статус? У клиентов с этим статусом он будет сброшен.')) return;
+    if (!await ConfirmDialog.delete('Удалить статус? У клиентов с этим статусом он будет сброшен.')) return;
     try {
       await API.del(`/client-statuses/${id}`);
       Toast.success('Статус удалён');
@@ -1112,7 +1112,7 @@ const SettingsPage = {
   },
 
   async deleteEquipType(id) {
-    if (!confirm('Удалить тип техники?')) return;
+    if (!await ConfirmDialog.delete('Удалить тип техники?')) return;
     try {
       await API.del(`/equipment-types/${id}`);
       Toast.success('Тип удалён');

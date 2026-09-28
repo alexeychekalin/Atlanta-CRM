@@ -774,7 +774,7 @@ const ProposalsPage = {
 
   // === ПЕРЕВОД В ЗАКАЗ ===
   async convertToOrder(id) {
-    if (!confirm('Перевести это КП в заказ? Будет создан новый заказ с позициями из КП.')) return;
+    if (!await ConfirmDialog.delete('Перевести это КП в заказ? Будет создан новый заказ с позициями из КП.')) return;
     try {
       const result = await API.post(`/proposals/${id}/convert`);
       Toast.success(`Заказ ${result.order_number} создан из КП`);
@@ -784,7 +784,7 @@ const ProposalsPage = {
 
   // === УДАЛЕНИЕ ===
   async deleteProposal(id) {
-    if (!confirm('Удалить это КП?')) return;
+    if (!await ConfirmDialog.delete('Удалить это КП?')) return;
     try {
       await API.del(`/proposals/${id}`);
       Toast.success('КП удалено');

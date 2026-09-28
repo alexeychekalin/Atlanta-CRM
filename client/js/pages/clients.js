@@ -225,7 +225,7 @@ const ClientsPage = {
   },
 
   async deleteClient(id) {
-    if (!confirm('Удалить клиента?')) return;
+    if (!await ConfirmDialog.delete('Удалить клиента?')) return;
     try {
       await API.del(`/clients/${id}`);
       Toast.success('Клиент удалён');
