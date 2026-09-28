@@ -379,6 +379,13 @@ const SettingsPage = {
                   <td class="text-center"><input type="checkbox" id="perm-orders-edit" ${perms.orders?.edit ? 'checked' : ''}></td>
                   <td class="text-center"><input type="checkbox" id="perm-orders-delete" ${perms.orders?.delete ? 'checked' : ''}></td>
                 </tr>
+                <!-- Коммерческие предложения -->
+                <tr>
+                  <td><div style="font-weight:600">📝 Коммерческие предложения</div></td>
+                  <td class="text-center"><input type="checkbox" id="perm-proposals-view" ${perms.proposals?.view !== false ? 'checked' : ''}></td>
+                  <td class="text-center"><input type="checkbox" id="perm-proposals-edit" ${perms.proposals?.edit ? 'checked' : ''}></td>
+                  <td class="text-center"><input type="checkbox" id="perm-proposals-delete" ${perms.proposals?.delete ? 'checked' : ''}></td>
+                </tr>
                 <!-- Клиенты -->
                 <tr>
                   <td><div style="font-weight:600">👥 Клиенты</div></td>
@@ -496,6 +503,11 @@ const SettingsPage = {
         view: isChecked('orders-view'), 
         edit: isChecked('orders-edit'), 
         delete: isChecked('orders-delete') 
+      },
+      proposals: { 
+        view: isChecked('proposals-view'), 
+        edit: isChecked('proposals-edit'), 
+        delete: isChecked('proposals-delete') 
       },
       clients: { 
         view: isChecked('clients-view'), 

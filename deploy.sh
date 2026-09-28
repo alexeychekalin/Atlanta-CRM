@@ -118,6 +118,13 @@ for migration in "$APP_DIR"/server/src/db/migration_*.sql; do
 done
 log "Все миграции применены"
 
+# Выдать права на все таблицы и последовательности
+sudo -u postgres psql -d $DB_NAME -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO $DB_USER;"
+sudo -u postgres psql -d $DB_NAME -c "GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;"
+sudo -u postgres psql -d $DB_NAME -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;"
+sudo -u postgres psql -d $DB_NAME -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;"
+log "Права на таблицы выданы"
+
 # ─────────────────────────────────────────────
 step "5/8 • Установка зависимостей и настройка"
 # ─────────────────────────────────────────────

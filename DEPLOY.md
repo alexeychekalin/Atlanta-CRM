@@ -17,7 +17,7 @@
 
 ```bash
 # 1. Загрузите проект на сервер (git clone или scp)
-git clone https://github.com/alexeychekalin/AtlantaCRM-deploy.git /opt/atlanta-crm
+git clone https://github.com/alexeychekalin/Atlanta-CRM.git /opt/atlanta-crm
 cd /opt/atlanta-crm
 
 # 2. Сделайте скрипт исполняемым и запустите

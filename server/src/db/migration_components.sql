@@ -51,6 +51,29 @@ CREATE INDEX IF NOT EXISTS idx_components_article ON components(article);
 CREATE INDEX IF NOT EXISTS idx_drawing_components_drawing ON drawing_components(drawing_id);
 CREATE INDEX IF NOT EXISTS idx_drawing_components_component ON drawing_components(component_id);
 
+-- Модификации компонентов
+CREATE TABLE IF NOT EXISTS component_modifications (
+    id SERIAL PRIMARY KEY,
+    component_id INTEGER NOT NULL REFERENCES components(id) ON DELETE CASCADE,
+    code VARCHAR(100) NOT NULL,
+    name VARCHAR(255),
+    price_override DECIMAL(12,2),
+    description TEXT,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_component_modifications_component ON component_modifications(component_id);
+
+-- Фото модификаций
+CREATE TABLE IF NOT EXISTS component_modification_images (
+    id SERIAL PRIMARY KEY,
+    modification_id INTEGER NOT NULL REFERENCES component_modifications(id) ON DELETE CASCADE,
+    image_path VARCHAR(500) NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_component_modification_images_mod ON component_modification_images(modification_id);
+
 -- Начальные категории
 INSERT INTO component_categories (name, sort_order) VALUES
     ('Блок коммутации', 1),

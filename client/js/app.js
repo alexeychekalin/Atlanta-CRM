@@ -100,8 +100,12 @@ const App = {
     // Проверяем авторизацию
     if (API.getToken()) {
       this.showApp();
+    } else if (API.isGuest()) {
+      // Гостевой режим уже активирован ранее
+      this.showApp();
     } else {
-      this.showLogin();
+      // Проверяем, доступен ли гостевой режим
+      this._checkGuestMode();
     }
 
     // Навигация
@@ -117,6 +121,7 @@ const App = {
     // Выход
     document.getElementById('btn-logout').addEventListener('click', () => {
       API.logout();
+      localStorage.removeItem('atlanta_user');
       this.showLogin();
     });
 
@@ -140,24 +145,65 @@ const App = {
     });
   },
 
+  async _checkGuestMode() {
+    const guest = await API.loadGuestPermissions();
+    if (guest.enabled) {
+      this._guestPermissions = guest.permissions;
+    }
+    this.showLogin();
+  },
+
   showLogin() {
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('app').style.display = 'none';
     document.getElementById('login-username').value = '';
     document.getElementById('login-password').value = '';
     document.getElementById('login-error').style.display = 'none';
+
+    // Кнопка «Продолжить как гость»
+    let guestBtn = document.getElementById('guest-mode-btn');
+    if (this._guestPermissions) {
+      if (!guestBtn) {
+        guestBtn = document.createElement('button');
+        guestBtn.id = 'guest-mode-btn';
+        guestBtn.className = 'btn btn-secondary';
+        guestBtn.style.cssText = 'width:100%;margin-top:12px;padding:10px;font-size:0.9rem';
+        guestBtn.textContent = '👁 Продолжить без авторизации';
+        guestBtn.addEventListener('click', () => {
+          API.enterGuestMode(this._guestPermissions);
+          this.showApp();
+        });
+        const loginForm = document.getElementById('login-form') || document.querySelector('.login-card');
+        if (loginForm) loginForm.appendChild(guestBtn);
+      }
+      guestBtn.style.display = '';
+    } else if (guestBtn) {
+      guestBtn.style.display = 'none';
+    }
   },
 
   showApp() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
 
+    const isGuest = API.isGuest();
+
     // Обновить инфо о пользователе
     const user = API.getUser();
     if (user) {
-      document.getElementById('user-name').textContent = user.full_name;
+      document.getElementById('user-name').textContent = isGuest ? 'Гость' : user.full_name;
       document.getElementById('user-role').textContent = API.getRoleDisplayName();
-      document.getElementById('user-avatar').textContent = (user.full_name || '?').charAt(0).toUpperCase();
+      document.getElementById('user-avatar').textContent = isGuest ? '👁' : (user.full_name || '?').charAt(0).toUpperCase();
+    }
+
+    // Кнопка выхода / входа
+    const logoutBtn = document.getElementById('btn-logout');
+    if (isGuest) {
+      logoutBtn.textContent = '🔑 Войти';
+      logoutBtn.title = 'Войти в систему';
+    } else {
+      logoutBtn.textContent = '🚪 Выход';
+      logoutBtn.title = 'Выйти из системы';
     }
 
     // Загрузить системные настройки НДС

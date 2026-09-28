@@ -31,10 +31,23 @@ const API = {
     return user && user.role === 'admin';
   },
 
+  isGuest() {
+    const user = this.getUser();
+    return user && user.role === 'guest';
+  },
+
   can(section, action = 'view') {
     const user = this.getUser();
     if (!user) return false;
     if (user.role === 'admin') return true;
+
+    // Гость — только view по разрешённым секциям
+    if (user.role === 'guest') {
+      if (action !== 'view') return false;
+      const perms = user.permissions || {};
+      const sp = perms[section];
+      return sp && sp.view === true;
+    }
 
     const permissions = user.permissions;
     if (!permissions) {
@@ -66,13 +79,39 @@ const API = {
   getRoleDisplayName() {
     const user = this.getUser();
     if (!user) return '';
+    if (user.role === 'guest') return 'Гость';
     return user.role_display_name || (user.role === 'admin' ? 'Администратор' : user.role === 'manager' ? 'Менеджер' : user.role === 'technologist' ? 'Инженер-конструктор' : 'Наблюдатель');
   },
 
+  // Загрузить гостевые права с сервера
+  async loadGuestPermissions() {
+    try {
+      const res = await fetch(this.baseUrl + '/auth/guest-permissions');
+      return await res.json();
+    } catch (e) {
+      return { enabled: false, permissions: {} };
+    }
+  },
+
+  // Войти в гостевой режим
+  enterGuestMode(permissions) {
+    this.removeToken();
+    this.setUser({
+      id: 0,
+      username: 'guest',
+      full_name: 'Гость',
+      role: 'guest',
+      role_display_name: 'Гость',
+      permissions: permissions,
+    });
+  },
+
   async request(method, path, body = null, isBlob = false) {
-    const headers = {
-      'Authorization': `Bearer ${this.getToken()}`,
-    };
+    const headers = {};
+    const token = this.getToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
 
     if (body && !(body instanceof FormData)) {
       headers['Content-Type'] = 'application/json';
@@ -90,6 +129,10 @@ const API = {
     const response = await fetch(this.baseUrl + path, config);
 
     if (response.status === 401) {
+      // Гость — не перезагружаем, просто показываем ошибку
+      if (this.isGuest()) {
+        throw new Error('Требуется авторизация');
+      }
       this.removeToken();
       window.location.reload();
       throw new Error('Сессия истекла');

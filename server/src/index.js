@@ -25,31 +25,36 @@ app.use(express.static(path.join(__dirname, '../../client')));
 app.use('/uploads', express.static(uploadsBaseDir));
 
 // API-маршруты
+const { optionalAuth } = require('./middleware/auth');
+
+// Маршруты без гостевого доступа (только авторизованные)
 app.use('/api/auth', require('./routes/auth'));
-app.use('/api/clients', require('./routes/clients'));
-app.use('/api/products', require('./routes/products'));
-app.use('/api/principals', require('./routes/principals'));
-app.use('/api/orders', require('./routes/orders'));
-app.use('/api/reports', require('./routes/reports'));
-app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/upload', require('./routes/upload'));
-app.use('/api/component-categories', require('./routes/component-categories'));
-app.use('/api/components', require('./routes/comp-catalog'));
-app.use('/api/components/:id/modifications', require('./routes/component-modifications'));
-app.use('/api/drawings', require('./routes/drawings'));
-app.use('/api/client-statuses', require('./routes/client-statuses'));
-app.use('/api/clients/:id/timeline', require('./routes/client-timeline'));
-app.use('/api/clients/:clientId/contacts', require('./routes/client-contacts'));
-app.use('/api/clients/:id/documents', require('./routes/client-documents'));
 app.use('/api/roles', require('./routes/roles'));
 app.use('/api/users', require('./routes/users'));
-app.use('/api/proposals', require('./routes/proposals'));
 app.use('/api/settings', require('./routes/settings'));
-app.use('/api/equipment-types', require('./routes/equipment-types'));
-app.use('/api/pricing-levels', require('./routes/pricing-levels'));
-app.use('/api/manufacturers', require('./routes/manufacturers'));
-app.use('/api/manufacturer-products', require('./routes/manufacturer-products'));
-app.use('/api/components/:id/documents', require('./routes/component-documents'));
+app.use('/api/client-statuses', optionalAuth, require('./routes/client-statuses'));
+app.use('/api/clients/:id/timeline', optionalAuth, require('./routes/client-timeline'));
+app.use('/api/clients/:clientId/contacts', optionalAuth, require('./routes/client-contacts'));
+app.use('/api/clients/:id/documents', optionalAuth, require('./routes/client-documents'));
+
+// Маршруты с гостевым доступом (GET — optionalAuth, POST/PUT/DELETE — auth внутри)
+app.use('/api/dashboard', optionalAuth, require('./routes/dashboard'));
+app.use('/api/clients', optionalAuth, require('./routes/clients'));
+app.use('/api/products', optionalAuth, require('./routes/products'));
+app.use('/api/principals', optionalAuth, require('./routes/principals'));
+app.use('/api/orders', optionalAuth, require('./routes/orders'));
+app.use('/api/reports', optionalAuth, require('./routes/reports'));
+app.use('/api/component-categories', optionalAuth, require('./routes/component-categories'));
+app.use('/api/components', optionalAuth, require('./routes/comp-catalog'));
+app.use('/api/components/:id/modifications', optionalAuth, require('./routes/component-modifications'));
+app.use('/api/components/:id/documents', optionalAuth, require('./routes/component-documents'));
+app.use('/api/drawings', optionalAuth, require('./routes/drawings'));
+app.use('/api/proposals', optionalAuth, require('./routes/proposals'));
+app.use('/api/equipment-types', optionalAuth, require('./routes/equipment-types'));
+app.use('/api/pricing-levels', optionalAuth, require('./routes/pricing-levels'));
+app.use('/api/manufacturers', optionalAuth, require('./routes/manufacturers'));
+app.use('/api/manufacturer-products', optionalAuth, require('./routes/manufacturer-products'));
 
 // ZIP-скачивание документов по списку компонентов (для заказов/калькулятора)
 const archiverPkg = require('archiver');

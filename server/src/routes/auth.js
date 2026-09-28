@@ -107,4 +107,23 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
+// GET /api/auth/guest-permissions — гостевые права (без авторизации)
+router.get('/guest-permissions', async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT permissions FROM roles WHERE name = 'guest' LIMIT 1"
+    );
+    if (result.rows.length === 0) {
+      return res.json({ enabled: false, permissions: {} });
+    }
+    const perms = result.rows[0].permissions || {};
+    // Проверяем, есть ли хотя бы одна секция с view=true
+    const hasAnyView = Object.values(perms).some(s => s && s.view);
+    res.json({ enabled: hasAnyView, permissions: perms });
+  } catch (err) {
+    console.error('Ошибка получения гостевых прав:', err);
+    res.json({ enabled: false, permissions: {} });
+  }
+});
+
 module.exports = router;

@@ -18,7 +18,7 @@ async function seed() {
     await db.query(
       `INSERT INTO users (username, password_hash, full_name, role)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (username) DO NOTHING`,
+       ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash`,
       ['admin', passwordHash, 'Администратор', 'admin']
     );
     console.log('✅ Пользователь admin создан (пароль: admin123)');
@@ -28,7 +28,7 @@ async function seed() {
     await db.query(
       `INSERT INTO users (username, password_hash, full_name, role)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (username) DO NOTHING`,
+       ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash`,
       ['viewer', viewerHash, 'Просмотр', 'viewer']
     );
     console.log('✅ Пользователь viewer создан (пароль: viewer123)');

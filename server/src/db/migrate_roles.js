@@ -94,6 +94,24 @@ async function migrate() {
           settings: { view: false, edit: false },
         },
       },
+      {
+        name: 'guest',
+        display_name: 'Неавторизованный пользователь',
+        description: 'Гостевой доступ без входа в систему. Включите нужные разделы для просмотра в матрице прав.',
+        is_system: true,
+        permissions: {
+          dashboard: { view: false },
+          orders: { view: false, edit: false, delete: false },
+          clients: { view: false, edit: false, delete: false },
+          calculator: { view: false, edit: false },
+          drawings: { view: false, edit: false, delete: false },
+          components: { view: false, edit: false, delete: false },
+          equipment: { view: false, edit: false, delete: false },
+          proposals: { view: false, edit: false, delete: false },
+          reports: { view: false, export: false },
+          settings: { view: false, edit: false },
+        },
+      },
     ];
 
     for (const r of defaultRoles) {

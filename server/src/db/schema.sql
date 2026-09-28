@@ -248,3 +248,11 @@ INSERT INTO client_work_statuses (name, color, sort_order) VALUES
   ('Приостановлен', '#6b7280', 7),
   ('Отказ', '#ef4444', 8)
 ON CONFLICT DO NOTHING;
+
+-- Системные настройки (НДС и пр.)
+CREATE TABLE IF NOT EXISTS system_settings (
+  id SERIAL PRIMARY KEY,
+  key VARCHAR(100) UNIQUE NOT NULL,
+  value JSONB,
+  updated_at TIMESTAMP DEFAULT now()
+);
