@@ -124,7 +124,19 @@ sudo -u postgres psql -d $DB_NAME -c "GRANT ALL ON ALL TABLES IN SCHEMA public T
 sudo -u postgres psql -d $DB_NAME -c "GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;"
 sudo -u postgres psql -d $DB_NAME -c "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;"
 sudo -u postgres psql -d $DB_NAME -c "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;"
-log "Права на таблицы выданы"
+
+# Передать владение таблицами и последовательностями пользователю БД
+sudo -u postgres psql -d $DB_NAME -c "
+  DO \$\$ DECLARE r RECORD;
+  BEGIN
+    FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+      EXECUTE 'ALTER TABLE public.' || r.tablename || ' OWNER TO $DB_USER';
+    END LOOP;
+    FOR r IN SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' LOOP
+      EXECUTE 'ALTER SEQUENCE public.' || r.sequencename || ' OWNER TO $DB_USER';
+    END LOOP;
+  END \$\$;"
+log "Права и владение таблицами выданы"
 
 # ─────────────────────────────────────────────
 step "5/8 • Установка зависимостей и настройка"

@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS clients (
   kpp VARCHAR(20),
   legal_address TEXT,
   bank_details TEXT,
+  telegram VARCHAR(100),
+  max_messenger VARCHAR(500),
   created_at TIMESTAMP DEFAULT now()
 );
 
@@ -196,6 +198,8 @@ CREATE TABLE IF NOT EXISTS client_contacts (
   email VARCHAR(255),
   phone VARCHAR(50),
   notes TEXT,
+  telegram VARCHAR(100),
+  max_messenger VARCHAR(500),
   created_at TIMESTAMP DEFAULT now()
 );
 -- Коммерческие предложения

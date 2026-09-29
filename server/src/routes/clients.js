@@ -78,7 +78,7 @@ router.post('/', auth, adminOnly, async (req, res) => {
   try {
     const { name, phone, email, address, notes, avatar_path, status_id, pricing_level_id,
             delivery_address, delivery_contact_name, delivery_contact_phone,
-            inn, kpp, legal_address, bank_details, ogrnip } = req.body;
+            inn, kpp, legal_address, bank_details, ogrnip, telegram, max_messenger } = req.body;
     if (!name) {
       return res.status(400).json({ error: 'Название клиента обязательно' });
     }
@@ -86,12 +86,13 @@ router.post('/', auth, adminOnly, async (req, res) => {
     const result = await db.query(
       `INSERT INTO clients (name, phone, email, address, notes, avatar_path, status_id, pricing_level_id,
        delivery_address, delivery_contact_name, delivery_contact_phone,
-       inn, kpp, legal_address, bank_details, ogrnip)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING *`,
+       inn, kpp, legal_address, bank_details, ogrnip, telegram, max_messenger)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
       [name, phone || null, email || null, address || null, notes || null,
        avatar_path || null, status_id || null, pricing_level_id || null,
        delivery_address || null, delivery_contact_name || null, delivery_contact_phone || null,
-       inn || null, kpp || null, legal_address || null, bank_details || null, ogrnip || null]
+       inn || null, kpp || null, legal_address || null, bank_details || null, ogrnip || null,
+       telegram || null, max_messenger || null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -105,7 +106,7 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
   try {
     const { name, phone, email, address, notes, avatar_path, status_id, pricing_level_id,
             delivery_address, delivery_contact_name, delivery_contact_phone,
-            inn, kpp, legal_address, bank_details, ogrnip } = req.body;
+            inn, kpp, legal_address, bank_details, ogrnip, telegram, max_messenger } = req.body;
     if (!name) {
       return res.status(400).json({ error: 'Название клиента обязательно' });
     }
@@ -114,12 +115,14 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
       `UPDATE clients SET name = $1, phone = $2, email = $3, address = $4, notes = $5, 
        avatar_path = $6, status_id = $7, pricing_level_id = $8,
        delivery_address = $9, delivery_contact_name = $10, delivery_contact_phone = $11,
-       inn = $12, kpp = $13, legal_address = $14, bank_details = $15, ogrnip = $16
-       WHERE id = $17 RETURNING *`,
+       inn = $12, kpp = $13, legal_address = $14, bank_details = $15, ogrnip = $16,
+       telegram = $17, max_messenger = $18
+       WHERE id = $19 RETURNING *`,
       [name, phone || null, email || null, address || null, notes || null, 
        avatar_path !== undefined ? avatar_path : null, status_id || null, pricing_level_id || null,
        delivery_address || null, delivery_contact_name || null, delivery_contact_phone || null,
        inn || null, kpp || null, legal_address || null, bank_details || null, ogrnip || null,
+       telegram || null, max_messenger || null,
        req.params.id]
     );
 

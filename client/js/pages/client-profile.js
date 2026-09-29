@@ -74,9 +74,11 @@ const ClientProfilePage = {
             <div>${pricingBadge}</div>
           </div>
           <div class="profile-contacts" style="margin-top:6px">
-            ${c.phone ? `<span class="profile-contact-item">📞 ${c.phone}</span>` : ''}
-            ${c.email ? `<span class="profile-contact-item">✉️ ${c.email}</span>` : ''}
+            ${c.phone ? `<span class="profile-contact-item"><a href="tel:${c.phone}" style="color:inherit;text-decoration:none">📞 ${c.phone}</a></span>` : ''}
+            ${c.email ? `<span class="profile-contact-item"><a href="mailto:${c.email}" style="color:inherit;text-decoration:none">✉️ ${c.email}</a></span>` : ''}
             ${c.address ? `<span class="profile-contact-item">📍 ${c.address}</span>` : ''}
+            ${c.telegram ? `<span class="profile-contact-item"><a href="https://t.me/${c.telegram.replace('@','')}" target="_blank" style="color:#29b6f6;text-decoration:none;font-weight:500" title="Telegram">✈️ ${c.telegram}</a></span>` : ''}
+            ${c.max_messenger ? `<span class="profile-contact-item"><a href="${c.max_messenger}" target="_blank" style="color:#7c4dff;text-decoration:none;font-weight:500" title="MAX">💬 MAX</a></span>` : ''}
           </div>
           ${(c.delivery_address || c.delivery_contact_name || c.delivery_contact_phone) ? `
             <div style="margin-top:10px;padding:10px 14px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border)">
@@ -724,6 +726,7 @@ const ClientProfilePage = {
                   <th>Должность</th>
                   <th>Телефон</th>
                   <th>Email</th>
+                  <th>Мессенджеры</th>
                   <th>Заметка</th>
                   ${canEdit ? '<th class="text-right">Действия</th>' : ''}
                 </tr>
@@ -740,6 +743,13 @@ const ClientProfilePage = {
                     <td>${c.position || '<span class="text-muted">—</span>'}</td>
                     <td>${c.phone ? `<a href="tel:${c.phone}" style="color:var(--accent-teal)" onclick="event.stopPropagation()">${c.phone}</a>` : '<span class="text-muted">—</span>'}</td>
                     <td>${c.email ? `<a href="mailto:${c.email}" style="color:var(--accent-teal)" onclick="event.stopPropagation()">${c.email}</a>` : '<span class="text-muted">—</span>'}</td>
+                    <td>
+                      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                        ${c.telegram ? `<a href="https://t.me/${c.telegram.replace('@','')}" target="_blank" style="color:#29b6f6;text-decoration:none;font-size:0.85rem" onclick="event.stopPropagation()" title="Telegram">✈️ ${c.telegram}</a>` : ''}
+                        ${c.max_messenger ? `<a href="${c.max_messenger}" target="_blank" style="color:#7c4dff;text-decoration:none;font-size:0.85rem" onclick="event.stopPropagation()" title="MAX">💬 MAX</a>` : ''}
+                        ${!c.telegram && !c.max_messenger ? '<span class="text-muted">—</span>' : ''}
+                      </div>
+                    </td>
                     <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);font-size:0.85rem">${c.notes || ''}</td>
                     ${canEdit ? `
                       <td class="text-right">
@@ -778,6 +788,10 @@ const ClientProfilePage = {
           <div class="form-group"><label>Телефон</label><input type="text" class="form-control" id="contact-phone" value="${isEdit ? (contact.phone || '') : ''}" placeholder="+7 (999) 123-45-67"></div>
         </div>
         <div class="form-group"><label>Email</label><input type="email" class="form-control" id="contact-email" value="${isEdit ? (contact.email || '') : ''}" placeholder="email@example.com"></div>
+        <div class="form-row">
+          <div class="form-group"><label>✈️ Telegram</label><input type="text" class="form-control" id="contact-telegram" value="${isEdit ? (contact.telegram || '') : ''}" placeholder="@username"></div>
+          <div class="form-group"><label>💬 MAX</label><input type="text" class="form-control" id="contact-max-messenger" value="${isEdit ? (contact.max_messenger || '') : ''}" placeholder="https://max.ru/u/..."></div>
+        </div>
         <div class="form-group"><label>Заметка</label><input type="text" class="form-control" id="contact-notes" value="${isEdit ? (contact.notes || '') : ''}" placeholder="Дополнительная информация"></div>
       `,
       footer: `
@@ -794,6 +808,8 @@ const ClientProfilePage = {
       phone: document.getElementById('contact-phone').value.trim(),
       email: document.getElementById('contact-email').value.trim(),
       notes: document.getElementById('contact-notes').value.trim(),
+      telegram: document.getElementById('contact-telegram').value.trim(),
+      max_messenger: document.getElementById('contact-max-messenger').value.trim(),
     };
     if (!data.full_name) { Toast.error('Укажите ФИО'); return; }
     try {
@@ -882,6 +898,10 @@ const ClientProfilePage = {
           <div class="form-group"><label>Телефон</label><input type="text" class="form-control" id="prof-phone" value="${c.phone || ''}"></div>
           <div class="form-group"><label>Email</label><input type="email" class="form-control" id="prof-email" value="${c.email || ''}"></div>
         </div>
+        <div class="form-row">
+          <div class="form-group"><label>✈️ Telegram</label><input type="text" class="form-control" id="prof-telegram" value="${c.telegram || ''}" placeholder="@username или username"></div>
+          <div class="form-group"><label>💬 MAX</label><input type="text" class="form-control" id="prof-max-messenger" value="${c.max_messenger || ''}" placeholder="https://max.ru/u/..."></div>
+        </div>
         <div class="form-group"><label>Адрес</label><input type="text" class="form-control" id="prof-address" value="${c.address || ''}"></div>
         <div class="form-group">
           <label>Статус</label>
@@ -944,6 +964,8 @@ const ClientProfilePage = {
       ogrnip: document.getElementById('prof-ogrnip').value.trim(),
       legal_address: document.getElementById('prof-legal-address').value.trim(),
       bank_details: document.getElementById('prof-bank-details').value.trim(),
+      telegram: document.getElementById('prof-telegram').value.trim(),
+      max_messenger: document.getElementById('prof-max-messenger').value.trim(),
     };
     if (!data.name) { Toast.error('Укажите название'); return; }
     try {

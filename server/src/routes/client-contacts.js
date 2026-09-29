@@ -22,14 +22,15 @@ router.get('/', auth, async (req, res) => {
 // POST /api/clients/:clientId/contacts — добавить контакт
 router.post('/', auth, adminOnly, async (req, res) => {
   try {
-    const { full_name, position, email, phone, notes } = req.body;
+    const { full_name, position, email, phone, notes, telegram, max_messenger } = req.body;
     if (!full_name) {
       return res.status(400).json({ error: 'ФИО обязательно' });
     }
     const result = await db.query(
-      `INSERT INTO client_contacts (client_id, full_name, position, email, phone, notes)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [req.params.clientId, full_name, position || null, email || null, phone || null, notes || null]
+      `INSERT INTO client_contacts (client_id, full_name, position, email, phone, notes, telegram, max_messenger)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [req.params.clientId, full_name, position || null, email || null, phone || null, notes || null,
+       telegram || null, max_messenger || null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -41,14 +42,16 @@ router.post('/', auth, adminOnly, async (req, res) => {
 // PUT /api/clients/:clientId/contacts/:id — обновить контакт
 router.put('/:id', auth, adminOnly, async (req, res) => {
   try {
-    const { full_name, position, email, phone, notes } = req.body;
+    const { full_name, position, email, phone, notes, telegram, max_messenger } = req.body;
     if (!full_name) {
       return res.status(400).json({ error: 'ФИО обязательно' });
     }
     const result = await db.query(
-      `UPDATE client_contacts SET full_name = $1, position = $2, email = $3, phone = $4, notes = $5
-       WHERE id = $6 AND client_id = $7 RETURNING *`,
-      [full_name, position || null, email || null, phone || null, notes || null, req.params.id, req.params.clientId]
+      `UPDATE client_contacts SET full_name = $1, position = $2, email = $3, phone = $4, notes = $5,
+       telegram = $6, max_messenger = $7
+       WHERE id = $8 AND client_id = $9 RETURNING *`,
+      [full_name, position || null, email || null, phone || null, notes || null,
+       telegram || null, max_messenger || null, req.params.id, req.params.clientId]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Контакт не найден' });
