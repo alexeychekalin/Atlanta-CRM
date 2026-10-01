@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS clients (
   kpp VARCHAR(20),
   legal_address TEXT,
   bank_details TEXT,
+  ogrnip VARCHAR(20),
   telegram VARCHAR(100),
   max_messenger VARCHAR(500),
   created_at TIMESTAMP DEFAULT now()
