@@ -6,6 +6,15 @@ const auth = require('../middleware/auth');
 
 const router = express.Router();
 
+// Декодер имени файла (multer передаёт originalname в latin1)
+function decodeFilename(name) {
+  try {
+    return Buffer.from(name, 'latin1').toString('utf8');
+  } catch {
+    return name;
+  }
+}
+
 // Директории для загрузок
 const uploadsDir = path.join(__dirname, '../../uploads');
 const imagesDir = path.join(uploadsDir, 'images');
@@ -76,7 +85,7 @@ router.post('/image', auth, uploadImage.single('file'), (req, res) => {
   res.json({
     path: `/uploads/images/${req.file.filename}`,
     filename: req.file.filename,
-    originalname: req.file.originalname,
+    originalname: decodeFilename(req.file.originalname),
     size: req.file.size,
   });
 });
@@ -108,7 +117,7 @@ router.post('/avatar', auth, uploadAvatar.single('file'), (req, res) => {
   res.json({
     path: `/uploads/avatars/${req.file.filename}`,
     filename: req.file.filename,
-    originalname: req.file.originalname,
+    originalname: decodeFilename(req.file.originalname),
     size: req.file.size,
   });
 });
@@ -122,7 +131,7 @@ router.post('/drawing', auth, uploadDrawing.single('file'), (req, res) => {
   res.json({
     path: `/uploads/drawings/${req.file.filename}`,
     filename: req.file.filename,
-    originalname: req.file.originalname,
+    originalname: decodeFilename(req.file.originalname),
     file_type: ext,
     size: req.file.size,
   });
@@ -166,7 +175,7 @@ router.post('/component-doc', auth, uploadCompDoc.single('file'), (req, res) => 
   res.json({
     path: `/uploads/documents/${req.file.filename}`,
     filename: req.file.filename,
-    originalname: req.file.originalname,
+    originalname: decodeFilename(req.file.originalname),
     file_type: ext,
     size: req.file.size,
   });

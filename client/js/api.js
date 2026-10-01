@@ -158,6 +158,7 @@ const API = {
   post(path, body) { return this.request('POST', path, body); },
   put(path, body) { return this.request('PUT', path, body); },
   del(path) { return this.request('DELETE', path); },
+  patch(path, body) { return this.request('PATCH', path, body); },
   getBlob(path) { return this.request('GET', path, null, true); },
   upload(path, formData) { return this.request('POST', path, formData); },
 

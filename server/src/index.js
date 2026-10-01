@@ -37,6 +37,7 @@ app.use('/api/client-statuses', optionalAuth, require('./routes/client-statuses'
 app.use('/api/clients/:id/timeline', optionalAuth, require('./routes/client-timeline'));
 app.use('/api/clients/:clientId/contacts', optionalAuth, require('./routes/client-contacts'));
 app.use('/api/clients/:id/documents', optionalAuth, require('./routes/client-documents'));
+app.use('/api/clients/:clientId/approvals', optionalAuth, require('./routes/drawing-approvals'));
 
 // Маршруты с гостевым доступом (GET — optionalAuth, POST/PUT/DELETE — auth внутри)
 app.use('/api/dashboard', optionalAuth, require('./routes/dashboard'));

@@ -136,6 +136,7 @@ const ClientProfilePage = {
         <button class="tab-btn" data-tab="invoices" onclick="ClientProfilePage.switchTab('invoices')">Счета</button>
         <button class="tab-btn" data-tab="contacts" onclick="ClientProfilePage.switchTab('contacts')">Контакты</button>
         <button class="tab-btn" data-tab="drawings" onclick="ClientProfilePage.switchTab('drawings')">Чертежи</button>
+        <button class="tab-btn" data-tab="approvals" onclick="ClientProfilePage.switchTab('approvals')">Согласования</button>
         <button class="tab-btn" data-tab="calculations" onclick="ClientProfilePage.switchTab('calculations')">Расчёты</button>
         <button class="tab-btn" data-tab="timeline" onclick="ClientProfilePage.switchTab('timeline')">Таймлайн</button>
         <button class="tab-btn" data-tab="documents" onclick="ClientProfilePage.switchTab('documents')">Документы</button>
@@ -217,6 +218,7 @@ const ClientProfilePage = {
       case 'invoices': this.loadInvoices(container); break;
       case 'contacts': this.loadContacts(container); break;
       case 'drawings': this.loadDrawings(container); break;
+      case 'approvals': this.loadApprovals(container); break;
       case 'calculations': this.loadCalculations(container); break;
       case 'timeline': this.loadTimeline(container); break;
       case 'documents': this.loadDocuments(container); break;
@@ -973,6 +975,332 @@ const ClientProfilePage = {
       Toast.success('Клиент обновлён');
       Modal.close();
       this.render(this.clientId);
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  // =================== СОГЛАСОВАНИЯ ЧЕРТЕЖЕЙ ===================
+  _approvalStatuses: {
+    waiting:     { label: 'Ожидание', color: '#6b7280', icon: '⏳' },
+    new:         { label: 'Получен',  color: '#3b82f6', icon: '📥' },
+    in_progress: { label: 'В работе', color: '#f59e0b', icon: '🔧' },
+    review:      { label: 'Согласование', color: '#8b5cf6', icon: '👁️' },
+    revision:    { label: 'Доработка', color: '#ef4444', icon: '🔄' },
+    approved:    { label: 'Утверждён', color: '#10b981', icon: '✅' },
+  },
+
+  _statusBadge(status) {
+    const s = this._approvalStatuses[status] || { label: status, color: '#6b7280', icon: '❓' };
+    return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:0.78rem;font-weight:600;background:${s.color}22;color:${s.color};border:1px solid ${s.color}44">${s.icon} ${s.label}</span>`;
+  },
+
+  async loadApprovals(container) {
+    const canEdit = API.isAdmin();
+    try {
+      const res = await API.get(`/clients/${this.clientId}/approvals`);
+      const approvals = res.data;
+
+      container.innerHTML = `
+        <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-size:1rem;font-weight:600">📐 Согласования чертежей</div>
+          ${canEdit ? '<button class="btn btn-primary btn-sm" onclick="ClientProfilePage.createApproval()">+ Новое согласование</button>' : ''}
+        </div>
+        ${approvals.length === 0 ? Table.emptyState('Нет согласований') : `
+          <div style="display:grid;gap:12px">
+            ${approvals.map(a => `
+              <div class="card" style="padding:14px 18px;cursor:pointer;transition:all 0.2s;border:1px solid var(--border)" 
+                   onclick="ClientProfilePage.openApproval(${a.id})"
+                   onmouseover="this.style.borderColor='var(--accent-teal)'"
+                   onmouseout="this.style.borderColor='var(--border)'">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <span style="font-weight:600;font-size:0.95rem">${a.title}</span>
+                    ${this._statusBadge(a.status)}
+                  </div>
+                  <div style="display:flex;align-items:center;gap:12px;font-size:0.8rem;color:var(--text-muted)">
+                    <span title="Версии файлов">📎 ${a.versions_count}</span>
+                    <span title="Комментарии">💬 ${a.comments_count}</span>
+                    <span>${new Date(a.updated_at).toLocaleDateString('ru-RU')}</span>
+                  </div>
+                </div>
+                ${a.description ? `<div style="margin-top:6px;font-size:0.83rem;color:var(--text-secondary)">${a.description}</div>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        `}
+      `;
+    } catch (err) { container.innerHTML = `<div class="empty-state"><div class="empty-state-text">${err.message}</div></div>`; }
+  },
+
+  createApproval() {
+    Modal.open({
+      title: 'Новое согласование',
+      body: `
+        <div class="form-group"><label>Название *</label><input type="text" class="form-control" id="appr-title" placeholder="Например: Чертёж фасада"></div>
+        <div class="form-group"><label>Описание</label><textarea class="form-control" id="appr-desc" rows="2" placeholder="Подробности задания"></textarea></div>
+        <div class="form-group">
+          <label>Начальный статус</label>
+          <select class="form-control" id="appr-status">
+            <option value="waiting">⏳ Ожидание от клиента</option>
+            <option value="new">📥 Получен образец</option>
+          </select>
+        </div>
+      `,
+      footer: `
+        <button class="btn btn-secondary" onclick="Modal.close()">Отмена</button>
+        <button class="btn btn-primary" onclick="ClientProfilePage.saveApproval()">Создать</button>
+      `,
+    });
+  },
+
+  async saveApproval() {
+    const title = document.getElementById('appr-title').value.trim();
+    const description = document.getElementById('appr-desc').value.trim();
+    const status = document.getElementById('appr-status').value;
+    if (!title) { Toast.error('Укажите название'); return; }
+    try {
+      await API.post(`/clients/${this.clientId}/approvals`, { title, description, status });
+      Toast.success('Согласование создано');
+      Modal.close();
+      this.switchTab('approvals');
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  async openApproval(id) {
+    try {
+      const data = await API.get(`/clients/${this.clientId}/approvals/${id}`);
+      const a = data;
+      const canEdit = API.isAdmin();
+      const lastVersion = a.versions.length > 0 ? a.versions[a.versions.length - 1] : null;
+
+      const statusOptions = Object.entries(this._approvalStatuses)
+        .map(([key, val]) => `<option value="${key}" ${a.status === key ? 'selected' : ''}>${val.icon} ${val.label}</option>`)
+        .join('');
+
+      // Объединяем версии и комментарии в единый таймлайн
+      const timeline = [
+        ...a.versions.map(v => ({ ...v, _type: 'version', _date: new Date(v.created_at) })),
+        ...a.comments.map(c => ({ ...c, _type: 'comment', _date: new Date(c.created_at) })),
+      ].sort((x, y) => x._date - y._date);
+
+      const timelineHtml = timeline.length === 0
+        ? '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:0.85rem">Пока ничего нет. Загрузите файл или оставьте комментарий.</div>'
+        : timeline.map(item => {
+            if (item._type === 'version') {
+              const v = item;
+              const isImage = ['jpg','jpeg','png','webp'].includes(v.file_type);
+              const sourceLabel = v.source === 'client' ? '👤 От клиента' : '🔧 От конструктора';
+              const sourceColor = v.source === 'client' ? '#3b82f6' : '#f59e0b';
+              return `
+                <div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
+                  <div style="flex-shrink:0;width:32px;text-align:center;padding-top:2px">
+                    <div style="width:32px;height:32px;border-radius:50%;background:${sourceColor}22;display:flex;align-items:center;justify-content:center;font-size:0.9rem">📎</div>
+                  </div>
+                  <div style="flex:1;min-width:0">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+                      <span style="font-weight:600;font-size:0.85rem">Версия ${v.version_number}</span>
+                      <span style="font-size:0.73rem;padding:2px 8px;border-radius:10px;background:${sourceColor}22;color:${sourceColor};font-weight:500">${sourceLabel}</span>
+                      <span style="font-size:0.73rem;color:var(--text-muted);margin-left:auto">${new Date(v.created_at).toLocaleString('ru-RU')}</span>
+                    </div>
+                    ${v.comment ? `<div style="font-size:0.83rem;color:var(--text-secondary);margin-bottom:6px">${v.comment}</div>` : ''}
+                    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-main);border-radius:8px;border-left:3px solid ${sourceColor}">
+                      ${isImage
+                        ? `<img src="${v.file_path}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;cursor:pointer" onclick="window.open('${v.file_path}','_blank')">`
+                        : `<div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:var(--border);border-radius:6px;font-size:1.3rem;cursor:pointer" onclick="window.open('${v.file_path}','_blank')">📄</div>`
+                      }
+                      <div style="flex:1">
+                        <div style="font-size:0.8rem;color:var(--text-secondary)">${v.file_type ? v.file_type.toUpperCase() : 'Файл'}</div>
+                      </div>
+                      <a href="${v.file_path}" target="_blank" class="btn btn-secondary btn-sm" style="padding:4px 10px;font-size:0.78rem">Открыть 📂</a>
+                      ${canEdit ? `<button class="btn btn-secondary btn-sm" style="padding:4px 8px;font-size:0.78rem;color:var(--error)" onclick="event.stopPropagation();ClientProfilePage.deleteApprovalVersion(${a.id},${v.id})" title="Удалить">🗑</button>` : ''}
+                    </div>
+                  </div>
+                </div>`;
+            } else {
+              const c = item;
+              return `
+                <div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+                  <div style="flex-shrink:0;width:32px;text-align:center;padding-top:2px">
+                    <div style="width:32px;height:32px;border-radius:50%;background:#6366f122;display:flex;align-items:center;justify-content:center;font-size:0.9rem">💬</div>
+                  </div>
+                  <div style="flex:1">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+                      <span style="font-weight:600;font-size:0.82rem">${c.user_name || 'Система'}</span>
+                      <span style="font-size:0.73rem;color:var(--text-muted);margin-left:auto">${new Date(c.created_at).toLocaleString('ru-RU')}</span>
+                    </div>
+                    <div style="font-size:0.85rem;color:var(--text-secondary)">${c.text}</div>
+                  </div>
+                </div>`;
+            }
+          }).join('');
+
+      Modal.open({
+        title: `📐 ${a.title}`,
+        wide: true,
+        body: `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px">
+              ${this._statusBadge(a.status)}
+              <span style="font-size:0.8rem;color:var(--text-muted)">Создано: ${new Date(a.created_at).toLocaleDateString('ru-RU')}</span>
+            </div>
+            ${canEdit ? `
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <select class="form-control" id="appr-status-select" style="width:auto;padding:5px 10px;font-size:0.83rem">
+                  ${statusOptions}
+                </select>
+                <button class="btn btn-primary btn-sm" onclick="ClientProfilePage.changeApprovalStatus(${a.id})">Сменить</button>
+                ${a.status === 'approved' && lastVersion ? `<button class="btn btn-sm" style="background:#10b981;color:#fff;border:0" onclick="ClientProfilePage.moveToDrawings(${a.id})">📁 В чертежи</button>` : ''}
+              </div>
+            ` : ''}
+          </div>
+          ${a.description ? `<div style="padding:10px 14px;background:var(--bg-main);border-radius:8px;margin-bottom:16px;font-size:0.88rem;color:var(--text-secondary)">${a.description}</div>` : ''}
+
+          <!-- Действия -->
+          <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+            ${canEdit ? `<button class="btn btn-primary btn-sm" onclick="ClientProfilePage.addApprovalVersion(${a.id})">+ Загрузить файл</button>` : ''}
+          </div>
+
+          <!-- Таймлайн -->
+          <div id="approval-timeline" style="max-height:400px;overflow-y:auto;padding-right:4px">
+            ${timelineHtml}
+          </div>
+
+          <!-- Ввод комментария -->
+          <div style="display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+            <input type="text" class="form-control" id="approval-comment-text" placeholder="Написать комментарий..." style="flex:1" onkeydown="if(event.key==='Enter')ClientProfilePage.addApprovalComment(${a.id})">
+            <button class="btn btn-primary btn-sm" onclick="ClientProfilePage.addApprovalComment(${a.id})">Отправить</button>
+          </div>
+        `,
+        footer: canEdit ? `
+          <button class="btn btn-secondary" style="color:var(--error)" onclick="ClientProfilePage.deleteApproval(${a.id})">Удалить</button>
+          <button class="btn btn-secondary" onclick="Modal.close();ClientProfilePage.switchTab('approvals')">Закрыть</button>
+        ` : '<button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>',
+      });
+
+      // Прокрутить таймлайн вниз
+      setTimeout(() => {
+        const el = document.getElementById('approval-timeline');
+        if (el) el.scrollTop = el.scrollHeight;
+      }, 100);
+
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  async changeApprovalStatus(id) {
+    const status = document.getElementById('appr-status-select').value;
+    try {
+      await API.patch(`/clients/${this.clientId}/approvals/${id}/status`, { status });
+      Toast.success('Статус обновлён');
+      Modal.close();
+      this.openApproval(id);
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  async moveToDrawings(approvalId) {
+    try {
+      const data = await API.get(`/clients/${this.clientId}/approvals/${approvalId}`);
+      const lastVersion = data.versions[data.versions.length - 1];
+      if (!lastVersion) { Toast.error('Нет файлов для переноса'); return; }
+
+      await API.post(`/clients/${this.clientId}/documents/drawings`, {
+        name: data.title,
+        file_path: lastVersion.file_path,
+        file_type: lastVersion.file_type,
+        description: `Согласованный чертёж (из согласования #${approvalId})`,
+      });
+      Toast.success('Чертёж добавлен в раздел «Чертежи»');
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  addApprovalVersion(approvalId) {
+    Modal.open({
+      title: 'Загрузить версию',
+      body: `
+        <div class="form-group">
+          <label>Источник *</label>
+          <select class="form-control" id="ver-source">
+            <option value="client">👤 От клиента</option>
+            <option value="constructor">🔧 От конструктора</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Комментарий</label><input type="text" class="form-control" id="ver-comment" placeholder="Что в этой версии?"></div>
+        <div class="form-group">
+          <label>Файл *</label>
+          <div class="upload-zone" id="ver-file-zone" style="padding:20px;text-align:center;cursor:pointer">
+            <div id="ver-file-status" style="color:var(--text-muted)">📎 Нажмите для выбора файла</div>
+            <input type="file" id="ver-file-input" style="display:none">
+          </div>
+        </div>
+      `,
+      footer: `
+        <button class="btn btn-secondary" onclick="ClientProfilePage.openApproval(${approvalId})">Назад</button>
+        <button class="btn btn-primary" id="ver-save-btn" disabled>Загрузить</button>
+      `,
+    });
+
+    let uploadedFile = null;
+    const zone = document.getElementById('ver-file-zone');
+    const input = document.getElementById('ver-file-input');
+    const status = document.getElementById('ver-file-status');
+
+    zone.addEventListener('click', () => input.click());
+    input.addEventListener('change', async (e) => {
+      if (!e.target.files[0]) return;
+      status.textContent = '⏳ Загрузка...';
+      try {
+        const formData = new FormData();
+        formData.append('file', e.target.files[0]);
+        uploadedFile = await API.upload('/upload/drawing', formData);
+        status.textContent = `✅ ${e.target.files[0].name}`;
+        document.getElementById('ver-save-btn').disabled = false;
+      } catch (err) {
+        status.textContent = '❌ Ошибка загрузки';
+        Toast.error(err.message);
+      }
+    });
+
+    document.getElementById('ver-save-btn').addEventListener('click', async () => {
+      if (!uploadedFile) { Toast.error('Выберите файл'); return; }
+      try {
+        await API.post(`/clients/${this.clientId}/approvals/${approvalId}/versions`, {
+          file_path: uploadedFile.path,
+          file_type: uploadedFile.file_type,
+          source: document.getElementById('ver-source').value,
+          comment: document.getElementById('ver-comment').value.trim(),
+        });
+        Toast.success('Версия загружена');
+        this.openApproval(approvalId);
+      } catch (err) { Toast.error(err.message); }
+    });
+  },
+
+  async deleteApprovalVersion(approvalId, versionId) {
+    if (!await ConfirmDialog.delete('Удалить эту версию файла?')) return;
+    try {
+      await API.del(`/clients/${this.clientId}/approvals/${approvalId}/versions/${versionId}`);
+      Toast.success('Версия удалена');
+      this.openApproval(approvalId);
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  async addApprovalComment(approvalId) {
+    const input = document.getElementById('approval-comment-text');
+    const text = input.value.trim();
+    if (!text) return;
+    try {
+      await API.post(`/clients/${this.clientId}/approvals/${approvalId}/comments`, { text });
+      input.value = '';
+      // Перезагрузить таймлайн
+      this.openApproval(approvalId);
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  async deleteApproval(id) {
+    if (!await ConfirmDialog.delete('Удалить это согласование со всеми версиями и комментариями?')) return;
+    try {
+      await API.del(`/clients/${this.clientId}/approvals/${id}`);
+      Toast.success('Согласование удалено');
+      Modal.close();
+      this.switchTab('approvals');
     } catch (err) { Toast.error(err.message); }
   },
 

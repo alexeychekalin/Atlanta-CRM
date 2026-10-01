@@ -163,7 +163,43 @@ CREATE TABLE IF NOT EXISTS drawing_components (
 CREATE TABLE IF NOT EXISTS client_drawings (
   id SERIAL PRIMARY KEY,
   client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  drawing_id INT NOT NULL REFERENCES drawings(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  file_path VARCHAR(500) NOT NULL,
+  file_type VARCHAR(20),
+  description TEXT,
+  uploaded_by INT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP DEFAULT now()
+);
+
+-- Согласование чертежей
+CREATE TABLE IF NOT EXISTS drawing_approvals (
+  id SERIAL PRIMARY KEY,
+  client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'waiting',
+  created_by INT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS drawing_approval_versions (
+  id SERIAL PRIMARY KEY,
+  approval_id INT NOT NULL REFERENCES drawing_approvals(id) ON DELETE CASCADE,
+  version_number INT NOT NULL DEFAULT 1,
+  file_path VARCHAR(500) NOT NULL,
+  file_type VARCHAR(20),
+  source VARCHAR(20) NOT NULL DEFAULT 'client',
+  comment TEXT,
+  uploaded_by INT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS drawing_approval_comments (
+  id SERIAL PRIMARY KEY,
+  approval_id INT NOT NULL REFERENCES drawing_approvals(id) ON DELETE CASCADE,
+  user_id INT REFERENCES users(id) ON DELETE SET NULL,
+  text TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT now()
 );
 
