@@ -90,14 +90,20 @@ const ClientProfilePage = {
               </div>
             </div>
           ` : ''}
-          ${(c.inn || c.kpp || c.legal_address || c.bank_details || c.ogrnip) ? `
+          ${(c.inn || c.kpp || c.legal_address || c.bank_details || c.ogrnip || c.ogrn || c.bank_account) ? `
             <div style="margin-top:10px;padding:10px 14px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border)">
-              <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;font-weight:600">🏛️ Реквизиты</div>
+              <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;font-weight:600">🏛️ Реквизиты ${c.client_type === 'ip' ? '<span style="color:#f59e0b">(ИП)</span>' : '<span style="color:#3b82f6">(ООО)</span>'}</div>
               <div class="profile-contacts" style="margin-top:2px">
                 ${c.inn ? `<span class="profile-contact-item">ИНН ${c.inn}${c.kpp ? ' / КПП ' + c.kpp : ''}</span>` : ''}
+                ${c.ogrn ? `<span class="profile-contact-item">ОГРН ${c.ogrn}</span>` : ''}
                 ${c.ogrnip ? `<span class="profile-contact-item">ОГРНИП ${c.ogrnip}</span>` : ''}
-                ${c.legal_address ? `<span class="profile-contact-item">📍 ${c.legal_address}</span>` : ''}
-                ${c.bank_details ? `<span class="profile-contact-item">🏦 ${c.bank_details}</span>` : ''}
+                ${c.legal_address ? `<span class="profile-contact-item">📍 Юр. адрес: ${c.legal_address}</span>` : ''}
+                ${c.postal_address ? `<span class="profile-contact-item">📮 Почт. адрес: ${c.postal_address}</span>` : ''}
+                ${c.bank_account ? `<span class="profile-contact-item">💳 Р/С: ${c.bank_account}</span>` : ''}
+                ${c.corr_account ? `<span class="profile-contact-item">К/С: ${c.corr_account}</span>` : ''}
+                ${c.bank_name ? `<span class="profile-contact-item">🏦 ${c.bank_name}${c.bik ? ', БИК: ' + c.bik : ''}</span>` : ''}
+                ${c.director ? `<span class="profile-contact-item">👤 ${c.client_type === 'ip' ? '' : 'Ген. директор: '}${c.director}</span>` : ''}
+                ${c.bank_details ? `<span class="profile-contact-item" style="color:var(--text-muted);font-size:0.78rem">📋 ${c.bank_details}</span>` : ''}
               </div>
             </div>
           ` : ''}
@@ -931,14 +937,35 @@ const ClientProfilePage = {
         </div>
 
         <div style="margin-top:16px;padding:14px;background:var(--bg-main);border-radius:10px;border:1px solid var(--border)">
-          <div style="font-weight:600;font-size:0.9rem;margin-bottom:10px;color:var(--text-secondary)">🏦 Реквизиты</div>
-          <div class="form-row">
-            <div class="form-group"><label>ИНН</label><input type="text" class="form-control" id="prof-inn" value="${c.inn || ''}" placeholder="1234567890"></div>
-            <div class="form-group"><label>КПП</label><input type="text" class="form-control" id="prof-kpp" value="${c.kpp || ''}" placeholder="123456789"></div>
+          <div style="font-weight:600;font-size:0.9rem;margin-bottom:10px;color:var(--text-secondary)">🏛️ Реквизиты</div>
+          <div class="form-group">
+            <label>Тип контрагента</label>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="btn btn-sm ${(c.client_type || 'ooo') === 'ooo' ? 'btn-primary' : 'btn-secondary'}" id="btn-type-ooo" onclick="ClientProfilePage._switchClientType('ooo')" style="flex:1">🏢 ООО</button>
+              <button type="button" class="btn btn-sm ${c.client_type === 'ip' ? 'btn-primary' : 'btn-secondary'}" id="btn-type-ip" onclick="ClientProfilePage._switchClientType('ip')" style="flex:1">👤 ИП</button>
+            </div>
+            <input type="hidden" id="prof-client-type" value="${c.client_type || 'ooo'}">
           </div>
-          <div class="form-group"><label>ОГРНИП</label><input type="text" class="form-control" id="prof-ogrnip" value="${c.ogrnip || ''}" placeholder="ОГРНИП (15 цифр)"></div>
-          <div class="form-group"><label>Юридический адрес</label><input type="text" class="form-control" id="prof-legal-address" value="${c.legal_address || ''}" placeholder="Юридический адрес организации"></div>
-          <div class="form-group"><label>Банковские реквизиты</label><input type="text" class="form-control" id="prof-bank-details" value="${c.bank_details || ''}" placeholder="Р/С, Банк, БИК, К/С"></div>
+          <div class="form-row">
+            <div class="form-group"><label>ИНН</label><input type="text" class="form-control" id="prof-inn" value="${c.inn || ''}" placeholder="ИНН"></div>
+            <div class="form-group" id="prof-kpp-wrap"><label>КПП</label><input type="text" class="form-control" id="prof-kpp" value="${c.kpp || ''}" placeholder="КПП"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" id="prof-ogrn-wrap"><label>ОГРН</label><input type="text" class="form-control" id="prof-ogrn" value="${c.ogrn || ''}" placeholder="ОГРН (13 цифр)"></div>
+            <div class="form-group" id="prof-ogrnip-wrap"><label>ОГРНИП</label><input type="text" class="form-control" id="prof-ogrnip" value="${c.ogrnip || ''}" placeholder="ОГРНИП (15 цифр)"></div>
+          </div>
+          <div class="form-group"><label>Юридический адрес</label><input type="text" class="form-control" id="prof-legal-address" value="${c.legal_address || ''}" placeholder="Юридический адрес"></div>
+          <div class="form-group" id="prof-postal-wrap"><label>Почтовый адрес</label><input type="text" class="form-control" id="prof-postal-address" value="${c.postal_address || ''}" placeholder="Почтовый адрес"></div>
+          <div class="form-row">
+            <div class="form-group"><label>Р/С (номер счёта)</label><input type="text" class="form-control" id="prof-bank-account" value="${c.bank_account || ''}" placeholder="40702810..."></div>
+            <div class="form-group"><label>К/С</label><input type="text" class="form-control" id="prof-corr-account" value="${c.corr_account || ''}" placeholder="30101810..."></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Банк</label><input type="text" class="form-control" id="prof-bank-name" value="${c.bank_name || ''}" placeholder="Название банка"></div>
+            <div class="form-group"><label>БИК</label><input type="text" class="form-control" id="prof-bik" value="${c.bik || ''}" placeholder="БИК (9 цифр)"></div>
+          </div>
+          <div class="form-group" id="prof-director-wrap"><label>Генеральный директор</label><input type="text" class="form-control" id="prof-director" value="${c.director || ''}" placeholder="Фамилия И.О."></div>
+          <div class="form-group" style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border)"><label style="color:var(--text-muted)">Банковские реквизиты (старое поле)</label><input type="text" class="form-control" id="prof-bank-details" value="${c.bank_details || ''}" placeholder="Устаревшее поле, используйте новые"></div>
         </div>
       `,
       footer: `
@@ -946,6 +973,9 @@ const ClientProfilePage = {
         <button class="btn btn-primary" onclick="ClientProfilePage.saveClient()">Сохранить</button>
       `,
     });
+
+    // Инициализировать видимость полей по типу
+    this._switchClientType(c.client_type || 'ooo');
   },
 
   async saveClient() {
@@ -968,6 +998,14 @@ const ClientProfilePage = {
       bank_details: document.getElementById('prof-bank-details').value.trim(),
       telegram: document.getElementById('prof-telegram').value.trim(),
       max_messenger: document.getElementById('prof-max-messenger').value.trim(),
+      client_type: document.getElementById('prof-client-type').value,
+      ogrn: document.getElementById('prof-ogrn').value.trim(),
+      postal_address: document.getElementById('prof-postal-address').value.trim(),
+      bank_account: document.getElementById('prof-bank-account').value.trim(),
+      bank_name: document.getElementById('prof-bank-name').value.trim(),
+      bik: document.getElementById('prof-bik').value.trim(),
+      corr_account: document.getElementById('prof-corr-account').value.trim(),
+      director: document.getElementById('prof-director').value.trim(),
     };
     if (!data.name) { Toast.error('Укажите название'); return; }
     try {
@@ -976,6 +1014,21 @@ const ClientProfilePage = {
       Modal.close();
       this.render(this.clientId);
     } catch (err) { Toast.error(err.message); }
+  },
+
+  _switchClientType(type) {
+    document.getElementById('prof-client-type').value = type;
+    const isOOO = type === 'ooo';
+    // Кнопки
+    document.getElementById('btn-type-ooo').className = `btn btn-sm ${isOOO ? 'btn-primary' : 'btn-secondary'}`;
+    document.getElementById('btn-type-ip').className = `btn btn-sm ${!isOOO ? 'btn-primary' : 'btn-secondary'}`;
+    // Показать/скрыть поля
+    const show = (id, v) => { const el = document.getElementById(id); if (el) el.style.display = v ? '' : 'none'; };
+    show('prof-kpp-wrap', isOOO);       // КПП — только ООО
+    show('prof-ogrn-wrap', isOOO);      // ОГРН — только ООО
+    show('prof-ogrnip-wrap', !isOOO);   // ОГРНИП — только ИП
+    show('prof-postal-wrap', isOOO);    // Почтовый адрес — только ООО
+    show('prof-director-wrap', isOOO);  // Директор — только ООО
   },
 
   // =================== СОГЛАСОВАНИЯ ЧЕРТЕЖЕЙ ===================

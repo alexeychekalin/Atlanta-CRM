@@ -80,14 +80,14 @@ router.get('/:id', auth, async (req, res) => {
 // POST /api/components
 router.post('/', auth, adminOnly, async (req, res) => {
   try {
-    const { category_id, article, name, price, image_path, description, comment, is_active } = req.body;
+    const { category_id, article, name, price, image_path, description, comment, is_active, gisp_url } = req.body;
     if (!article || !name) return res.status(400).json({ error: 'Укажите артикул и название' });
 
     const result = await db.query(
-      `INSERT INTO components (category_id, article, name, price, image_path, description, comment, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO components (category_id, article, name, price, image_path, description, comment, is_active, gisp_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [category_id || null, article, name, price || 0, image_path || null, description || null, comment || null, is_active !== false]
+      [category_id || null, article, name, price || 0, image_path || null, description || null, comment || null, is_active !== false, gisp_url || null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -101,7 +101,7 @@ router.post('/', auth, adminOnly, async (req, res) => {
 // PUT /api/components/:id
 router.put('/:id', auth, adminOnly, async (req, res) => {
   try {
-    const { category_id, article, name, price, image_path, description, comment, is_active } = req.body;
+    const { category_id, article, name, price, image_path, description, comment, is_active, gisp_url } = req.body;
     const result = await db.query(
       `UPDATE components SET
         category_id = COALESCE($1, category_id),
@@ -111,10 +111,11 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
         image_path = COALESCE($5, image_path),
         description = $6,
         comment = $7,
-        is_active = COALESCE($8, is_active)
-       WHERE id = $9
+        is_active = COALESCE($8, is_active),
+        gisp_url = $9
+       WHERE id = $10
        RETURNING *`,
-      [category_id, article, name, price, image_path, description, comment, is_active, req.params.id]
+      [category_id, article, name, price, image_path, description, comment, is_active, gisp_url || null, req.params.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Компонент не найден' });
     res.json(result.rows[0]);

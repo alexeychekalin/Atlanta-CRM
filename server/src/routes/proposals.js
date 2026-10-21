@@ -392,22 +392,24 @@ router.get('/:id/pdf', auth, async (req, res) => {
 
     // Реквизиты компании — правая сторона
     doc.font(fontBold).fontSize(11).text('ООО «Атланта»', 140, 35, { width: pageWidth - 100 });
-    doc.font(fontRegular).fontSize(7.5);
-    doc.text('ИНН 4816005385 / КПП 481601001', 140, 50);
-    doc.text('399334, Липецкая обл., Усманский р-н, с. Московка, ул. Центральная, зд. 53', 140, 60);
-    doc.text('Р/С 40702810835180100303 ПАО Сбербанк, БИК 044206604', 140, 70);
-    doc.text('Тел. (47472) 3-64-12, 3-63-84', 140, 80);
+    doc.font(fontRegular).fontSize(6.8);
+    doc.text('ОГРН 1024800730800, ИНН 4816005385, КПП 481601001', 140, 50);
+    doc.text('399334, Липецкая обл., Усманский р-н, с. Московка, ул. Центральная, зд. 53', 140, 59);
+    doc.text('Р/С 40702810835180100303, К/С 30101810200000000604', 140, 68);
+    doc.text('Банк: Алтайское отд. №8644 ПАО Сбербанк г. Барнаул, БИК 040173604', 140, 77);
+    doc.text('Тел. (47472) 3-64-12, 3-63-84, 8 (985) 964-11-23', 140, 86);
+    doc.text('E-mail: alexey.chekalin@gmail.com, atlanta-shop@bk.ru', 140, 95);
 
     // Линия-разделитель
-    doc.moveTo(40, 100).lineTo(555, 100).strokeColor('#4a90a4').lineWidth(2).stroke();
+    doc.moveTo(40, 108).lineTo(555, 108).strokeColor('#4a90a4').lineWidth(2).stroke();
 
     // === ЗАГОЛОВОК ===
     doc.font(fontBold).fontSize(16).fillColor('#1a1a2e')
-       .text(`КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ`, 40, 115, { align: 'center', width: pageWidth });
+       .text(`КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ`, 40, 123, { align: 'center', width: pageWidth });
     doc.font(fontBold).fontSize(12).fillColor('#4a90a4')
-       .text(`№ ${proposal.proposal_number} от ${new Date(proposal.created_at).toLocaleDateString('ru-RU')}`, 40, 137, { align: 'center', width: pageWidth });
+       .text(`№ ${proposal.proposal_number} от ${new Date(proposal.created_at).toLocaleDateString('ru-RU')}`, 40, 145, { align: 'center', width: pageWidth });
 
-    let y = 160;
+    let y = 168;
 
     // === РЕКВИЗИТЫ КЛИЕНТА ===
     doc.font(fontBold).fontSize(9).fillColor('#333')
@@ -425,19 +427,19 @@ router.get('/:id/pdf', auth, async (req, res) => {
     y += 8;
 
     // === ТАБЛИЦА ПОЗИЦИЙ ===
-    // Колонки: №, Артикул, Наименование, Кол-во, Цена с НДС, Сумма с НДС
-    const colW = [25, 65, 195, 45, 90, 95];
+    // Колонки: №, Артикул, Наименование, Кол-во, Цена без НДС, Цена с НДС, Сумма с НДС
+    const colW = [22, 55, 155, 33, 75, 80, 95];
 
     const fmtMoney = (v) => parseFloat(v).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     const drawTableHeader = (rowY) => {
-      const headerCols = ['№', 'Артикул', 'Наименование', 'Кол-во', `Цена с НДС, ₽`, `Сумма с НДС, ₽`];
+      const headerCols = ['№', 'Артикул', 'Наименование', 'Кол-во', 'Цена, ₽', `с НДС, ₽`, `Сумма с НДС, ₽`];
       let x = 40;
       doc.rect(x, rowY, pageWidth, 22).fill('#4a90a4');
-      doc.font(fontBold).fontSize(7.5).fillColor('#fff');
+      doc.font(fontBold).fontSize(7).fillColor('#fff');
       headerCols.forEach((text, i) => {
         const align = (i >= 3) ? 'right' : 'left';
-        doc.text(text, x + 3, rowY + 6, { width: colW[i] - 6, align });
+        doc.text(text, x + 2, rowY + 6, { width: colW[i] - 4, align });
         x += colW[i];
       });
     };
@@ -449,7 +451,15 @@ router.get('/:id/pdf', auth, async (req, res) => {
     // Строки
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      const rowHeight = 20;
+      const article = item.article || (item.is_drawing ? '—' : '—');
+      const unitPrice = parseFloat(item.unit_price);
+      const unitPriceVAT = unitPrice * (1 + vatRate / 100);
+      const lineTotalVAT = parseFloat(item.line_total) * (1 + vatRate / 100);
+
+      // Вычисляем высоту строки по самому длинному тексту (наименование)
+      doc.font(fontRegular).fontSize(8);
+      const nameHeight = doc.heightOfString(item.product_name, { width: colW[2] - 8 });
+      const rowHeight = Math.max(22, nameHeight + 10);
 
       // Проверяем, нужна ли новая страница
       if (y + rowHeight > doc.page.height - 100) {
@@ -464,38 +474,39 @@ router.get('/:id/pdf', auth, async (req, res) => {
         doc.rect(40, y, pageWidth, rowHeight).fill('#f8f9fa');
       }
 
-      const unitPriceVAT = parseFloat(item.unit_price) * (1 + vatRate / 100);
-      const lineTotalVAT = parseFloat(item.line_total) * (1 + vatRate / 100);
-      const article = item.article || (item.is_drawing ? '📐' : '—');
-
+      const textY = y + 5;
       let x = 40;
       doc.font(fontRegular).fontSize(8).fillColor('#333');
 
       // №
-      doc.text(String(i + 1), x + 3, y + 5, { width: colW[0] - 6, align: 'center' });
+      doc.text(String(i + 1), x + 2, textY, { width: colW[0] - 4, align: 'center' });
       x += colW[0];
 
       // Артикул
-      doc.font(fontRegular).fontSize(7).fillColor('#4a90a4');
-      doc.text(article, x + 3, y + 6, { width: colW[1] - 6 });
+      doc.font(fontRegular).fontSize(6.5).fillColor('#4a90a4');
+      doc.text(article, x + 2, textY + 1, { width: colW[1] - 4 });
       x += colW[1];
 
-      // Наименование
+      // Наименование — с переносом
       doc.font(fontRegular).fontSize(8).fillColor('#333');
-      doc.text(item.product_name, x + 3, y + 5, { width: colW[2] - 6 });
+      doc.text(item.product_name, x + 2, textY, { width: colW[2] - 6, lineGap: 1 });
       x += colW[2];
 
       // Кол-во
-      doc.text(String(item.quantity), x + 3, y + 5, { width: colW[3] - 6, align: 'right' });
+      doc.text(String(item.quantity), x + 2, textY, { width: colW[3] - 4, align: 'right' });
       x += colW[3];
 
-      // Цена с НДС
-      doc.text(fmtMoney(unitPriceVAT), x + 3, y + 5, { width: colW[4] - 6, align: 'right' });
+      // Цена без НДС
+      doc.text(fmtMoney(unitPrice), x + 2, textY, { width: colW[4] - 4, align: 'right' });
       x += colW[4];
+
+      // Цена с НДС
+      doc.text(fmtMoney(unitPriceVAT), x + 2, textY, { width: colW[5] - 4, align: 'right' });
+      x += colW[5];
 
       // Сумма с НДС
       doc.font(fontBold).fontSize(8).fillColor('#333');
-      doc.text(fmtMoney(lineTotalVAT), x + 3, y + 5, { width: colW[5] - 6, align: 'right' });
+      doc.text(fmtMoney(lineTotalVAT), x + 2, textY, { width: colW[6] - 4, align: 'right' });
 
       // Нижняя линия
       doc.moveTo(40, y + rowHeight).lineTo(40 + pageWidth, y + rowHeight).strokeColor('#e0e0e0').lineWidth(0.5).stroke();

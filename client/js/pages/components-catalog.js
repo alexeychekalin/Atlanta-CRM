@@ -461,6 +461,12 @@ const ComponentsCatalogPage = {
                   <div style="font-size:0.9rem;line-height:1.5;color:var(--text-secondary)">${comp.comment}</div>
                 </div>
               ` : ''}
+              ${comp.gisp_url ? `
+                <div style="margin-bottom:12px">
+                  <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">ГИСП</div>
+                  <a href="${comp.gisp_url}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:#1d4ed822;color:#3b82f6;border-radius:8px;font-size:0.85rem;font-weight:600;text-decoration:none;border:1px solid #3b82f644;transition:all 0.2s" onmouseover="this.style.background='#1d4ed833'" onmouseout="this.style.background='#1d4ed822'">🏢 Открыть в ГИСП ↗</a>
+                </div>
+              ` : ''}
               <div style="display:flex;gap:12px;font-size:0.82rem;color:var(--text-muted)">
                 <span>Статус: ${comp.is_active !== false ? '🟢 Активен' : '🔴 Неактивен'}</span>
               </div>
@@ -687,6 +693,10 @@ const ComponentsCatalogPage = {
             <textarea class="form-control" id="comp-comment" rows="2">${isEdit ? (comp.comment || '') : ''}</textarea>
           </div>
           <div class="form-group">
+            <label>🏢 Ссылка на ГИСП</label>
+            <input type="url" class="form-control" id="comp-gisp" value="${isEdit ? (comp.gisp_url || '') : ''}" placeholder="https://gisp.gov.ru/...">
+          </div>
+          <div class="form-group">
             <label><input type="checkbox" id="comp-active" ${!isEdit || comp.is_active ? 'checked' : ''}> Активен</label>
           </div>
           ${isEdit ? `
@@ -757,6 +767,7 @@ const ComponentsCatalogPage = {
       description: document.getElementById('comp-description').value.trim(),
       comment: document.getElementById('comp-comment').value.trim(),
       is_active: document.getElementById('comp-active').checked,
+      gisp_url: document.getElementById('comp-gisp').value.trim(),
     };
     if (!data.article || !data.name) { Toast.error('Заполните артикул и название'); return; }
     try {

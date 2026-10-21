@@ -1,0 +1,9 @@
+-- Расширение реквизитов клиентов: ИП / ООО
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS client_type VARCHAR(10) DEFAULT 'ooo'; -- 'ooo' или 'ip'
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS ogrn VARCHAR(20);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS postal_address TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS bank_account VARCHAR(30);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS bank_name VARCHAR(255);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS bik VARCHAR(15);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS corr_account VARCHAR(30);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS director VARCHAR(255);
