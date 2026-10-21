@@ -99,6 +99,22 @@ const CalculatorPage = {
         <div class="calc-right">
           <div class="calc-summary-card">
             <h3 style="font-size:1.05rem;margin-bottom:16px;color:var(--text-secondary)">Расчёт стоимости</h3>
+
+            <!-- Переключатель: расчёт / фиксированная цена -->
+            <div style="margin-bottom:16px;padding:10px 14px;background:var(--bg-main);border-radius:10px;border:1px solid var(--border)">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem">
+                <input type="checkbox" id="calc-fixed-price-toggle" onchange="CalculatorPage.toggleFixedPrice()">
+                <span>💲 Указать фиксированную цену (без BOM)</span>
+              </label>
+              <div id="calc-fixed-price-block" style="display:none;margin-top:10px">
+                <div class="form-group" style="margin-bottom:0">
+                  <label style="font-size:0.82rem;color:var(--text-muted)">Цена чертежа, ₽</label>
+                  <input type="number" class="form-control" id="calc-fixed-price" value="0" step="100" min="0" onchange="CalculatorPage.recalc()" style="font-size:1.1rem;font-weight:600">
+                </div>
+              </div>
+            </div>
+
+            <div id="calc-bom-totals">
             <div id="calc-totals">
               <div class="calc-summary-row">
                 <span class="label">Сумма компонентов</span>
@@ -131,6 +147,7 @@ const CalculatorPage = {
                 </div>
               </div>
             </div>
+            </div> <!-- /calc-bom-totals -->
 
             <div id="calc-final" style="margin-top:16px;padding-top:12px;border-top:2px solid var(--accent-teal)">
               <div class="calc-summary-row total">
@@ -633,8 +650,27 @@ const CalculatorPage = {
     this.recalc();
   },
 
+  // === Переключение режима фиксированной цены ===
+  toggleFixedPrice() {
+    const checked = document.getElementById('calc-fixed-price-toggle').checked;
+    document.getElementById('calc-fixed-price-block').style.display = checked ? '' : 'none';
+    document.getElementById('calc-bom-totals').style.display = checked ? 'none' : '';
+    this.recalc();
+  },
+
+  isFixedPrice() {
+    return document.getElementById('calc-fixed-price-toggle')?.checked || false;
+  },
+
   // === Пересчёт ===
   recalc() {
+    // Фиксированная цена — просто показать итог
+    if (this.isFixedPrice()) {
+      const fixedPrice = parseFloat(document.getElementById('calc-fixed-price')?.value) || 0;
+      document.getElementById('calc-total').innerHTML = Table.formatMoney(fixedPrice);
+      return;
+    }
+
     // Наценка уровня клиента
     const clientSelect = document.getElementById('calc-client');
     const clientOpt = clientSelect?.selectedOptions[0];
@@ -705,7 +741,7 @@ const CalculatorPage = {
 
   // === Сохранить как шаблон чертежа ===
   async saveAsDrawing(autoName) {
-    if (this.bomItems.length === 0) { Toast.error('Добавьте хотя бы один компонент'); return null; }
+    if (!this.isFixedPrice() && this.bomItems.length === 0) { Toast.error('Добавьте хотя бы один компонент или укажите фиксированную цену'); return null; }
 
     const defaultName = autoName || 'Чертёж ' + new Date().toLocaleDateString('ru-RU');
     const name = autoName || prompt('Название шаблона чертежа:', defaultName);
@@ -741,7 +777,7 @@ const CalculatorPage = {
     const client_id = document.getElementById('calc-client').value;
     const principal_id = document.getElementById('calc-principal').value;
     if (!client_id) { Toast.error('Выберите клиента'); return; }
-    if (this.bomItems.length === 0) { Toast.error('Добавьте компоненты'); return; }
+    if (!this.isFixedPrice() && this.bomItems.length === 0) { Toast.error('Добавьте компоненты или укажите фиксированную цену'); return; }
 
     const defaultName = 'Чертёж ' + new Date().toLocaleDateString('ru-RU');
     const drawingName = prompt('Название чертежа для заказа:', defaultName);
@@ -753,46 +789,51 @@ const CalculatorPage = {
     // Автоматически сохраняем шаблон
     await this.saveAsDrawing(drawingName);
 
-    // Считаем итог
-    let componentsTotal = 0;
-    let itemMarkupsTotal = 0;
-    const componentsData = this.bomItems.map(item => {
-      const base = item.price * item.quantity;
-      const mPct = base * (item.item_markup_pct || 0) / 100;
-      const mRub = item.item_markup_rub || 0;
-      const lineTotal = base + mPct + mRub;
-      componentsTotal += base;
-      itemMarkupsTotal += mPct + mRub;
-      return {
-        name: item.name,
-        article: item.article,
-        price: item.price,
-        quantity: item.quantity,
-        base_total: base,
-        markup_pct: item.item_markup_pct || 0,
-        markup_rub: item.item_markup_rub || 0,
-        markup_pct_amount: mPct,
-        line_total: lineTotal,
+    let grandTotal;
+    let metadata;
+
+    if (this.isFixedPrice()) {
+      // Режим фиксированной цены
+      grandTotal = parseFloat(document.getElementById('calc-fixed-price')?.value) || 0;
+      metadata = {
+        type: 'calculator_fixed_price',
+        fixed_price: grandTotal,
+        grand_total: grandTotal,
       };
-    });
+    } else {
+      // Стандартный расчёт по BOM
+      let componentsTotal = 0;
+      let itemMarkupsTotal = 0;
+      const componentsData = this.bomItems.map(item => {
+        const base = item.price * item.quantity;
+        const mPct = base * (item.item_markup_pct || 0) / 100;
+        const mRub = item.item_markup_rub || 0;
+        const lineTotal = base + mPct + mRub;
+        componentsTotal += base;
+        itemMarkupsTotal += mPct + mRub;
+        return {
+          name: item.name,
+          article: item.article,
+          price: item.price,
+          quantity: item.quantity,
+          base_total: base,
+          markup_pct: item.item_markup_pct || 0,
+          markup_rub: item.item_markup_rub || 0,
+          markup_pct_amount: mPct,
+          line_total: lineTotal,
+        };
+      });
 
-    const subtotalBeforeGlobal = componentsTotal + itemMarkupsTotal;
-    // Наценка уровня клиента
-    const clientOpt = document.getElementById('calc-client')?.selectedOptions[0];
-    const lvlMarkup = parseFloat(clientOpt?.dataset?.markup) || 0;
-    const levelMarkupAmount = subtotalBeforeGlobal * lvlMarkup / 100;
-    const subtotalWithLevel = subtotalBeforeGlobal + levelMarkupAmount;
-    const globalMarkupPctAmount = subtotalWithLevel * totalMarkupPct / 100;
-    const globalMarkupRubAmount = totalMarkupRub;
-    const grandTotal = subtotalWithLevel + globalMarkupPctAmount + globalMarkupRubAmount;
+      const subtotalBeforeGlobal = componentsTotal + itemMarkupsTotal;
+      const clientOpt = document.getElementById('calc-client')?.selectedOptions[0];
+      const lvlMarkup = parseFloat(clientOpt?.dataset?.markup) || 0;
+      const levelMarkupAmount = subtotalBeforeGlobal * lvlMarkup / 100;
+      const subtotalWithLevel = subtotalBeforeGlobal + levelMarkupAmount;
+      const globalMarkupPctAmount = subtotalWithLevel * totalMarkupPct / 100;
+      const globalMarkupRubAmount = totalMarkupRub;
+      grandTotal = subtotalWithLevel + globalMarkupPctAmount + globalMarkupRubAmount;
 
-    // Одна позиция с названием чертежа + metadata
-    const items = [{
-      product_id: null,
-      product_name: drawingName,
-      unit_price: grandTotal,
-      quantity: 1,
-      metadata: {
+      metadata = {
         type: 'calculator_drawing',
         components: componentsData,
         components_total: componentsTotal,
@@ -801,7 +842,16 @@ const CalculatorPage = {
         global_markup_rub: totalMarkupRub,
         global_markup_pct_amount: globalMarkupPctAmount,
         grand_total: grandTotal,
-      },
+      };
+    }
+
+    // Одна позиция с названием чертежа + metadata
+    const items = [{
+      product_id: null,
+      product_name: drawingName,
+      unit_price: grandTotal,
+      quantity: 1,
+      metadata,
     }];
 
     try {
@@ -810,7 +860,7 @@ const CalculatorPage = {
         principal_id,
         order_date: new Date().toISOString().split('T')[0],
         status: 'new',
-        comment: `Создан из калькулятора: ${drawingName}`,
+        comment: `Создан из калькулятора: ${drawingName}${this.isFixedPrice() ? ' (фикс. цена)' : ''}`,
         items,
       });
       Toast.success('Заказ создан из калькулятора!');

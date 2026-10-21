@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS orders (
   client_id INT REFERENCES clients(id) ON DELETE SET NULL,
   principal_id INT REFERENCES principals(id) ON DELETE SET NULL,
   order_date DATE NOT NULL DEFAULT CURRENT_DATE,
-  status VARCHAR(30) NOT NULL DEFAULT 'new',
+  status VARCHAR(20) NOT NULL DEFAULT 'new',
   subtotal NUMERIC(14,2) NOT NULL DEFAULT 0,
   commission_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
   commission_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
@@ -198,7 +198,7 @@ CREATE TABLE IF NOT EXISTS drawings (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   file_path VARCHAR(500),
-  file_type VARCHAR(50),
+  file_type VARCHAR(20),
   description TEXT,
   client_id INT REFERENCES clients(id) ON DELETE SET NULL,
   created_by INT REFERENCES users(id) ON DELETE SET NULL,
@@ -210,6 +210,7 @@ CREATE TABLE IF NOT EXISTS drawing_components (
   id SERIAL PRIMARY KEY,
   drawing_id INT NOT NULL REFERENCES drawings(id) ON DELETE CASCADE,
   component_id INT NOT NULL REFERENCES components(id) ON DELETE CASCADE,
+  modification_id INT REFERENCES component_modifications(id) ON DELETE SET NULL,
   quantity NUMERIC(10,2) NOT NULL DEFAULT 1,
   item_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
   item_markup_rub NUMERIC(14,2) NOT NULL DEFAULT 0
@@ -266,6 +267,7 @@ CREATE TABLE IF NOT EXISTS client_timeline (
   event_type VARCHAR(50) NOT NULL,
   title VARCHAR(255) NOT NULL,
   description TEXT,
+  event_date TIMESTAMP DEFAULT now(),
   created_by INT REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMP DEFAULT now()
 );
@@ -274,10 +276,9 @@ CREATE TABLE IF NOT EXISTS client_timeline (
 CREATE TABLE IF NOT EXISTS client_documents (
   id SERIAL PRIMARY KEY,
   client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  file_name VARCHAR(255) NOT NULL,
+  name VARCHAR(255) NOT NULL,
   file_path VARCHAR(500) NOT NULL,
-  file_type VARCHAR(50),
-  file_size INT DEFAULT 0,
+  file_type VARCHAR(20),
   description TEXT,
   uploaded_by INT REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMP DEFAULT now()
@@ -381,8 +382,7 @@ CREATE TABLE IF NOT EXISTS manufacturer_product_components (
 
 -- Системные настройки (НДС и пр.)
 CREATE TABLE IF NOT EXISTS system_settings (
-  id SERIAL PRIMARY KEY,
-  key VARCHAR(100) UNIQUE NOT NULL,
+  key VARCHAR(100) PRIMARY KEY,
   value JSONB,
   updated_at TIMESTAMP DEFAULT now()
 );

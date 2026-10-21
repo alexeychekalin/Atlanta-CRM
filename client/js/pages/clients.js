@@ -168,14 +168,34 @@ const ClientsPage = {
           </div>
 
           <div style="margin-top:12px;padding:14px;background:var(--bg-main);border-radius:10px;border:1px solid var(--border)">
-            <div style="font-weight:600;font-size:0.9rem;margin-bottom:10px;color:var(--text-secondary)">🏦 Реквизиты</div>
-            <div class="form-row">
-              <div class="form-group"><label>ИНН</label><input type="text" class="form-control" id="client-inn" value="${isEdit ? (client.inn || '') : ''}" placeholder="1234567890"></div>
-              <div class="form-group"><label>КПП</label><input type="text" class="form-control" id="client-kpp" value="${isEdit ? (client.kpp || '') : ''}" placeholder="123456789"></div>
+            <div style="font-weight:600;font-size:0.9rem;margin-bottom:10px;color:var(--text-secondary)">🏛️ Реквизиты</div>
+            <div class="form-group">
+              <label>Тип контрагента</label>
+              <div style="display:flex;gap:8px">
+                <button type="button" class="btn btn-sm ${(isEdit && client.client_type === 'ip') ? 'btn-secondary' : 'btn-primary'}" id="btn-type-ooo" onclick="ClientsPage._switchType('ooo')" style="flex:1">🏢 ООО</button>
+                <button type="button" class="btn btn-sm ${(isEdit && client.client_type === 'ip') ? 'btn-primary' : 'btn-secondary'}" id="btn-type-ip" onclick="ClientsPage._switchType('ip')" style="flex:1">👤 ИП</button>
+              </div>
+              <input type="hidden" id="client-type" value="${isEdit ? (client.client_type || 'ooo') : 'ooo'}">
             </div>
-            <div class="form-group"><label>ОГРНИП</label><input type="text" class="form-control" id="client-ogrnip" value="${isEdit ? (client.ogrnip || '') : ''}" placeholder="ОГРНИП (15 цифр)"></div>
-            <div class="form-group"><label>Юридический адрес</label><input type="text" class="form-control" id="client-legal-address" value="${isEdit ? (client.legal_address || '') : ''}" placeholder="Юридический адрес организации"></div>
-            <div class="form-group"><label>Банковские реквизиты</label><input type="text" class="form-control" id="client-bank-details" value="${isEdit ? (client.bank_details || '') : ''}" placeholder="Р/С, Банк, БИК, К/С"></div>
+            <div class="form-row">
+              <div class="form-group"><label>ИНН</label><input type="text" class="form-control" id="client-inn" value="${isEdit ? (client.inn || '') : ''}" placeholder="ИНН"></div>
+              <div class="form-group" id="cl-kpp-wrap"><label>КПП</label><input type="text" class="form-control" id="client-kpp" value="${isEdit ? (client.kpp || '') : ''}" placeholder="КПП"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group" id="cl-ogrn-wrap"><label>ОГРН</label><input type="text" class="form-control" id="client-ogrn" value="${isEdit ? (client.ogrn || '') : ''}" placeholder="ОГРН (13 цифр)"></div>
+              <div class="form-group" id="cl-ogrnip-wrap"><label>ОГРНИП</label><input type="text" class="form-control" id="client-ogrnip" value="${isEdit ? (client.ogrnip || '') : ''}" placeholder="ОГРНИП (15 цифр)"></div>
+            </div>
+            <div class="form-group"><label>Юридический адрес</label><input type="text" class="form-control" id="client-legal-address" value="${isEdit ? (client.legal_address || '') : ''}" placeholder="Юридический адрес"></div>
+            <div class="form-group" id="cl-postal-wrap"><label>Почтовый адрес</label><input type="text" class="form-control" id="client-postal-address" value="${isEdit ? (client.postal_address || '') : ''}" placeholder="Почтовый адрес"></div>
+            <div class="form-row">
+              <div class="form-group"><label>Р/С (номер счёта)</label><input type="text" class="form-control" id="client-bank-account" value="${isEdit ? (client.bank_account || '') : ''}" placeholder="40702810..."></div>
+              <div class="form-group"><label>К/С</label><input type="text" class="form-control" id="client-corr-account" value="${isEdit ? (client.corr_account || '') : ''}" placeholder="30101810..."></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Банк</label><input type="text" class="form-control" id="client-bank-name" value="${isEdit ? (client.bank_name || '') : ''}" placeholder="Название банка"></div>
+              <div class="form-group"><label>БИК</label><input type="text" class="form-control" id="client-bik" value="${isEdit ? (client.bik || '') : ''}" placeholder="БИК (9 цифр)"></div>
+            </div>
+            <div class="form-group" id="cl-director-wrap"><label>Генеральный директор</label><input type="text" class="form-control" id="client-director" value="${isEdit ? (client.director || '') : ''}" placeholder="Фамилия И.О."></div>
           </div>
         </form>
       `,
@@ -184,6 +204,7 @@ const ClientsPage = {
         <button class="btn btn-primary" onclick="ClientsPage.saveClient(${isEdit ? client.id : 'null'})">${isEdit ? 'Сохранить' : 'Создать'}</button>
       `,
     });
+    this._switchType(isEdit ? (client.client_type || 'ooo') : 'ooo');
   },
 
   async saveClient(id) {
@@ -200,7 +221,14 @@ const ClientsPage = {
       kpp: document.getElementById('client-kpp')?.value.trim() || '',
       ogrnip: document.getElementById('client-ogrnip')?.value.trim() || '',
       legal_address: document.getElementById('client-legal-address')?.value.trim() || '',
-      bank_details: document.getElementById('client-bank-details')?.value.trim() || '',
+      client_type: document.getElementById('client-type')?.value || 'ooo',
+      ogrn: document.getElementById('client-ogrn')?.value.trim() || '',
+      postal_address: document.getElementById('client-postal-address')?.value.trim() || '',
+      bank_account: document.getElementById('client-bank-account')?.value.trim() || '',
+      bank_name: document.getElementById('client-bank-name')?.value.trim() || '',
+      bik: document.getElementById('client-bik')?.value.trim() || '',
+      corr_account: document.getElementById('client-corr-account')?.value.trim() || '',
+      director: document.getElementById('client-director')?.value.trim() || '',
       pricing_level_id: document.getElementById('client-pricing-level')?.value || null,
     };
 
@@ -233,5 +261,18 @@ const ClientsPage = {
     } catch (err) {
       Toast.error(err.message);
     }
+  },
+
+  _switchType(type) {
+    document.getElementById('client-type').value = type;
+    const isOOO = type === 'ooo';
+    document.getElementById('btn-type-ooo').className = `btn btn-sm ${isOOO ? 'btn-primary' : 'btn-secondary'}`;
+    document.getElementById('btn-type-ip').className = `btn btn-sm ${!isOOO ? 'btn-primary' : 'btn-secondary'}`;
+    const show = (id, v) => { const el = document.getElementById(id); if (el) el.style.display = v ? '' : 'none'; };
+    show('cl-kpp-wrap', isOOO);
+    show('cl-ogrn-wrap', isOOO);
+    show('cl-ogrnip-wrap', !isOOO);
+    show('cl-postal-wrap', isOOO);
+    show('cl-director-wrap', isOOO);
   },
 };
