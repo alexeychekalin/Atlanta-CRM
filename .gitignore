@@ -40,3 +40,4 @@ yarn-error.log*
 
 # Antigravity artifacts
 .gemini/
+.pglite/
