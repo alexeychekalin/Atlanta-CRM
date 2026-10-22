@@ -21,7 +21,9 @@
 
 ### Системные функции
 
-* **🛡️ RBAC** — ролевая модель с интерактивной матрицей прав по 8 разделам (просмотр / редактирование / удаление / экспорт).
+* **🛡️ RBAC** — ролевая модель с интерактивной матрицей прав по 8 разделам (просмотр / редактирование / удаление / экспорт), права проверяются на сервере и читаются из БД при каждом запросе.
+* **🍪 Безопасные сессии** — JWT в httpOnly-cookie, ограничение попыток входа, отзыв сессий при смене пароля.
+* **🔐 Защита загрузок** — файлы принимаются только из `/uploads`, проверяются по магическим байтам, SVG запрещён, выдача — только авторизованным.
 * **👤 Управление пользователями** — создание, редактирование, назначение ролей с гранулярными правами.
 * **💲 Настройка НДС** — отображение цен с выделением НДС (настраиваемая ставка и переключатель).
 * **📎 Документы компонентов** — загрузка сертификатов и информационных сообщений (PDF/JPG/PNG), скачивание ZIP-архивом из заказов и калькулятора.
@@ -34,7 +36,7 @@
 | Слой | Технологии |
 |------|-----------|
 | **Frontend** | Vanilla JavaScript (ES6+), CSS (дизайн-система с CSS-переменными), Canvas-графики |
-| **Backend** | Node.js 20+, Express 4, JWT, Multer, Archiver (ZIP), ExcelJS, PDFKit |
+| **Backend** | Node.js 20+, Express 4, JWT (httpOnly-cookie), Helmet, Multer, Archiver (ZIP), ExcelJS, PDFKit |
 | **База данных** | PostgreSQL 16/17 (JSONB, FK, индексы) |
 
 ---
@@ -46,10 +48,15 @@
 ```bash
 git clone https://github.com/alexeychekalin/AtlantaCRM-deploy.git
 cd AtlantaCRM-deploy
+
+# Обязательно задайте секреты — без них compose не запустится
+echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)" >> .env
+echo "JWT_SECRET=$(openssl rand -hex 32)" >> .env
+
 docker-compose up -d --build
 
-# Инициализация тестовых данных (первый запуск)
-docker-compose exec app node server/src/db/seed.js
+# Первичная инициализация: схема, миграции, роли, администратор
+docker-compose exec app sh -c "cd server && npm run db:init"
 ```
 
 Откройте: `http://localhost:3000`
@@ -61,52 +68,65 @@ docker-compose exec app node server/src/db/seed.js
 npm run postinstall
 
 # 2. Настроить подключение к БД
-cp .env.example server/.env
-# Отредактируйте DATABASE_URL, JWT_SECRET в server/.env
+cp server/.env.example server/.env
+# Отредактируйте DATABASE_URL и JWT_SECRET в server/.env
+# (JWT_SECRET обязателен, без него сервер не стартует)
 
-# 3. Применить схему БД и миграции
+# 3. Применить схему БД, миграции и создать роли
 npm run db:init
 
 # 4. Запустить
-npm run dev       # режим разработки
+npm run dev       # режим разработки (node --watch)
 npm start         # продакшн
 ```
 
 Откройте: `http://localhost:3000`
 
+### Вариант 3: демо без PostgreSQL (PGlite)
+
+Для проверки на локальной машине без установленного PostgreSQL — встроенная WASM-версия базы:
+
+```bash
+cd server
+npm install
+npm run demo:init   # схема + миграции + роли + демо-данные
+npm run demo        # http://localhost:3000
+```
+
+База хранится в `server/.pglite` и не попадает в git. Демо-данные включают клиентов, заказы, чертежи, КП и три учётные записи.
+
 ---
 
 ## 🔑 Учётные данные по умолчанию
 
-| Роль | Логин | Пароль |
-|------|-------|--------|
-| Администратор | `admin` | `admin123` |
-| Наблюдатель (только чтение) | `viewer` | `viewer123` |
+| Роль | Логин | Пароль | Где есть |
+|------|-------|--------|----------|
+| Администратор | `admin` | `admin123` | `db:init` и демо |
+| Наблюдатель (только чтение) | `viewer` | `viewer123` | `db:init` и демо |
+| Менеджер | `manager` | `manager123` | только демо-данные |
 
-Новых пользователей и роли с индивидуальными правами можно создавать в разделе **Настройки**.
+⚠️ Смените пароль администратора сразу после первого входа (Настройки → Пользователи). Новых пользователей и роли с индивидуальными правами можно создавать в разделе **Настройки**.
 
 ---
 
 ## 🗄️ Миграции БД
 
-При обновлении выполните все файлы `migration_*.sql` из `server/src/db/`:
+Схема и миграции применяются одной командой — реестр `schema_migrations` сам определяет, что уже применено, и повторный запуск ничего не дублирует:
 
 ```bash
-psql -h <host> -U <user> -d <db> -f server/src/db/schema.sql
-psql -h <host> -U <user> -d <db> -f server/src/db/migration_components.sql
-psql -h <host> -U <user> -d <db> -f server/src/db/migration_client_profile.sql
-psql -h <host> -U <user> -d <db> -f server/src/db/migration_client_status.sql
-psql -h <host> -U <user> -d <db> -f server/src/db/migration_order_metadata.sql
-psql -h <host> -U <user> -d <db> -f server/src/db/migration_order_components.sql
-psql -h <host> -U <user> -d <db> -f server/src/db/migration_delivery_invoices.sql
-psql -h <host> -U <user> -d <db> -f server/src/db/migration_equipment.sql
-psql -h <host> -U <user> -d <db> -f server/src/db/migration_pricing_levels.sql
-psql -h <host> -U <user> -d <db> -f server/src/db/migration_component_documents.sql
+cd server
+npm run db:migrate          # применить новые миграции
+npm run db:init             # схема + миграции + роли (первый запуск)
 ```
 
-Все миграции используют `IF NOT EXISTS` — безопасны для повторного запуска.
+Что делает `db:migrate`:
 
----
+1. Создаёт таблицу `schema_migrations`, если её нет.
+2. Читает все `src/db/migration_*.sql` в алфавитном порядке.
+3. Применяет только новые файлы, каждый — в отдельной транзакции (`BEGIN … COMMIT`).
+4. Записывает имя файла в реестр.
+
+Добавление новой миграции: положите файл `src/db/migration_<тема>.sql` с идемпотентными конструкциями (`IF NOT EXISTS`) — он применится при следующем деплое (`deploy.sh`, `update.sh`) или вручную. `schema.sql` содержит актуальную схему для чистой установки.
 
 ## 📁 Структура проекта
 
@@ -115,7 +135,8 @@ psql -h <host> -U <user> -d <db> -f server/src/db/migration_component_documents.
 ├── client/                          # Клиентская часть (SPA)
 │   ├── css/styles.css               # Дизайн-система (CSS-переменные, темы)
 │   ├── js/
-│   │   ├── api.js                   # HTTP-клиент с JWT
+│   │   ├── api.js                   # HTTP-клиент (cookie + JWT)
+│   │   ├── components/escape.js     # Экранирование пользовательских данных
 │   │   ├── app.js                   # Роутинг и навигация SPA
 │   │   ├── components/              # UI-компоненты
 │   │   │   ├── charts.js            # Canvas-графики (bar, donut)
@@ -138,18 +159,25 @@ psql -h <host> -U <user> -d <db> -f server/src/db/migration_component_documents.
 ├── server/                          # Серверная часть (API)
 │   ├── src/
 │   │   ├── db/                      # Схема БД, миграции, сиды
-│   │   │   ├── schema.sql           # Основная схема
-│   │   │   ├── migration_*.sql      # Миграции (10 файлов)
-│   │   │   └── seed.js              # Тестовые данные
-│   │   ├── middleware/              # JWT Auth
-│   │   ├── routes/                  # 25 файлов API-маршрутов
+│   │   │   ├── schema.sql           # Основная схема (чистая установка)
+│   │   │   ├── migration_*.sql      # Миграции
+│   │   │   ├── migrate.js           # Применение миграций с реестром
+│   │   │   ├── migrate_roles.js     # Матрица прав по умолчанию
+│   │   │   └── seed.js              # Базовые пользователи
+│   │   ├── middleware/              # JWT Auth + проверка прав (RBAC)
+│   │   ├── services/pricing.js      # Расчёт цен и НДС на сервере
+│   │   ├── utils/files.js           # Безопасные пути и сигнатуры файлов
+│   │   ├── routes/                  # API-маршруты
 │   │   └── index.js                 # Точка входа Express
+│   ├── dev/                         # Демо-режим на PGlite
+│   ├── test/                        # Тесты (node:test)
 │   ├── uploads/                     # Загруженные файлы
 │   │   ├── images/                  # Фото компонентов
 │   │   ├── drawings/                # Файлы чертежей
 │   │   ├── avatars/                 # Аватары клиентов
 │   │   └── documents/               # Сертификаты и инфо. документы
 │   └── package.json
+├── .github/workflows/ci.yml          # CI: линтер и тесты
 ├── Dockerfile                       # Контейнеризация
 ├── docker-compose.yml               # Оркестрация контейнеров
 ├── .gitignore
@@ -158,11 +186,23 @@ psql -h <host> -U <user> -d <db> -f server/src/db/migration_component_documents.
 
 ---
 
+## 🧪 Тесты и линтер
+
+```bash
+cd server
+npm test     # node:test — цены/НДС, файловые пути и hash-маршруты
+npm run lint # ESLint + проверка синтаксиса клиентского JS
+```
+
+CI (`.github/workflows/ci.yml`) запускает оба шага на каждый push и pull request.
+
+---
+
 ## 📡 API-маршруты
 
 | Модуль | Эндпоинт | Описание |
 |--------|----------|----------|
-| Авторизация | `/api/auth` | Логин, проверка токена |
+| Авторизация | `/api/auth` | Логин, `/me`, `/logout`, гостевые права |
 | Клиенты | `/api/clients` | CRUD, поиск, фильтрация |
 | Профиль клиента | `/api/clients/:id/timeline`, `contacts`, `documents` | Таймлайн, контакты, документы |
 | Статусы клиентов | `/api/client-statuses` | Пользовательские статусы |
@@ -180,7 +220,7 @@ psql -h <host> -U <user> -d <db> -f server/src/db/migration_component_documents.
 | Уровни цен | `/api/pricing-levels` | Настройка наценок |
 | Отчёты | `/api/reports` | Аналитические срезы |
 | Дашборд | `/api/dashboard` | KPI, графики |
-| Загрузка файлов | `/api/upload` | Изображения, чертежи, документы |
+| Загрузка файлов | `/api/upload` | Изображения, чертежи, документы (только авторизованным) |
 | ZIP-документы | `/api/component-documents/download-zip` | Массовое скачивание |
 | Роли | `/api/roles` | RBAC матрица прав |
 | Пользователи | `/api/users` | Управление пользователями |

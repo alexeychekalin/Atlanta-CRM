@@ -7,8 +7,10 @@
     "start": "node server/src/index.js",
     "dev": "cd server && npm run dev",
     "db:init": "cd server && npm run db:init",
-    "db:migrate": "cd server && node src/db/migrate_roles.js",
-    "postinstall": "cd server && npm install"
+    "db:migrate": "cd server && npm run db:migrate",
+    "postinstall": "cd server && npm install",
+    "test": "cd server && npm test",
+    "lint": "cd server && npm run lint"
   },
   "keywords": [
     "crm",

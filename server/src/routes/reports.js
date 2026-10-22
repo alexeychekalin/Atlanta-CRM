@@ -5,7 +5,6 @@ const { hasPermission } = require('../middleware/role');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 const path = require('path');
-const fs = require('fs');
 
 const router = express.Router();
 

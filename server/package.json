@@ -9,8 +9,11 @@
     "db:init": "node src/db/seed.js && node src/db/migrate.js && node src/db/migrate_roles.js",
     "db:migrate": "node src/db/migrate.js",
     "db:schema": "psql $DATABASE_URL -f src/db/schema.sql",
-    "demo:init": "node dev/demo-reset.js && node src/db/migrate_roles.js && node dev/demo-seed.js",
-    "demo": "node dev/start-demo.js"
+    "demo:init": "node dev/run.js dev/demo-reset.js && node dev/run.js src/db/migrate.js && node dev/run.js src/db/migrate_roles.js && node dev/run.js dev/demo-seed.js",
+    "demo": "node dev/start-demo.js",
+    "test": "node --test test/*.test.js",
+    "lint": "eslint src dev test eslint.config.js && node scripts/check-client-syntax.js",
+    "demo:migrate": "node dev/run.js src/db/migrate.js"
   },
   "dependencies": {
     "archiver": "^5.3.2",
@@ -28,6 +31,8 @@
     "pg": "^8.13.0"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.11"
+    "@electric-sql/pglite": "^0.5.11",
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5"
   }
 }

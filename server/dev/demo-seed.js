@@ -149,8 +149,6 @@ async function seed() {
       [c.id, m[1], m[2], m[3]]
     );
   }
-  const modRows = (await q('SELECT id, component_id, code FROM component_modifications')).rows;
-  const mod = (article, code) => modRows.find(m => m.component_id === comp(article).id && m.code === code);
 
   // ---------- Чертежи (BOM) ----------
   const drawings = [

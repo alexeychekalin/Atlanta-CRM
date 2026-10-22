@@ -95,7 +95,7 @@ router.get('/:id', auth, async (req, res) => {
 // GET /api/drawings/check-duplicate?name=... — проверка дубликатов по имени
 router.get('/check-duplicate', auth, async (req, res) => {
   try {
-    const { name, client_id } = req.query;
+    const { name } = req.query;
     if (!name) return res.json({ data: [] });
 
     const result = await db.query(

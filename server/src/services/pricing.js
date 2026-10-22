@@ -1,5 +1,3 @@
-const db = require('../db');
-
 const DEFAULT_VAT = { enabled: true, rate: 22 };
 
 function round2(value) {
@@ -15,8 +13,9 @@ function isDrawingItem(item) {
 /**
  * Наценка уровня клиента берётся из БД — клиентское значение игнорируется.
  */
-async function getClientLevelMarkup(clientId, runner = db) {
-  const result = await runner.query(
+async function getClientLevelMarkup(clientId, runner = null) {
+  const database = runner || require('../db');
+  const result = await database.query(
     `SELECT c.id, cpl.markup_pct, cpl.name AS level_name
      FROM clients c
      LEFT JOIN client_pricing_levels cpl ON c.pricing_level_id = cpl.id
@@ -30,9 +29,10 @@ async function getClientLevelMarkup(clientId, runner = db) {
   };
 }
 
-async function getVatSettings(runner = db) {
+async function getVatSettings(runner = null) {
+  const database = runner || require('../db');
   try {
-    const result = await runner.query("SELECT value FROM system_settings WHERE key = 'vat'");
+    const result = await database.query("SELECT value FROM system_settings WHERE key = 'vat'");
     if (result.rows.length === 0) return { ...DEFAULT_VAT };
     const value = result.rows[0].value || {};
     return {
@@ -81,7 +81,7 @@ function normalizeItem(item, levelMarkupPct) {
   };
 }
 
-async function calculateItems(clientId, items, runner = db) {
+async function calculateItems(clientId, items, runner = null) {
   const level = await getClientLevelMarkup(clientId, runner);
   if (!level) {
     const error = new Error('Клиент не найден');
