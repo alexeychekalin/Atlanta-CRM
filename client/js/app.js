@@ -254,6 +254,16 @@ const App = {
   },
 
   navigateTo(page, param) {
+    // Разбираем query-параметры из строки вида 'calculator?drawing=5&client=3'
+    let queryParams = null;
+    if (typeof page === 'string' && page.includes('?')) {
+      const [basePage, qs] = page.split('?');
+      page = basePage;
+      queryParams = {};
+      new URLSearchParams(qs).forEach((v, k) => { queryParams[k] = v; });
+      if (!param) param = queryParams;
+    }
+
     const pageConfig = this.pageMap[page];
     if (!pageConfig) return;
 

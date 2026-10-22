@@ -509,27 +509,49 @@ const ClientProfilePage = {
           </div>
         ` : ''}
         ${drawings.length === 0 ? Table.emptyState('Нет чертежей') : `
-          <div class="file-grid">
-            ${drawings.map(d => {
-              const hasCalc = parseInt(d.components_count) > 0 || d.fixed_price;
-              const cost = parseFloat(d.base_cost) || 0;
-              return `
-              <div class="file-card">
-                <div class="file-icon">${d.file_path ? this.getFileIcon(d.file_type) : '📐'}</div>
-                <div class="file-info">
-                  <div class="file-name">${d.name}</div>
-                  ${hasCalc ? `<div class="file-desc" style="color:var(--accent-teal)">📊 Расчёт: ${Table.formatMoney(cost)}</div>` : ''}
-                  ${d.description ? `<div class="file-desc">${d.description}</div>` : ''}
-                  <div class="file-meta">${new Date(d.created_at).toLocaleDateString('ru-RU')} · ${d.author_name || ''}</div>
-                </div>
-                <div class="file-actions" style="display:flex;gap:6px;flex-wrap:wrap">
-                  ${d.file_path ? `<a href="${d.file_path}" target="_blank" class="btn btn-secondary btn-sm">Открыть</a>` : ''}
-                  ${hasCalc ? `<button class="btn btn-secondary btn-sm" onclick="App.navigateTo('calculator/${d.id}')">🧮 Калькулятор</button>` : ''}
-                  ${!hasCalc ? `<button class="btn btn-secondary btn-sm" onclick="App.navigateTo('calculator?drawing=${d.id}&client=${ClientProfilePage.clientId}')">📊 Рассчитать</button>` : ''}
-                  ${isAdmin ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteDrawing(${d.id})">✕</button>` : ''}
-                </div>
-              </div>
-            `}).join('')}
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Название</th>
+                  <th class="text-right">Стоимость</th>
+                  <th>Дата</th>
+                  <th>Автор</th>
+                  <th class="text-right">Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${drawings.map(d => {
+                  const hasCalc = parseInt(d.components_count) > 0 || d.fixed_price;
+                  const cost = parseFloat(d.base_cost) || 0;
+                  const dateStr = d.created_at ? new Date(d.created_at).toLocaleDateString('ru-RU') : '—';
+                  return `
+                  <tr>
+                    <td>
+                      <div style="display:flex;align-items:center;gap:8px">
+                        <span style="font-size:1.1rem">${d.file_path ? this.getFileIcon(d.file_type) : '📐'}</span>
+                        <div>
+                          <div style="font-weight:600">${d.name}</div>
+                          ${d.description ? `<div style="font-size:0.78rem;color:var(--text-muted)">${d.description}</div>` : ''}
+                          ${hasCalc ? `<span class="badge" style="background:var(--accent-teal);color:#fff;font-size:0.7rem;margin-top:2px">📊 Расчёт</span>` : ''}
+                        </div>
+                      </div>
+                    </td>
+                    <td class="text-right" style="font-weight:600;${hasCalc ? 'color:var(--accent-teal)' : ''}">${hasCalc ? Table.formatMoney(cost) : '—'}</td>
+                    <td class="text-muted" style="font-size:0.83rem">${dateStr}</td>
+                    <td class="text-muted" style="font-size:0.83rem">${d.author_name || '—'}</td>
+                    <td class="text-right">
+                      <div class="table-actions" style="justify-content:flex-end">
+                        ${d.file_path ? `<a href="${d.file_path}" target="_blank" class="btn btn-icon btn-sm" title="Открыть файл" onclick="event.stopPropagation()">📎</a>` : ''}
+                        ${hasCalc ? `<button class="btn btn-icon btn-sm" onclick="App.navigateTo('calculator/${d.id}')" title="Открыть в калькуляторе">🧮</button>` : ''}
+                        ${!hasCalc ? `<button class="btn btn-secondary btn-sm" onclick="App.navigateTo('calculator?drawing=${d.id}&client=${ClientProfilePage.clientId}')">📊 Рассчитать</button>` : ''}
+                        ${isAdmin ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteDrawing(${d.id})" title="Удалить">✕</button>` : ''}
+                      </div>
+                    </td>
+                  </tr>
+                `}).join('')}
+              </tbody>
+            </table>
           </div>
         `}
       `;

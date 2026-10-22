@@ -1,6 +1,6 @@
 /* Drawings Page — Рассчитанные чертежи (Шаблоны и расчёты) */
 const DrawingsPage = {
-  viewMode: 'grid', // 'grid' | 'table'
+  viewMode: 'table', // 'grid' | 'table'
   groupByClient: false,
   selectedClientId: '',
   searchQuery: '',

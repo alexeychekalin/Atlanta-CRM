@@ -10,11 +10,16 @@ const CalculatorPage = {
   pendingDrawingId: null,
   pendingClientId: null,
 
-  async render(drawingId) {
+  async render(drawingIdOrParams) {
     const content = document.getElementById('content-area');
 
-    // Если передан drawingId — запомним для автозагрузки после рендера
-    if (drawingId) this.pendingDrawingId = drawingId;
+    // Поддержка query-параметров {drawing, client} и простого drawingId
+    if (drawingIdOrParams && typeof drawingIdOrParams === 'object') {
+      if (drawingIdOrParams.drawing) this.pendingDrawingId = drawingIdOrParams.drawing;
+      if (drawingIdOrParams.client) this.pendingClientId = drawingIdOrParams.client;
+    } else if (drawingIdOrParams) {
+      this.pendingDrawingId = drawingIdOrParams;
+    }
 
     // Загрузить справочники
     const [principalsRes, clientsRes, catRes, compRes, drawRes] = await Promise.all([
@@ -181,17 +186,28 @@ const CalculatorPage = {
     zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('drag-over'); if (e.dataTransfer.files[0]) this.uploadDrawing(e.dataTransfer.files[0]); });
     input.addEventListener('change', (e) => { if (e.target.files[0]) this.uploadDrawing(e.target.files[0]); });
 
-    // Если есть отложенная загрузка шаблона — выполняем
-    if (this.pendingDrawingId) {
-      const drawingId = this.pendingDrawingId;
-      this.pendingDrawingId = null;
-      // Загружаем шаблон и устанавливаем клиента
-      await this.loadTemplate(drawingId);
-      // Выставить клиента из шаблона если есть
-      if (this.pendingClientId) {
-        const clientSelect = document.getElementById('calc-client');
-        clientSelect.value = this.pendingClientId;
-        this.pendingClientId = null;
+    // Если есть отложенная загрузка — выполняем
+    const pendingDrawingId = this.pendingDrawingId;
+    const pendingClientId = this.pendingClientId;
+    this.pendingDrawingId = null;
+    this.pendingClientId = null;
+
+    // Сначала ставим клиента (если есть)
+    if (pendingClientId) {
+      const clientSelect = document.getElementById('calc-client');
+      if (clientSelect) {
+        clientSelect.value = pendingClientId;
+        await this.onClientChange(pendingClientId);
+      }
+    }
+
+    // Загружаем чертёж/шаблон (если есть)
+    if (pendingDrawingId) {
+      await this.loadTemplate(pendingDrawingId);
+      // Если шаблон привязал клиента и клиент ещё не был выставлен
+      const clientSelect = document.getElementById('calc-client');
+      if (clientSelect && clientSelect.value && !pendingClientId) {
+        await this.onClientChange(clientSelect.value);
       }
     }
   },
