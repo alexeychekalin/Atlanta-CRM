@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { calculateDrawingPrice, resolveLevelMarkup } = require('../src/services/drawings');
+const { calculateDrawingPrice, resolveLevelMarkup, resolveFixedPrice } = require('../src/services/drawings');
 
 test('цена чертежа: наценка уровня клиента считается сверху', () => {
   const price = calculateDrawingPrice({
@@ -47,4 +47,38 @@ test('наценка связи клиента переопределяет ур
   assert.equal(resolveLevelMarkup({ linkMarkupPct: null, ...base }), 30);
   assert.equal(resolveLevelMarkup({ linkMarkupPct: null, clientLevelPct: null, drawingLevelPct: 15 }), 15);
   assert.equal(resolveLevelMarkup({ linkMarkupPct: null, clientLevelPct: null, drawingLevelPct: null }), 0);
+});
+
+test('фикс-цена: у клиента своя, иначе действует общая цена чертежа', () => {
+  assert.equal(resolveFixedPrice({ linkFixedPrice: 52000, drawingFixedPrice: 48500 }), 52000);
+  assert.equal(resolveFixedPrice({ linkFixedPrice: null, drawingFixedPrice: 48500 }), 48500);
+  assert.equal(resolveFixedPrice({ linkFixedPrice: '', drawingFixedPrice: '48500' }), 48500);
+  assert.equal(resolveFixedPrice({ linkFixedPrice: 0, drawingFixedPrice: null }), null);
+  assert.equal(resolveFixedPrice({}), null);
+});
+
+test('фикс-цена клиента важнее уровня цен и наценок', () => {
+  const common = { subtotal: 13610, globalMarkupPct: 5, globalMarkupRub: 100 };
+
+  const clientA = calculateDrawingPrice({
+    ...common,
+    fixedPrice: resolveFixedPrice({ linkFixedPrice: 52000, drawingFixedPrice: 48500 }),
+    levelMarkupPct: 30,
+  });
+  const clientB = calculateDrawingPrice({
+    ...common,
+    fixedPrice: resolveFixedPrice({ linkFixedPrice: null, drawingFixedPrice: 48500 }),
+    levelMarkupPct: 15,
+  });
+  const clientC = calculateDrawingPrice({
+    subtotal: 13610,
+    fixedPrice: resolveFixedPrice({}),
+    levelMarkupPct: 5,
+    globalMarkupPct: 0,
+    globalMarkupRub: 0,
+  });
+
+  assert.equal(clientA.total, 52000);
+  assert.equal(clientB.total, 48500);
+  assert.equal(clientC.total, 14290.5);
 });

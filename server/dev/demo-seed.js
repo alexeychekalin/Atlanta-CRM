@@ -181,18 +181,19 @@ async function seed() {
   const drawingIds = [];
   for (const d of drawings) {
     const res = await q(
-      `INSERT INTO drawings (name, description, client_id, fixed_price, created_by, created_at)
-       VALUES ($1,$2,$3,$4,1, now() - ($5::int * interval '1 day')) RETURNING id`,
-      [d.name, d.desc, clientId(d.client), d.fixed || null, Math.floor(Math.random() * 90) + 5]
+      `INSERT INTO drawings (name, description, client_id, created_by, created_at)
+       VALUES ($1,$2,$3,1, now() - ($4::int * interval '1 day')) RETURNING id`,
+      [d.name, d.desc, clientId(d.client), Math.floor(Math.random() * 90) + 5]
     );
     const id = res.rows[0].id;
     drawingIds.push({ id, ...d });
     if (d.client) {
-      // Чертёж привязан к клиенту (общий BOM может быть у нескольких клиентов)
+      // Чертёж привязан к клиенту (общий BOM может быть у нескольких клиентов).
+      // Фикс-цена — своя у каждого клиента.
       await q(
-        `INSERT INTO drawing_clients (drawing_id, client_id) VALUES ($1, $2)
+        `INSERT INTO drawing_clients (drawing_id, client_id, fixed_price) VALUES ($1, $2, $3)
          ON CONFLICT (drawing_id, client_id) DO NOTHING`,
-        [id, clientId(d.client)]
+        [id, clientId(d.client), d.fixed || null]
       );
     }
     for (const it of d.items) {
@@ -203,6 +204,16 @@ async function seed() {
         [id, compRow.id, it[1], it[2], it[3]]
       );
     }
+  }
+
+  // Общий BOM у второго клиента: та же спецификация, другая цена
+  if (drawingIds[1]) {
+    await q(
+      `INSERT INTO drawing_clients (drawing_id, client_id, markup_pct)
+       VALUES ($1, (SELECT id FROM clients WHERE name LIKE 'ООО «АгроТрак»%' LIMIT 1), 0)
+       ON CONFLICT (drawing_id, client_id) DO NOTHING`,
+      [drawingIds[1].id]
+    );
   }
 
   // ---------- Заказы ----------

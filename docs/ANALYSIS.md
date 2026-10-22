@@ -150,8 +150,10 @@ component_categories 1──* components 1──* component_modifications 1─�
 drawings 1──* drawing_components *──1 components
                                   *──0..1 component_modifications
           (quantity, item_markup_pct, item_markup_rub)
-drawings.fixed_price — режим «фиксированная цена без BOM»
-drawings.client_id → clients
+drawing_clients (drawing_id, client_id, markup_pct, markup_rub, fixed_price)
+          — цена для конкретного клиента: фикс-сумма или наценка поверх BOM
+drawings.fixed_price — общая фикс-цена (fallback, если у клиента не задана)
+drawings.client_id → clients (владелец/источник загрузки)
 ```
 
 **Продажи**
@@ -488,7 +490,7 @@ total     = (subtotal + levelAmt) × (1 + global_markup%) + global_markup₽
 | INFRA-03 | ✅ | Реестр `schema_migrations`, `npm run db:migrate`; `deploy.sh`/`update.sh` используют runner | 18 миграций применены, повторный запуск — 0 новых |
 | INFRA-04 | ✅ | `db:init` = seed → migrate → migrate_roles; роль `guest` и матрицы прав создаются автоматически | чистая БД → `admin`, `viewer`, 5 ролей с правами |
 | INFRA-05 | ✅ | `package-lock.json` в репозитории, `npm ci` в CI/Docker | `npm ci` из чистого клона |
-| INFRA-06 | ✅ | `node:test` (25 тестов: цены/НДС, цена чертежа по уровню, фильты шаблонов калькулятора, файловые пути, hash-маршруты), ESLint 9, GitHub Actions | `npm test` (20/20), `npm run lint` |
+| INFRA-06 | ✅ | `node:test` (27 тестов: цены/НДС, цена чертежа по уровню, фикс-цена на связи клиента, фильты шаблонов калькулятора, файловые пути, hash-маршруты), ESLint 9, GitHub Actions | `npm test` (27/27), `npm run lint` |
 | INFRA-07 | 🟡 | Пул БД закрывается по сигналу, но при ошибке пула процесс по-прежнему завершается | — |
 | BIZ-09, BIZ-12…15, INFRA-08…14, UX-05…12 | ⏳ | Не входили в раунды P0–P1 и «чертежи» (P2–P3) | — |
 

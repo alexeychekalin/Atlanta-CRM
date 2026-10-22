@@ -68,7 +68,8 @@ router.get('/drawings', auth, async (req, res) => {
         CASE WHEN d.fixed_price IS NOT NULL THEN d.fixed_price
           ELSE COALESCE(SUM(COALESCE(cm.price_override, comp.price) * dc.quantity), 0)
         END AS base_cost,
-        CASE WHEN d.fixed_price IS NOT NULL THEN d.fixed_price
+        CASE WHEN COALESCE(dlc.fixed_price, d.fixed_price) IS NOT NULL
+          THEN COALESCE(dlc.fixed_price, d.fixed_price)
           ELSE ROUND(
             COALESCE(SUM(
               (COALESCE(cm.price_override, comp.price) * dc.quantity) * (1 + COALESCE(dc.item_markup_pct, 0)/100)
@@ -79,6 +80,7 @@ router.get('/drawings', auth, async (req, res) => {
             + COALESCE(d.global_markup_rub, 0)
           , 2)
         END AS total_cost,
+        COALESCE(dlc.fixed_price, d.fixed_price) AS client_fixed_price,
         EXISTS (SELECT 1 FROM drawing_calculations calc
                  WHERE calc.drawing_id = d.id AND calc.client_id = $1) AS is_calculated
        FROM drawings d
@@ -91,7 +93,7 @@ router.get('/drawings', auth, async (req, res) => {
        LEFT JOIN client_pricing_levels cpl ON cpl.id = cl.pricing_level_id
        WHERE (d.client_id = $1 OR dlc.id IS NOT NULL)
          AND d.archived_at IS NULL
-       GROUP BY d.id, u.full_name, dlc.markup_pct, cpl.markup_pct
+       GROUP BY d.id, u.full_name, dlc.markup_pct, cpl.markup_pct, dlc.fixed_price
        ORDER BY d.created_at DESC`,
       [req.params.id]
     );
@@ -218,7 +220,8 @@ router.get('/calculations', auth, async (req, res) => {
         CASE WHEN d.fixed_price IS NOT NULL THEN d.fixed_price
           ELSE COALESCE(SUM(COALESCE(cm.price_override, comp.price) * dc.quantity), 0)
         END AS base_cost,
-        CASE WHEN d.fixed_price IS NOT NULL THEN d.fixed_price
+        CASE WHEN COALESCE(dlc.fixed_price, d.fixed_price) IS NOT NULL
+          THEN COALESCE(dlc.fixed_price, d.fixed_price)
           ELSE ROUND(
             COALESCE(SUM(
               (COALESCE(cm.price_override, comp.price) * dc.quantity) * (1 + COALESCE(dc.item_markup_pct, 0)/100)
@@ -240,7 +243,7 @@ router.get('/calculations', auth, async (req, res) => {
       WHERE (d.client_id = $1 OR dlc.id IS NOT NULL)
         AND d.archived_at IS NULL
         AND (d.fixed_price IS NOT NULL OR EXISTS (SELECT 1 FROM drawing_components dc2 WHERE dc2.drawing_id = d.id))
-      GROUP BY d.id, u.full_name, dlc.markup_pct, cpl.markup_pct
+      GROUP BY d.id, u.full_name, dlc.markup_pct, cpl.markup_pct, dlc.fixed_price
       ORDER BY d.created_at DESC
     `, [req.params.id]);
 

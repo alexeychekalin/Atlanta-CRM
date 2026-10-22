@@ -230,6 +230,7 @@ CREATE TABLE IF NOT EXISTS drawing_clients (
   client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
   markup_pct NUMERIC(5,2),
   markup_rub NUMERIC(14,2) NOT NULL DEFAULT 0,
+  fixed_price NUMERIC(14,2),
   created_at TIMESTAMP DEFAULT now(),
   UNIQUE (drawing_id, client_id)
 );

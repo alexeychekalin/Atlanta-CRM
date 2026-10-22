@@ -1492,51 +1492,13 @@ const ClientProfilePage = {
     } catch (err) { Toast.error(err.message); }
   },
 
-  // Загрузка чертежа с проверкой дубликатов
+  // Загрузка чертежа: название = имя файла, комментарий — в описание.
+  // Один BOM может быть у нескольких клиентов, поэтому тот же файл не дублируем,
+  // а привязываем существующий чертёж к клиенту.
   uploadDrawing() {
-    this._uploadFile('Загрузить чертёж', 'drawing', async (fileRes, name, desc) => {
-      // Проверка дубликатов
-      try {
-        const dupRes = await API.get(`/drawings/check-duplicate?name=${encodeURIComponent(name)}`);
-        const duplicates = (dupRes.data || []).filter(d => d.client_id !== this.clientId || d.name !== name);
-
-        if (duplicates.length > 0) {
-          // Найдены похожие — предложить выбрать
-          const dupList = duplicates.map(d =>
-            `<div style="padding:10px;border:1px solid var(--border);border-radius:8px;margin:6px 0;cursor:pointer;transition:background 0.15s"
-                  onmouseenter="this.style.background='var(--bg-hover)'" onmouseleave="this.style.background=''"
-                  onclick="ClientProfilePage._useDuplicate(${d.id})">
-              <strong>${d.name}</strong>
-              <span style="color:var(--text-muted);font-size:0.85rem">${d.client_name ? ' · ' + d.client_name : ''}</span>
-              ${parseInt(d.components_count) > 0 ? '<span style="color:var(--accent-teal);margin-left:6px">📊 с расчётом</span>' : ''}
-            </div>`
-          ).join('');
-
-          Modal.open({
-            title: '⚠️ Найдены похожие чертежи',
-            body: `
-              <p style="margin-bottom:12px">Найдены чертежи с похожим названием:</p>
-              ${dupList}
-              <hr style="margin:16px 0;border:0;border-top:1px solid var(--border)">
-              <p style="color:var(--text-muted);font-size:0.88rem">Или загрузить как новый чертёж:</p>
-            `,
-            footer: `
-              <button class="btn btn-secondary" onclick="Modal.close()">Отмена</button>
-              <button class="btn btn-primary" onclick="ClientProfilePage._uploadDrawingNew('${name.replace(/'/g, "\\'")}', '${fileRes.path}', '${fileRes.file_type || fileRes.path.split('.').pop()}', '${(desc || '').replace(/'/g, "\\'")}')">Загрузить как новый</button>
-            `,
-          });
-          return;
-        }
-      } catch (e) { /* ignore duplicate check errors, proceed with upload */ }
-
-      // Нет дубликатов — загрузить
-      await API.post(`/clients/${this.clientId}/documents/drawings`, {
-        name, file_path: fileRes.path, file_type: fileRes.file_type || fileRes.path.split('.').pop(), description: desc,
-      });
-      Toast.success('Чертёж загружен');
-      Modal.close();
-      this.switchTab('drawings');
-    });
+    this._uploadFile('Загрузить чертёж', 'drawing', async (fileRes, name, comment) => {
+      await this._uploadDrawingNew(name, fileRes.path, fileRes.file_type || fileRes.path.split('.').pop(), comment);
+    }, { nameFromFile: true });
   },
 
   async _uploadDrawingNew(name, filePath, fileType, desc) {
@@ -1561,17 +1523,6 @@ const ClientProfilePage = {
     } catch (err) { Toast.error(err.message); }
   },
 
-  async _useDuplicate(drawingId) {
-    // Один BOM может быть привязан к нескольким клиентам: не отбираем чертёж
-    // у прежнего владельца, а добавляем связь.
-    try {
-      await API.post(`/drawings/${drawingId}/clients`, { client_id: this.clientId });
-      Toast.success('Чертёж привязан к клиенту');
-      Modal.close();
-      this.switchTab('drawings');
-    } catch (err) { Toast.error(err.message); }
-  },
-
   // Загрузка документа
   uploadDocument() {
     this._uploadFile('Загрузить документ', 'drawing', async (fileRes, name, desc) => {
@@ -1584,12 +1535,27 @@ const ClientProfilePage = {
     });
   },
 
-  _uploadFile(title, uploadType, onSave) {
+  _uploadFile(title, uploadType, onSave, options = {}) {
+    const nameFromFile = !!options.nameFromFile;
+    const nameField = nameFromFile
+      ? `<div id="upload-name-hint" style="padding:8px 12px;background:var(--bg-tertiary);border-radius:8px;font-size:0.85rem;color:var(--text-secondary)">
+           Название чертежа: <strong id="upload-name-display">выберите файл</strong>
+           <span style="color:var(--text-muted)">— берётся из имени файла</span>
+           <input type="hidden" id="upload-name">
+         </div>`
+      : '<div class="form-group"><label>Название *</label><input type="text" class="form-control" id="upload-name"></div>';
+    const descField = nameFromFile
+      ? `<div class="form-group">
+           <label>Комментарий</label>
+           <textarea class="form-control" id="upload-desc" rows="2" placeholder="Что это за чертёж, версия, примечания"></textarea>
+         </div>`
+      : '<div class="form-group"><label>Описание</label><input type="text" class="form-control" id="upload-desc"></div>';
+
     Modal.open({
       title,
       body: `
-        <div class="form-group"><label>Название *</label><input type="text" class="form-control" id="upload-name"></div>
-        <div class="form-group"><label>Описание</label><input type="text" class="form-control" id="upload-desc"></div>
+        ${nameField}
+        ${descField}
         <div class="form-group">
           <label>Файл *</label>
           <div class="upload-zone" id="upload-file-zone" style="padding:20px;text-align:center">
@@ -1619,8 +1585,12 @@ const ClientProfilePage = {
         uploadedFile = await API.upload(`/upload/${uploadType}`, formData);
         status.textContent = `✅ ${uploadedFile.originalname}`;
         document.getElementById('upload-save-btn').disabled = false;
-        if (!document.getElementById('upload-name').value) {
-          document.getElementById('upload-name').value = e.target.files[0].name.replace(/\.[^.]+$/, '');
+        const fileName = e.target.files[0].name.replace(/\.[^.]+$/, '');
+        if (nameFromFile) {
+          document.getElementById('upload-name').value = fileName;
+          document.getElementById('upload-name-display').textContent = fileName;
+        } else if (!document.getElementById('upload-name').value) {
+          document.getElementById('upload-name').value = fileName;
         }
       } catch (err) {
         status.textContent = '❌ Ошибка загрузки';

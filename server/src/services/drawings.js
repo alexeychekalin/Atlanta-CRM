@@ -54,6 +54,23 @@ function calculateDrawingPrice({ subtotal, fixedPrice, levelMarkupPct, globalMar
   };
 }
 
+function toPositiveNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return round2(number);
+}
+
+/**
+ * Фиксированная цена: у клиента своя, если задана; иначе — общая у чертежа.
+ * `null` означает «считать по BOM».
+ */
+function resolveFixedPrice({ linkFixedPrice, drawingFixedPrice }) {
+  const link = toPositiveNumber(linkFixedPrice);
+  if (link !== null) return link;
+  return toPositiveNumber(drawingFixedPrice);
+}
+
 /** Наценка связи клиента: ручная переопределяет уровень цен. */
 function resolveLevelMarkup({ linkMarkupPct, clientLevelPct, drawingLevelPct }) {
   for (const candidate of [linkMarkupPct, clientLevelPct, drawingLevelPct]) {
@@ -64,4 +81,4 @@ function resolveLevelMarkup({ linkMarkupPct, clientLevelPct, drawingLevelPct }) 
   return 0;
 }
 
-module.exports = { round2, calculateDrawingPrice, resolveLevelMarkup };
+module.exports = { round2, calculateDrawingPrice, resolveLevelMarkup, resolveFixedPrice };
