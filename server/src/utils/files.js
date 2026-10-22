@@ -1,4 +1,6 @@
 const path = require('path');
+const crypto = require('crypto');
+const fs = require('fs');
 
 // Корень пользовательских файлов. Все пути из БД/запросов обязаны находиться внутри него.
 const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
@@ -34,6 +36,20 @@ function normalizeUploadPath(value) {
   if (!absolute) return null;
   const relative = path.relative(UPLOADS_DIR, absolute).split(path.sep).join('/');
   return UPLOADS_URL_PREFIX + relative;
+}
+
+/**
+ * SHA-256 загруженного файла по его URL-пути.
+ * Нужен, чтобы не хранить один и тот же файл чертежа дважды.
+ */
+function fileSha256(value) {
+  const absolute = safeUploadPath(value);
+  if (!absolute || !fs.existsSync(absolute)) return null;
+  try {
+    return crypto.createHash('sha256').update(fs.readFileSync(absolute)).digest('hex');
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -83,6 +99,7 @@ function hasValidSignature(filePath, ext) {
 }
 
 module.exports = {
+  fileSha256,
   UPLOADS_DIR,
   UPLOADS_URL_PREFIX,
   safeUploadPath,

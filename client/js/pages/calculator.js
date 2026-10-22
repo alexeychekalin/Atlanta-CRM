@@ -9,6 +9,8 @@ const CalculatorPage = {
   drawingFile: null,
   pendingDrawingId: null,
   pendingClientId: null,
+  currentDrawingId: null,
+  clientDrawings: [],
 
   async render(drawingIdOrParams) {
     const content = document.getElementById('content-area');
@@ -36,6 +38,8 @@ const CalculatorPage = {
     this.drawings = drawRes.data;
     this.bomItems = [];
     this.drawingFile = null;
+    this.currentDrawingId = null;
+    this.clientDrawings = [];
 
     content.innerHTML = `
       <div class="calc-layout">
@@ -48,10 +52,21 @@ const CalculatorPage = {
               ${this.drawings.length > 0 ? `
                 <select class="filter-select" id="calc-template" style="width:auto" onchange="CalculatorPage.loadTemplate(this.value)">
                   <option value="">Загрузить шаблон...</option>
-                  ${this.drawings.map(d => `<option value="${d.id}">${esc(d.name)} (${d.components_count} комп.)</option>`).join('')}
                 </select>
               ` : ''}
             </div>
+            ${this.drawings.length > 0 ? `
+              <div style="display:flex;gap:14px;font-size:0.78rem;color:var(--text-secondary);padding:0 0 10px;flex-wrap:wrap">
+                <label style="display:flex;gap:5px;align-items:center;cursor:pointer">
+                  <input type="checkbox" id="calc-only-client" checked onchange="CalculatorPage.refreshTemplateOptions()">
+                  только чертежи клиента
+                </label>
+                <label style="display:flex;gap:5px;align-items:center;cursor:pointer">
+                  <input type="checkbox" id="calc-only-new" onchange="CalculatorPage.refreshTemplateOptions()">
+                  без расчёта
+                </label>
+              </div>
+            ` : ''}
             <div class="upload-zone" id="calc-drawing-zone" style="min-height:100px">
               <div id="calc-drawing-preview">
                 <div style="padding:20px;text-align:center;color:var(--text-muted)">
@@ -188,6 +203,9 @@ const CalculatorPage = {
     zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('drag-over'); if (e.dataTransfer.files[0]) this.uploadDrawing(e.dataTransfer.files[0]); });
     input.addEventListener('change', (e) => { if (e.target.files[0]) this.uploadDrawing(e.target.files[0]); });
 
+    // Построить отфильтрованный список шаблонов
+    await this.refreshTemplateOptions();
+
     // Если есть отложенная загрузка — выполняем
     const pendingDrawingId = this.pendingDrawingId;
     const pendingClientId = this.pendingClientId;
@@ -214,9 +232,52 @@ const CalculatorPage = {
     }
   },
 
-  // === При выборе клиента — показать его расчёты ===
+  // === Фильтрация шаблонов по клиенту ===
+  // Чертежи клиента: привязанные к нему (client_ids) или его собственные.
+  // Универсальные (без привязок) показываем отдельной группой.
+  async refreshTemplateOptions() {
+    const select = document.getElementById('calc-template');
+    if (!select) return;
+
+    const clientId = document.getElementById('calc-client')?.value || '';
+    const onlyClient = document.getElementById('calc-only-client')?.checked;
+    const onlyNew = document.getElementById('calc-only-new')?.checked;
+
+    let calculatedIds = new Set();
+    if (clientId) {
+      try {
+        const res = await API.get(`/drawings?client_id=${clientId}&archived=0`);
+        this.clientDrawings = res.data || [];
+        calculatedIds = new Set(this.clientDrawings.filter(d => d.is_calculated).map(d => d.id));
+      } catch { this.clientDrawings = []; }
+    } else {
+      this.clientDrawings = [];
+    }
+
+    const forClient = new Set(this.clientDrawings.map(d => d.id));
+    let list = this.drawings.filter(d => !d.archived_at);
+    if (clientId && onlyClient) list = list.filter(d => forClient.has(d.id));
+    if (clientId && onlyNew) list = list.filter(d => forClient.has(d.id) && !calculatedIds.has(d.id));
+
+    const own = clientId ? list.filter(d => forClient.has(d.id)) : [];
+    const universal = list.filter(d => !(d.client_ids || []).length && !forClient.has(d.id));
+    const others = list.filter(d => !own.includes(d) && !universal.includes(d));
+
+    const opt = (d) => {
+      const calc = calculatedIds.has(d.id) ? ' · ✅ рассчитан' : '';
+      return `<option value="${d.id}">${esc(d.name)} (${d.components_count} комп.${calc})</option>`;
+    };
+
+    select.innerHTML = '<option value="">Загрузить шаблон...</option>' +
+      (own.length ? `<optgroup label="Чертежи клиента">${own.map(opt).join('')}</optgroup>` : '') +
+      (universal.length ? `<optgroup label="Универсальные (общий BOM)">${universal.map(opt).join('')}</optgroup>` : '') +
+      (others.length ? `<optgroup label="Другие клиенты">${others.map(opt).join('')}</optgroup>` : '');
+  },
+
+  // === При выборе клиента — показать его чертежи ===
   async onClientChange(clientId) {
     const container = document.getElementById('calc-client-drawings');
+    await this.refreshTemplateOptions();
     if (!clientId) {
       container.style.display = 'none';
       container.innerHTML = '';
@@ -224,9 +285,8 @@ const CalculatorPage = {
     }
 
     try {
-      const res = await API.get(`/clients/${clientId}/documents/calculations`);
-      const calcs = res.data;
-      if (calcs.length === 0) {
+      const list = this.clientDrawings || [];
+      if (list.length === 0) {
         container.style.display = 'none';
         container.innerHTML = '';
         return;
@@ -235,11 +295,11 @@ const CalculatorPage = {
       container.style.display = 'block';
       container.innerHTML = `
         <div style="padding:8px 0 0;border-top:1px solid var(--border);margin-top:8px">
-          <label style="font-size:0.82rem;color:var(--text-secondary);display:block;margin-bottom:6px">📋 Сохранённые расчёты клиента</label>
-          <div style="display:flex;flex-direction:column;gap:4px;max-height:160px;overflow-y:auto">
-            ${calcs.map(c => `
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--bg-main);border-radius:6px;border:1px solid var(--border);cursor:pointer;transition:background 0.15s" 
-                   onmouseenter="this.style.background='var(--bg-hover)'" 
+          <label style="font-size:0.82rem;color:var(--text-secondary);display:block;margin-bottom:6px">📐 Чертежи клиента</label>
+          <div style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto">
+            ${list.map(c => `
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--bg-main);border-radius:6px;border:1px solid var(--border);cursor:pointer;transition:background 0.15s"
+                   onmouseenter="this.style.background='var(--bg-hover)'"
                    onmouseleave="this.style.background='var(--bg-main)'"
                    onclick="CalculatorPage.loadTemplate(${c.id})">
                 <div>
@@ -247,8 +307,8 @@ const CalculatorPage = {
                   <div style="font-size:0.75rem;color:var(--text-muted)">${c.components_count} комп. · ${new Date(c.created_at).toLocaleDateString('ru-RU')}</div>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px">
-                  <span style="font-weight:600;font-size:0.85rem;color:var(--accent-teal)">${Table.formatMoney(c.base_cost)}</span>
-                  <span style="font-size:0.8rem;color:var(--text-muted)">→</span>
+                  <span class="badge" style="font-size:0.7rem;background:${c.is_calculated ? 'var(--accent-teal)' : 'var(--bg-tertiary)'};color:${c.is_calculated ? '#fff' : 'var(--text-muted)'}">${c.is_calculated ? '✅ рассчитан' : 'новый'}</span>
+                  <span style="font-weight:600;font-size:0.85rem;color:var(--accent-teal)">${Table.formatMoney(c.total_cost)}</span>
                 </div>
               </div>
             `).join('')}
@@ -291,9 +351,10 @@ const CalculatorPage = {
 
   // === Загрузка шаблона ===
   async loadTemplate(drawingId) {
-    if (!drawingId) return;
+    if (!drawingId) { this.currentDrawingId = null; return; }
     try {
       const drawing = await API.get(`/drawings/${drawingId}`);
+      this.currentDrawingId = drawing.id;
       this.bomItems = (drawing.components || []).map(c => {
         // Использовать цену модификации, если есть
         const effectivePrice = c.modification_price !== null && c.modification_price !== undefined
@@ -775,6 +836,8 @@ const CalculatorPage = {
   },
 
   // === Сохранить как шаблон чертежа ===
+  // Если шаблон уже загружен — обновляем его, а не создаём дубликат.
+  // Один файл = один чертёж: при совпадении хэша предлагаем привязать существующий.
   async saveAsDrawing(autoName) {
     if (!this.isFixedPrice() && this.bomItems.length === 0) { Toast.error('Добавьте хотя бы один компонент или укажите фиксированную цену'); return null; }
 
@@ -782,35 +845,77 @@ const CalculatorPage = {
     const name = autoName || prompt('Название шаблона чертежа:', defaultName);
     if (!name) return null;
 
-    const client_id = document.getElementById('calc-client').value || null;
+    const clientSelect = document.getElementById('calc-client');
+    const client_id = clientSelect.value || null;
+    const fixedPrice = this.isFixedPrice() ? (parseFloat(document.getElementById('calc-fixed-price')?.value) || 0) : null;
+    const globalMarkupPct = parseFloat(document.getElementById('calc-markup-pct')?.value) || 0;
+    const globalMarkupRub = parseFloat(document.getElementById('calc-markup-rub')?.value) || 0;
+
+    const payload = {
+      name,
+      file_path: document.getElementById('calc-drawing-path').value || null,
+      file_type: document.getElementById('calc-drawing-type').value || null,
+      description: '',
+      fixed_price: fixedPrice,
+      level_markup_pct: (() => {
+        const opt = clientSelect?.selectedOptions[0];
+        return parseFloat(opt?.dataset?.markup) || 0;
+      })(),
+      global_markup_pct: globalMarkupPct,
+      global_markup_rub: globalMarkupRub,
+      components: this.bomItems.map(item => ({
+        component_id: item.component_id,
+        modification_id: item.modification_id || null,
+        quantity: item.quantity,
+        item_markup_pct: item.item_markup_pct,
+        item_markup_rub: item.item_markup_rub,
+      })),
+    };
 
     try {
-      const fixedPrice = this.isFixedPrice() ? (parseFloat(document.getElementById('calc-fixed-price')?.value) || 0) : null;
-      const result = await API.post('/drawings', {
-        name,
-        file_path: document.getElementById('calc-drawing-path').value || null,
-        file_type: document.getElementById('calc-drawing-type').value || null,
-        description: '',
-        client_id,
-        fixed_price: fixedPrice,
-        level_markup_pct: (() => {
-          const opt = document.getElementById('calc-client')?.selectedOptions[0];
-          return parseFloat(opt?.dataset?.markup) || 0;
-        })(),
-        global_markup_pct: parseFloat(document.getElementById('calc-markup-pct')?.value) || 0,
-        global_markup_rub: parseFloat(document.getElementById('calc-markup-rub')?.value) || 0,
-        components: this.bomItems.map(item => ({
-          component_id: item.component_id,
-          modification_id: item.modification_id || null,
-          quantity: item.quantity,
-          item_markup_pct: item.item_markup_pct,
-          item_markup_rub: item.item_markup_rub,
-        })),
-      });
-      if (!autoName) Toast.success('Шаблон чертежа сохранён!');
-      // Обновить список шаблонов
+      let result;
+
+      if (this.currentDrawingId) {
+        // Обновляем существующий BOM (общий для всех привязанных клиентов).
+        // description не передаём, чтобы не затереть описание чертежа.
+        const { description, ...updatePayload } = payload;
+        result = await API.put(`/drawings/${this.currentDrawingId}`, updatePayload);
+        if (client_id) await API.post(`/drawings/${result.id}/clients`, { client_id });
+      } else {
+        try {
+          result = await API.post('/drawings', { ...payload, client_id });
+        } catch (err) {
+          const dup = err.data && err.data.duplicate;
+          if (err.status === 409 && dup) {
+            const owners = dup.client_names || 'без клиента';
+            if (!confirm(`Такой файл уже загружен: «${dup.name}» (${owners}).\n\nИспользовать существующий чертёж?`)) return null;
+            if (client_id) await API.post(`/drawings/${dup.id}/clients`, { client_id });
+            result = await API.get(`/drawings/${dup.id}`);
+            Toast.info('Используем существующий чертёж');
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      this.currentDrawingId = result.id;
+
+      // Снимок расчёта в журнал (суммы пересчитывает сервер)
+      try {
+        await API.post('/drawings/calculations', {
+          drawing_id: result.id,
+          client_id,
+          principal_id: document.getElementById('calc-principal')?.value || null,
+          global_markup_pct: globalMarkupPct,
+          global_markup_rub: globalMarkupRub,
+          ...(fixedPrice !== null ? { fixed_price: fixedPrice } : {}),
+        });
+      } catch (e) { /* журнал не должен блокировать сохранение */ }
+
+      if (!autoName) Toast.success(this.currentDrawingId ? 'Шаблон чертежа сохранён!' : 'Шаблон создан!');
       const drawRes = await API.get('/drawings');
       this.drawings = drawRes.data;
+      await this.refreshTemplateOptions();
       return result;
     } catch (err) { Toast.error(err.message); return null; }
   },
@@ -829,8 +934,9 @@ const CalculatorPage = {
     const totalMarkupPct = parseFloat(document.getElementById('calc-markup-pct')?.value) || 0;
     const totalMarkupRub = parseFloat(document.getElementById('calc-markup-rub')?.value) || 0;
 
-    // Автоматически сохраняем шаблон
-    await this.saveAsDrawing(drawingName);
+    // Автоматически сохраняем шаблон и запоминаем его id
+    const savedDrawing = await this.saveAsDrawing(drawingName);
+    if (!savedDrawing) return;
 
     let grandTotal;
     let metadata;
@@ -894,6 +1000,8 @@ const CalculatorPage = {
       product_name: drawingName,
       unit_price: grandTotal,
       quantity: 1,
+      is_drawing: true,
+      drawing_id: savedDrawing.id || null,
       metadata,
     }];
 

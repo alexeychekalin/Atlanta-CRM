@@ -4,6 +4,7 @@ const DrawingsPage = {
   groupByClient: false,
   selectedClientId: '',
   searchQuery: '',
+  showArchived: false,
   allDrawings: [],
   clients: [],
   searchTimeout: null,
@@ -34,6 +35,8 @@ const DrawingsPage = {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
         </div>
+        <button class="btn btn-secondary" onclick="DrawingsPage.openJournal()">🧾 Журнал расчётов</button>
+        <button class="btn btn-icon ${this.showArchived ? 'btn-primary' : 'btn-secondary'}" id="btn-archive-toggle" title="Показать архив" onclick="DrawingsPage.toggleArchive()">📦</button>
         <button class="btn btn-primary" onclick="App.navigateTo('calculator')">+ Рассчитать чертёж</button>
       </div>
 
@@ -192,7 +195,7 @@ const DrawingsPage = {
   async loadData() {
     try {
       const [drawRes, clientRes] = await Promise.all([
-        API.get('/drawings'),
+        API.get(`/drawings?archived=${this.showArchived ? '1' : '0'}`),
         API.get('/clients'),
       ]);
 
@@ -219,14 +222,15 @@ const DrawingsPage = {
     const chipsEl = document.getElementById('drawings-client-chips');
     if (!chipsEl) return;
 
-    // Считаем количество чертежей по клиентам
+    // Считаем количество чертежей по клиентам (общий BOM — у всех привязанных)
     const clientCounts = {};
     let noClientCount = 0;
     this.allDrawings.forEach(d => {
-      if (d.client_id) {
-        clientCounts[d.client_id] = (clientCounts[d.client_id] || 0) + 1;
-      } else {
+      const ids = [...new Set([...(d.client_ids || []), ...(d.client_id ? [d.client_id] : [])])];
+      if (ids.length === 0) {
         noClientCount++;
+      } else {
+        ids.forEach(id => { clientCounts[id] = (clientCounts[id] || 0) + 1; });
       }
     });
 
@@ -287,11 +291,13 @@ const DrawingsPage = {
   getFilteredDrawings() {
     const q = (this.searchQuery || '').toLowerCase().trim();
     return this.allDrawings.filter(d => {
-      // Фильтр по клиенту
+      // Фильтр по клиенту: учитываем и владельца, и привязки (общий BOM)
+      const linkedIds = [...new Set([...(d.client_ids || []), ...(d.client_id ? [d.client_id] : [])])]
+        .map(String);
       if (this.selectedClientId === 'none') {
-        if (d.client_id) return false;
+        if (linkedIds.length > 0) return false;
       } else if (this.selectedClientId) {
-        if (String(d.client_id) !== String(this.selectedClientId)) return false;
+        if (!linkedIds.includes(String(this.selectedClientId))) return false;
       }
 
       // Поиск
@@ -354,7 +360,7 @@ const DrawingsPage = {
           <div style="flex:1;min-width:0">
             <div class="drawing-card-title">${esc(d.name)}</div>
             <div class="drawing-card-client">
-              👤 ${esc(clientName)}
+              👤 ${esc(clientName)}${d.archived_at ? ' · 📦 архив' : ''}
             </div>
           </div>
         </div>
@@ -407,6 +413,7 @@ const DrawingsPage = {
                     <div style="font-weight:600;display:flex;align-items:center;gap:8px">
                       <span style="font-size:1.1rem">📐</span>
                       <span>${esc(d.name)}</span>
+                      ${d.archived_at ? '<span class="badge" style="background:var(--bg-tertiary);color:var(--text-muted);font-size:0.7rem">📦 архив</span>' : ''}
                     </div>
                     ${d.description ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-left:24px">${esc(d.description)}</div>` : ''}
                   </td>
@@ -426,10 +433,10 @@ const DrawingsPage = {
                   <td class="text-right" onclick="event.stopPropagation()">
                     <div class="table-actions" style="justify-content:flex-end">
                       <button class="btn btn-icon btn-sm" onclick="DrawingsPage.openDrawingModal(${d.id})" title="Просмотр">👁️</button>
-                      <button class="btn btn-icon btn-sm" onclick="App.navigateTo('calculator', ${d.id})" title="Открыть в калькуляторе">🧮</button>
-                      ${canDelete ? `
-                        <button class="btn btn-icon btn-sm btn-danger" onclick="DrawingsPage.deleteDrawing(${d.id})" title="Удалить">✕</button>
-                      ` : ''}
+                      ${d.archived_at ? '' : `<button class="btn btn-icon btn-sm" onclick="App.navigateTo('calculator', ${d.id})" title="Открыть в калькуляторе">🧮</button>`}
+                      ${canDelete ? (d.archived_at
+                        ? `<button class="btn btn-icon btn-sm" onclick="DrawingsPage.restoreDrawing(${d.id})" title="Вернуть из архива">♻️</button>`
+                        : `<button class="btn btn-icon btn-sm btn-danger" onclick="DrawingsPage.deleteDrawing(${d.id})" title="В архив">📥</button>`) : ''}
                     </div>
                   </td>
                 </tr>
@@ -562,8 +569,10 @@ const DrawingsPage = {
                   <td class="text-right" onclick="event.stopPropagation()">
                     <div class="table-actions" style="justify-content:flex-end">
                       <button class="btn btn-icon btn-sm" onclick="DrawingsPage.openDrawingModal(${d.id})" title="Просмотр">👁️</button>
-                      <button class="btn btn-icon btn-sm" onclick="App.navigateTo('calculator', ${d.id})" title="В калькулятор">🧮</button>
-                      ${API.can('drawings', 'delete') ? `<button class="btn btn-icon btn-sm btn-danger" onclick="DrawingsPage.deleteDrawing(${d.id})" title="Удалить">✕</button>` : ''}
+                      ${d.archived_at ? '' : `<button class="btn btn-icon btn-sm" onclick="App.navigateTo('calculator', ${d.id})" title="В калькулятор">🧮</button>`}
+                      ${API.can('drawings', 'delete') ? (d.archived_at
+                        ? `<button class="btn btn-icon btn-sm" onclick="DrawingsPage.restoreDrawing(${d.id})" title="Вернуть из архива">♻️</button>`
+                        : `<button class="btn btn-icon btn-sm btn-danger" onclick="DrawingsPage.deleteDrawing(${d.id})" title="В архив">📥</button>`) : ''}
                     </div>
                   </td>
                 </tr>
@@ -607,9 +616,11 @@ const DrawingsPage = {
       if (drawing.fixed_price !== null && drawing.fixed_price !== undefined && parseFloat(drawing.fixed_price) > 0) {
         subtotalWithMarkups = parseFloat(drawing.fixed_price);
       } else {
+        // Уровень цен (снимок) + общая наценка — как в списке чертежей
+        const levelPct = parseFloat(drawing.level_markup_pct) || 0;
         const globalPct = parseFloat(drawing.global_markup_pct) || 0;
         const globalRub = parseFloat(drawing.global_markup_rub) || 0;
-        subtotalWithMarkups = subtotalWithMarkups * (1 + globalPct / 100) + globalRub;
+        subtotalWithMarkups = subtotalWithMarkups * (1 + levelPct / 100) * (1 + globalPct / 100) + globalRub;
       }
 
       const dateStr = drawing.created_at ? new Date(drawing.created_at).toLocaleString('ru-RU') : '—';
@@ -632,6 +643,10 @@ const DrawingsPage = {
                     </a>
                   ` : '<span class="text-muted">Без клиента</span>'}
                 </span>
+                ${(drawing.clients || []).length > 0 ? `
+                  <span>👥 Привязан: ${drawing.clients.map(c => `<a href="#" class="client-link" onclick="Modal.close();App.navigateTo('client-profile', ${c.client_id})">${esc(c.client_name)}</a>${parseFloat(c.markup_pct) ? ` (+${parseFloat(c.markup_pct)}%)` : ''}`).join(', ')}</span>
+                ` : ''}
+                ${drawing.approval_id ? `<span>📋 Из согласования #${drawing.approval_id} · ${esc(drawing.approval_status) || ''}</span>` : ''}
                 <span>👨‍💼 Автор: <strong>${esc(drawing.author_name) || '—'}</strong></span>
                 <span>📅 Создан: <strong>${dateStr}</strong></span>
               </div>
@@ -721,15 +736,15 @@ const DrawingsPage = {
       const footerHtml = `
         <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
           <div>
-            ${API.can('drawings', 'delete') ? `
-              <button class="btn btn-danger btn-sm" onclick="DrawingsPage.deleteDrawing(${drawing.id})">Удалить чертёж</button>
-            ` : ''}
+            ${API.can('drawings', 'delete') ? (drawing.archived_at
+              ? `<button class="btn btn-secondary btn-sm" onclick="DrawingsPage.restoreDrawing(${drawing.id})">♻️ Вернуть из архива</button>`
+              : `<button class="btn btn-danger btn-sm" onclick="DrawingsPage.deleteDrawing(${drawing.id})">📥 В архив</button>`) : ''}
           </div>
           <div style="display:flex;gap:8px">
             <button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>
-            <button class="btn btn-primary" onclick="Modal.close();App.navigateTo('calculator', ${drawing.id})">
+            ${drawing.archived_at ? '' : `<button class="btn btn-primary" onclick="Modal.close();App.navigateTo('calculator', ${drawing.id})">
               🧮 Открыть в калькуляторе
-            </button>
+            </button>`}
           </div>
         </div>
       `;
@@ -747,15 +762,67 @@ const DrawingsPage = {
   },
 
   async deleteDrawing(id) {
-    if (!await ConfirmDialog.delete('Вы уверены, что хотите удалить этот чертёж?')) return;
+    if (!await ConfirmDialog.delete('Отправить чертёж в архив? Он сохранится, и его можно будет вернуть.')) return;
 
     try {
       await API.del(`/drawings/${id}`);
-      Toast.success('Чертёж успешно удалён');
+      Toast.success('Чертёж в архиве');
       Modal.close();
       await this.loadData();
     } catch (err) {
-      Toast.error('Ошибка при удалении: ' + err.message);
+      Toast.error('Ошибка при архивации: ' + err.message);
+    }
+  },
+
+  async restoreDrawing(id) {
+    try {
+      await API.post(`/drawings/${id}/restore`, {});
+      Toast.success('Чертёж восстановлен из архива');
+      Modal.close();
+      await this.loadData();
+    } catch (err) {
+      Toast.error('Ошибка восстановления: ' + err.message);
+    }
+  },
+
+  toggleArchive() {
+    this.showArchived = !this.showArchived;
+    const btn = document.getElementById('btn-archive-toggle');
+    if (btn) btn.className = `btn btn-icon ${this.showArchived ? 'btn-primary' : 'btn-secondary'}`;
+    this.loadData();
+  },
+
+  async openJournal() {
+    try {
+      const res = await API.get('/drawings/calculations?limit=200');
+      const rows = res.data || [];
+      Modal.open({
+        title: '🧾 Журнал расчётов',
+        wide: true,
+        body: rows.length === 0
+          ? Table.emptyState('Расчётов пока нет')
+          : `
+            <div class="table-wrapper" style="max-height:60vh;overflow-y:auto">
+              <table class="data-table">
+                <thead><tr><th>Дата</th><th>Чертёж</th><th>Клиент</th><th class="text-right">BOM</th><th class="text-right">Уровень</th><th class="text-right">Итого</th><th>Автор</th></tr></thead>
+                <tbody>
+                  ${rows.map(r => `
+                    <tr>
+                      <td class="text-muted" style="font-size:0.83rem">${new Date(r.created_at).toLocaleString('ru-RU')}</td>
+                      <td><strong>${esc(r.drawing_name)}</strong>${r.drawing_archived_at ? ' <span class="badge" style="background:var(--bg-tertiary);color:var(--text-muted)">архив</span>' : ''}</td>
+                      <td>${esc(r.client_name) || '—'}</td>
+                      <td class="text-right">${Table.formatMoney(r.subtotal)}</td>
+                      <td class="text-right">${parseFloat(r.level_markup_pct) > 0 ? '+' : ''}${parseFloat(r.level_markup_pct) || 0}%</td>
+                      <td class="text-right" style="font-weight:600;color:var(--accent-teal)">${Table.formatMoney(r.total)}</td>
+                      <td class="text-muted" style="font-size:0.83rem">${esc(r.author_name) || '—'}</td>
+                    </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>`,
+        footer: '<button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>',
+      });
+    } catch (err) {
+      Toast.error(err.message);
     }
   },
 };

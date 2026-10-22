@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS component_documents (
   created_at TIMESTAMP DEFAULT now()
 );
 
--- Чертежи (шаблоны расчётов)
+-- Чертежи (BOM + файл). Удаление — только в архив (archived_at).
 CREATE TABLE IF NOT EXISTS drawings (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
@@ -215,6 +215,39 @@ CREATE TABLE IF NOT EXISTS drawings (
   level_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
   global_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
   global_markup_rub NUMERIC(14,2) NOT NULL DEFAULT 0,
+  approval_id INT,
+  file_hash VARCHAR(64),
+  archived_at TIMESTAMP,
+  created_by INT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP DEFAULT now()
+);
+
+-- Привязка чертежа к клиентам: один BOM — много клиентов.
+-- markup_pct/markup_rub — ручная наценка поверх уровня цен клиента.
+CREATE TABLE IF NOT EXISTS drawing_clients (
+  id SERIAL PRIMARY KEY,
+  drawing_id INT NOT NULL REFERENCES drawings(id) ON DELETE CASCADE,
+  client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  markup_pct NUMERIC(5,2),
+  markup_rub NUMERIC(14,2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT now(),
+  UNIQUE (drawing_id, client_id)
+);
+
+-- Журнал расчётов (снимок цен на момент расчёта)
+CREATE TABLE IF NOT EXISTS drawing_calculations (
+  id SERIAL PRIMARY KEY,
+  drawing_id INT REFERENCES drawings(id) ON DELETE SET NULL,
+  client_id INT REFERENCES clients(id) ON DELETE SET NULL,
+  principal_id INT REFERENCES principals(id) ON DELETE SET NULL,
+  drawing_name VARCHAR(255) NOT NULL DEFAULT '',
+  subtotal NUMERIC(14,2) NOT NULL DEFAULT 0,
+  level_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  global_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  global_markup_rub NUMERIC(14,2) NOT NULL DEFAULT 0,
+  fixed_price NUMERIC(14,2),
+  total NUMERIC(14,2) NOT NULL DEFAULT 0,
+  lines JSONB,
   created_by INT REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMP DEFAULT now()
 );
@@ -273,6 +306,12 @@ CREATE TABLE IF NOT EXISTS drawing_approval_comments (
   text TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT now()
 );
+
+-- Связь чертежа с заданием согласования (таблица drawings создана выше,
+-- drawing_approvals — только что). Один согласованный файл = один чертёж.
+ALTER TABLE drawings DROP CONSTRAINT IF EXISTS drawings_approval_id_fkey;
+ALTER TABLE drawings ADD CONSTRAINT drawings_approval_id_fkey
+  FOREIGN KEY (approval_id) REFERENCES drawing_approvals(id) ON DELETE SET NULL;
 
 -- Хронология клиента
 CREATE TABLE IF NOT EXISTS client_timeline (
@@ -417,6 +456,12 @@ CREATE INDEX IF NOT EXISTS idx_component_modifications_component ON component_mo
 CREATE INDEX IF NOT EXISTS idx_component_modification_images_mod ON component_modification_images(modification_id);
 CREATE INDEX IF NOT EXISTS idx_component_documents_component ON component_documents(component_id);
 CREATE INDEX IF NOT EXISTS idx_drawing_components_drawing ON drawing_components(drawing_id);
+CREATE INDEX IF NOT EXISTS idx_drawings_archived ON drawings(archived_at);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_drawings_approval ON drawings(approval_id) WHERE approval_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_drawings_file_hash ON drawings(file_hash) WHERE file_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_drawing_clients_client ON drawing_clients(client_id);
+CREATE INDEX IF NOT EXISTS idx_drawing_calculations_client ON drawing_calculations(client_id);
+CREATE INDEX IF NOT EXISTS idx_drawing_calculations_drawing ON drawing_calculations(drawing_id);
 CREATE INDEX IF NOT EXISTS idx_drawing_components_component ON drawing_components(component_id);
 CREATE INDEX IF NOT EXISTS idx_drawing_approvals_client ON drawing_approvals(client_id);
 CREATE INDEX IF NOT EXISTS idx_drawing_approvals_status ON drawing_approvals(status);

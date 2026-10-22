@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
-const { normalizeUploadPath } = require('../utils/files');
+const { normalizeUploadPath, fileSha256 } = require('../utils/files');
 
 const router = express.Router({ mergeParams: true });
 
@@ -21,7 +21,8 @@ router.get('/', auth, async (req, res) => {
     const result = await db.query(
       `SELECT da.*, u.full_name AS created_by_name,
         (SELECT COUNT(*) FROM drawing_approval_versions WHERE approval_id = da.id) AS versions_count,
-        (SELECT COUNT(*) FROM drawing_approval_comments WHERE approval_id = da.id) AS comments_count
+        (SELECT COUNT(*) FROM drawing_approval_comments WHERE approval_id = da.id) AS comments_count,
+        (SELECT d.id FROM drawings d WHERE d.approval_id = da.id) AS drawing_id
        FROM drawing_approvals da
        LEFT JOIN users u ON da.created_by = u.id
        WHERE da.client_id = $1
@@ -40,7 +41,8 @@ router.get('/:id', auth, async (req, res) => {
   try {
     const [approval, versions, comments] = await Promise.all([
       db.query(
-        `SELECT da.*, u.full_name AS created_by_name
+        `SELECT da.*, u.full_name AS created_by_name,
+                (SELECT d.id FROM drawings d WHERE d.approval_id = da.id) AS drawing_id
          FROM drawing_approvals da
          LEFT JOIN users u ON da.created_by = u.id
          WHERE da.id = $1 AND da.client_id = $2`,
@@ -144,6 +146,78 @@ router.delete('/:id', auth, async (req, res) => {
     res.json({ message: 'Согласование удалено' });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/clients/:clientId/approvals/:id/to-drawing
+// Согласование завершено (approved) → переносим файл в чертежи.
+// Идемпотентно: повторный вызов возвращает уже созданный чертёж.
+router.post('/:id/to-drawing', auth, async (req, res) => {
+  const pgClient = await db.pool.connect();
+  try {
+    const canEditDrawings = req.user.role === 'admin'
+      || (req.user.permissions && req.user.permissions.drawings && req.user.permissions.drawings.edit === true);
+    if (!canEditDrawings) {
+      return res.status(403).json({ error: 'Недостаточно прав для работы с чертежами' });
+    }
+
+    await pgClient.query('BEGIN');
+
+    const approvalRes = await pgClient.query(
+      'SELECT * FROM drawing_approvals WHERE id = $1 AND client_id = $2',
+      [req.params.id, req.params.clientId]
+    );
+    if (approvalRes.rows.length === 0) {
+      await pgClient.query('ROLLBACK');
+      return res.status(404).json({ error: 'Согласование не найдено' });
+    }
+    const approval = approvalRes.rows[0];
+
+    const existing = await pgClient.query('SELECT * FROM drawings WHERE approval_id = $1', [approval.id]);
+    if (existing.rows.length > 0) {
+      await pgClient.query('COMMIT');
+      return res.json({ ...existing.rows[0], already_exists: true });
+    }
+
+    if (approval.status !== 'approved') {
+      await pgClient.query('ROLLBACK');
+      return res.status(400).json({ error: 'Сначала подтвердите согласование' });
+    }
+
+    const versionRes = await pgClient.query(
+      `SELECT * FROM drawing_approval_versions
+        WHERE approval_id = $1 ORDER BY version_number DESC, id DESC LIMIT 1`,
+      [approval.id]
+    );
+    if (versionRes.rows.length === 0) {
+      await pgClient.query('ROLLBACK');
+      return res.status(400).json({ error: 'В согласовании нет файлов' });
+    }
+    const version = versionRes.rows[0];
+
+    const drawingRes = await pgClient.query(
+      `INSERT INTO drawings (name, file_path, file_type, description, client_id, approval_id, file_hash, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [approval.title, version.file_path, version.file_type || null,
+        approval.description || `Согласованный чертёж (согласование #${approval.id})`,
+        approval.client_id, approval.id, fileSha256(version.file_path), req.user.id]
+    );
+    const drawing = drawingRes.rows[0];
+
+    await pgClient.query(
+      `INSERT INTO drawing_clients (drawing_id, client_id) VALUES ($1, $2)
+       ON CONFLICT (drawing_id, client_id) DO NOTHING`,
+      [drawing.id, approval.client_id]
+    );
+
+    await pgClient.query('COMMIT');
+    res.status(201).json(drawing);
+  } catch (err) {
+    await pgClient.query('ROLLBACK').catch(() => {});
+    console.error('Ошибка переноса согласования в чертёж:', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    pgClient.release();
   }
 });
 

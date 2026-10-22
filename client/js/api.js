@@ -142,7 +142,11 @@ const API = {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.error || 'Произошла ошибка');
+      const error = new Error(data.error || 'Произошла ошибка');
+      // Статус и тело ответа нужны UI, например чтобы отличить 409 «дубликат файла»
+      error.status = response.status;
+      error.data = data;
+      throw error;
     }
 
     return data;

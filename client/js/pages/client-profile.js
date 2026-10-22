@@ -524,7 +524,8 @@ const ClientProfilePage = {
               <tbody>
                 ${drawings.map(d => {
                   const hasCalc = parseInt(d.components_count) > 0 || d.fixed_price;
-                  const cost = parseFloat(d.base_cost) || 0;
+                  const isCalculated = d.is_calculated === true;
+                  const cost = parseFloat(d.total_cost ?? d.base_cost) || 0;
                   const dateStr = d.created_at ? new Date(d.created_at).toLocaleDateString('ru-RU') : '—';
                   return `
                   <tr>
@@ -534,7 +535,9 @@ const ClientProfilePage = {
                         <div>
                           <div style="font-weight:600">${esc(d.name)}</div>
                           ${d.description ? `<div style="font-size:0.78rem;color:var(--text-muted)">${esc(d.description)}</div>` : ''}
-                          ${hasCalc ? `<span class="badge" style="background:var(--accent-teal);color:#fff;font-size:0.7rem;margin-top:2px">📊 Расчёт</span>` : ''}
+                          ${isCalculated
+                            ? `<span class="badge" style="background:var(--accent-teal);color:#fff;font-size:0.7rem;margin-top:2px">✅ рассчитан</span>`
+                            : (hasCalc ? `<span class="badge" style="background:var(--bg-tertiary);color:var(--text-muted);font-size:0.7rem;margin-top:2px">без расчёта</span>` : '')}
                         </div>
                       </div>
                     </td>
@@ -546,7 +549,7 @@ const ClientProfilePage = {
                         ${d.file_path ? `<a href="${esc(d.file_path)}" target="_blank" rel="noopener" class="btn btn-icon btn-sm" title="Открыть файл" onclick="event.stopPropagation()">📎</a>` : ''}
                         ${hasCalc ? `<button class="btn btn-icon btn-sm" onclick="App.navigateTo('calculator/${d.id}')" title="Открыть в калькуляторе">🧮</button>` : ''}
                         ${!hasCalc ? `<button class="btn btn-secondary btn-sm" onclick="App.navigateTo('calculator?drawing=${d.id}&client=${ClientProfilePage.clientId}')">📊 Рассчитать</button>` : ''}
-                        ${canDelete ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteDrawing(${d.id})" title="Удалить">✕</button>` : ''}
+                        ${canDelete ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteDrawing(${d.id})" title="В архив">📥</button>` : ''}
                       </div>
                     </td>
                   </tr>
@@ -562,32 +565,72 @@ const ClientProfilePage = {
   // =================== РАСЧЁТЫ ===================
   async loadCalculations(container) {
     try {
-      const res = await API.get(`/clients/${this.clientId}/documents/calculations`);
-      const calcs = res.data;
-      if (calcs.length === 0) { container.innerHTML = Table.emptyState('Нет расчётов из калькулятора'); return; }
+      const [calcsRes, journalRes] = await Promise.all([
+        API.get(`/clients/${this.clientId}/documents/calculations`),
+        API.get(`/clients/${this.clientId}/documents/calculation-journal`),
+      ]);
+      const calcs = calcsRes.data;
+      const journal = journalRes.data;
+
+      const journalHtml = journal.length === 0
+        ? Table.emptyState('Журнал расчётов пуст')
+        : `
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead><tr><th>Дата</th><th>Чертёж</th><th>Принципал</th><th class="text-right">Сумма BOM</th><th class="text-right">Уровень</th><th class="text-right">Итого</th><th>Автор</th></tr></thead>
+              <tbody>
+                ${journal.map(j => `
+                  <tr>
+                    <td class="text-muted" style="font-size:0.83rem">${new Date(j.created_at).toLocaleString('ru-RU')}</td>
+                    <td>
+                      <strong>${esc(j.drawing_name)}</strong>
+                      ${j.drawing_archived_at ? '<span class="badge" style="background:var(--bg-tertiary);color:var(--text-muted);margin-left:6px">архив</span>' : ''}
+                      ${j.drawing_id ? `<a href="#" onclick="event.preventDefault();App.navigateTo('calculator', ${j.drawing_id})" style="margin-left:8px;color:var(--accent-teal);font-size:0.8rem">открыть</a>` : ''}
+                    </td>
+                    <td>${esc(j.principal_name) || '—'}</td>
+                    <td class="text-right">${Table.formatMoney(j.subtotal)}</td>
+                    <td class="text-right">${parseFloat(j.level_markup_pct) > 0 ? '+' : ''}${parseFloat(j.level_markup_pct) || 0}%</td>
+                    <td class="text-right" style="font-weight:600;color:var(--accent-teal)">${Table.formatMoney(j.total)}</td>
+                    <td class="text-muted" style="font-size:0.83rem">${esc(j.author_name) || '—'}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>`;
+
+      const templatesHtml = calcs.length === 0
+        ? Table.emptyState('Нет чертежей с составом')
+        : `
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead><tr><th>Шаблон</th><th class="text-center">Компонентов</th><th class="text-right">Цена для клиента</th><th>Дата</th><th>Автор</th><th class="text-right"></th></tr></thead>
+              <tbody>
+                ${calcs.map(c => `
+                  <tr style="cursor:pointer" onclick="ClientProfilePage.viewCalculation(${c.id})" title="Нажмите для просмотра чертежа">
+                    <td>
+                      <strong>${esc(c.name)}</strong>
+                      ${c.file_path ? `<a href="${esc(c.file_path)}" target="_blank" onclick="event.stopPropagation()" style="font-size:0.8rem;color:var(--accent-teal);margin-left:8px">📎</a>` : ''}
+                    </td>
+                    <td class="text-center"><span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary)">${c.components_count || 0} шт.</span></td>
+                    <td class="text-right" style="font-weight:600">${Table.formatMoney(c.total_cost)}</td>
+                    <td>${new Date(c.created_at).toLocaleDateString('ru-RU')}</td>
+                    <td>${esc(c.author_name) || '—'}</td>
+                    <td class="text-right" onclick="event.stopPropagation()">
+                      <button class="btn btn-secondary btn-sm" onclick="ClientProfilePage.viewCalculation(${c.id})">👁 Просмотр</button>
+                      <button class="btn btn-secondary btn-sm" onclick="App.navigateTo('calculator', ${c.id})" title="Открыть в калькуляторе">🧮</button>
+                    </td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>`;
 
       container.innerHTML = `
-        <div class="table-wrapper">
-          <table class="data-table">
-            <thead><tr><th>Шаблон</th><th class="text-center">Компонентов</th><th class="text-right">Базовая стоимость</th><th>Дата</th><th>Автор</th><th class="text-right"></th></tr></thead>
-            <tbody>
-              ${calcs.map(c => `
-                <tr style="cursor:pointer" onclick="ClientProfilePage.viewCalculation(${c.id})" title="Нажмите для просмотра чертежа">
-                  <td>
-                    <strong>${c.name}</strong>
-                    ${c.file_path ? `<a href="${c.file_path}" target="_blank" onclick="event.stopPropagation()" style="font-size:0.8rem;color:var(--accent-teal);margin-left:8px">📎</a>` : ''}
-                  </td>
-                  <td class="text-center"><span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary)">${c.components_count || 0} шт.</span></td>
-                  <td class="text-right" style="font-weight:600">${Table.formatMoney(c.base_cost)}</td>
-                  <td>${new Date(c.created_at).toLocaleDateString('ru-RU')}</td>
-                  <td>${c.author_name || '—'}</td>
-                  <td class="text-right" onclick="event.stopPropagation()">
-                    <button class="btn btn-secondary btn-sm" onclick="ClientProfilePage.viewCalculation(${c.id})">👁 Просмотр</button>
-                  </td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
+        <div class="card mb-2">
+          <div class="card-header"><div class="card-title">🧾 Журнал расчётов</div></div>
+          ${journalHtml}
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">📐 Чертежи с составом (шаблоны)</div></div>
+          ${templatesHtml}
         </div>
       `;
     } catch (err) { container.innerHTML = `<div class="empty-state"><div class="empty-state-text">${err.message}</div></div>`; }
@@ -1232,7 +1275,9 @@ const ClientProfilePage = {
                   ${statusOptions}
                 </select>
                 <button class="btn btn-primary btn-sm" onclick="ClientProfilePage.changeApprovalStatus(${a.id})">Сменить</button>
-                ${a.status === 'approved' && lastVersion ? `<button class="btn btn-sm" style="background:#10b981;color:#fff;border:0" onclick="ClientProfilePage.moveToDrawings(${a.id})">📁 В чертежи</button>` : ''}
+                ${a.drawing_id
+                  ? `<button class="btn btn-sm" style="background:#10b981;color:#fff;border:0" onclick="Modal.close();App.navigateTo('calculator', ${a.drawing_id})">📐 Открыть чертёж</button>`
+                  : (a.status === 'approved' && lastVersion ? `<button class="btn btn-sm" style="background:#10b981;color:#fff;border:0" onclick="ClientProfilePage.moveToDrawings(${a.id})">📁 В чертежи</button>` : '')}
               </div>
             ` : ''}
           </div>
@@ -1281,17 +1326,12 @@ const ClientProfilePage = {
 
   async moveToDrawings(approvalId) {
     try {
-      const data = await API.get(`/clients/${this.clientId}/approvals/${approvalId}`);
-      const lastVersion = data.versions[data.versions.length - 1];
-      if (!lastVersion) { Toast.error('Нет файлов для переноса'); return; }
-
-      await API.post(`/clients/${this.clientId}/documents/drawings`, {
-        name: data.title,
-        file_path: lastVersion.file_path,
-        file_type: lastVersion.file_type,
-        description: `Согласованный чертёж (из согласования #${approvalId})`,
-      });
-      Toast.success('Чертёж добавлен в раздел «Чертежи»');
+      const drawing = await API.post(`/clients/${this.clientId}/approvals/${approvalId}/to-drawing`, {});
+      Toast.success(drawing.already_exists
+        ? 'Чертёж уже создан — открываем его'
+        : 'Согласованный чертёж перенесён в «Чертежи»');
+      Modal.close();
+      App.navigateTo('calculator', drawing.id);
     } catch (err) { Toast.error(err.message); }
   },
 
@@ -1501,6 +1541,17 @@ const ClientProfilePage = {
 
   async _uploadDrawingNew(name, filePath, fileType, desc) {
     try {
+      // Сначала пробуем привязать уже существующий чертёж с тем же файлом
+      const dupRes = await API.get(`/drawings/check-duplicate?file_path=${encodeURIComponent(filePath)}`);
+      const sameFile = (dupRes.data || []).find(d => !d.archived_at);
+      if (sameFile) {
+        await API.post(`/drawings/${sameFile.id}/clients`, { client_id: this.clientId });
+        Toast.success('Файл уже есть в системе — чертёж привязан к клиенту');
+        Modal.close();
+        this.switchTab('drawings');
+        return;
+      }
+
       await API.post(`/clients/${this.clientId}/documents/drawings`, {
         name, file_path: filePath, file_type: fileType, description: desc,
       });
@@ -1511,16 +1562,11 @@ const ClientProfilePage = {
   },
 
   async _useDuplicate(drawingId) {
-    // Привязать существующий чертёж к текущему клиенту (если не привязан)
+    // Один BOM может быть привязан к нескольким клиентам: не отбираем чертёж
+    // у прежнего владельца, а добавляем связь.
     try {
-      const drawing = await API.get(`/drawings/${drawingId}`);
-      if (!drawing.client_id || drawing.client_id == this.clientId) {
-        // Привязать к клиенту
-        await API.put(`/drawings/${drawingId}`, { client_id: this.clientId });
-        Toast.success('Чертёж привязан к клиенту');
-      } else {
-        Toast.info(`Чертёж уже привязан к другому клиенту. Откройте его в калькуляторе.`);
-      }
+      await API.post(`/drawings/${drawingId}/clients`, { client_id: this.clientId });
+      Toast.success('Чертёж привязан к клиенту');
       Modal.close();
       this.switchTab('drawings');
     } catch (err) { Toast.error(err.message); }
@@ -1592,8 +1638,8 @@ const ClientProfilePage = {
   },
 
   async deleteDrawing(id) {
-    if (!await ConfirmDialog.delete('Удалить чертёж?')) return;
-    try { await API.del(`/clients/${this.clientId}/documents/drawings/${id}`); Toast.success('Удалено'); this.switchTab('drawings'); }
+    if (!await ConfirmDialog.delete('Отправить чертёж в архив? Он сохранится и его можно будет вернуть.')) return;
+    try { await API.del(`/clients/${this.clientId}/documents/drawings/${id}`); Toast.success('Чертёж в архиве'); this.switchTab('drawings'); }
     catch (err) { Toast.error(err.message); }
   },
 

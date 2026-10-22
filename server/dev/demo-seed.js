@@ -187,6 +187,14 @@ async function seed() {
     );
     const id = res.rows[0].id;
     drawingIds.push({ id, ...d });
+    if (d.client) {
+      // Чертёж привязан к клиенту (общий BOM может быть у нескольких клиентов)
+      await q(
+        `INSERT INTO drawing_clients (drawing_id, client_id) VALUES ($1, $2)
+         ON CONFLICT (drawing_id, client_id) DO NOTHING`,
+        [id, clientId(d.client)]
+      );
+    }
     for (const it of d.items) {
       const compRow = comp(it[0]);
       await q(
