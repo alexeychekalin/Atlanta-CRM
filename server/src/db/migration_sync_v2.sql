@@ -181,4 +181,26 @@ ALTER TABLE proposal_items DROP CONSTRAINT IF EXISTS proposal_items_product_id_f
 -- 12. metadata в order_items
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS metadata JSONB;
 
+-- 13. Фиксированная цена чертежа (без BOM)
+ALTER TABLE drawings ADD COLUMN IF NOT EXISTS fixed_price NUMERIC(14,2);
+
+-- 14. Переименовать file_name → name в client_documents (если старая колонка)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'client_documents' AND column_name = 'file_name') THEN
+    ALTER TABLE client_documents RENAME COLUMN file_name TO name;
+  END IF;
+END $$;
+
+-- 15. Объединение client_drawings → drawings
+INSERT INTO drawings (name, file_path, file_type, description, client_id, created_by, created_at)
+SELECT name, file_path, file_type, description, client_id, uploaded_by, created_at
+FROM client_drawings
+WHERE NOT EXISTS (
+  SELECT 1 FROM drawings d
+  WHERE d.file_path = client_drawings.file_path
+    AND d.client_id = client_drawings.client_id
+)
+ON CONFLICT DO NOTHING;
+
 -- Готово!

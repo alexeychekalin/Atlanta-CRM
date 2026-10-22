@@ -94,6 +94,7 @@ const App = {
 
   init() {
     this.initTheme();
+    this.initGlobalSearch();
     Modal.init();
     LoginPage.init();
 
@@ -311,6 +312,127 @@ const App = {
 
     // Рендер страницы
     pageConfig.render(param);
+  },
+
+  // === Глобальный поиск ===
+  _searchTimer: null,
+  _searchActiveIdx: -1,
+
+  initGlobalSearch() {
+    const input = document.getElementById('global-search-input');
+    const results = document.getElementById('global-search-results');
+    if (!input || !results) return;
+
+    // Ctrl+K / Cmd+K — фокус на поиск
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        input.focus();
+        input.select();
+      }
+    });
+
+    // Ввод с debounce
+    input.addEventListener('input', () => {
+      clearTimeout(this._searchTimer);
+      const q = input.value.trim();
+      if (q.length < 2) { results.style.display = 'none'; return; }
+      this._searchTimer = setTimeout(() => this._doSearch(q), 300);
+    });
+
+    // Клавиатурная навигация
+    input.addEventListener('keydown', (e) => {
+      const items = results.querySelectorAll('.search-result-item');
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        this._searchActiveIdx = Math.min(this._searchActiveIdx + 1, items.length - 1);
+        this._highlightSearchItem(items);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        this._searchActiveIdx = Math.max(this._searchActiveIdx - 1, 0);
+        this._highlightSearchItem(items);
+      } else if (e.key === 'Enter' && this._searchActiveIdx >= 0 && items[this._searchActiveIdx]) {
+        e.preventDefault();
+        items[this._searchActiveIdx].click();
+      } else if (e.key === 'Escape') {
+        results.style.display = 'none';
+        input.blur();
+      }
+    });
+
+    // Закрыть при клике вне
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.global-search-wrap')) {
+        results.style.display = 'none';
+      }
+    });
+  },
+
+  _highlightSearchItem(items) {
+    items.forEach((el, i) => {
+      el.classList.toggle('active', i === this._searchActiveIdx);
+      if (i === this._searchActiveIdx) el.scrollIntoView({ block: 'nearest' });
+    });
+  },
+
+  async _doSearch(q) {
+    const results = document.getElementById('global-search-results');
+    try {
+      const res = await API.get(`/search?q=${encodeURIComponent(q)}`);
+      const data = res.data || [];
+      this._searchActiveIdx = -1;
+
+      if (data.length === 0) {
+        results.innerHTML = '<div class="search-no-results">Ничего не найдено</div>';
+        results.style.display = '';
+        return;
+      }
+
+      // Группировка по типу
+      const typeLabels = {
+        client: 'Клиенты', order: 'Заказы', component: 'Компоненты',
+        drawing: 'Чертежи', proposal: 'КП', manufacturer: 'Производители',
+      };
+      const groups = {};
+      data.forEach(item => {
+        if (!groups[item.type]) groups[item.type] = [];
+        groups[item.type].push(item);
+      });
+
+      let html = '';
+      for (const [type, items] of Object.entries(groups)) {
+        html += `<div class="search-result-group">`;
+        html += `<div class="search-result-group-label">${typeLabels[type] || type}</div>`;
+        items.forEach((item, idx) => {
+          html += `<div class="search-result-item" data-url="${item.url}" onclick="App._onSearchSelect('${item.url}')">
+            <div class="search-result-icon">${item.icon}</div>
+            <div class="search-result-info">
+              <div class="search-result-title">${this._highlightMatch(item.title, q)}</div>
+              <div class="search-result-subtitle">${item.subtitle || ''}</div>
+            </div>
+          </div>`;
+        });
+        html += `</div>`;
+      }
+
+      results.innerHTML = html;
+      results.style.display = '';
+    } catch (err) {
+      results.innerHTML = '<div class="search-no-results">Ошибка поиска</div>';
+      results.style.display = '';
+    }
+  },
+
+  _highlightMatch(text, q) {
+    if (!text || !q) return text || '';
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return text.replace(new RegExp(`(${escaped})`, 'gi'), '<mark style="background:var(--accent-teal);color:#fff;border-radius:2px;padding:0 2px">$1</mark>');
+  },
+
+  _onSearchSelect(url) {
+    document.getElementById('global-search-results').style.display = 'none';
+    document.getElementById('global-search-input').value = '';
+    this.navigateTo(url);
   },
 };
 

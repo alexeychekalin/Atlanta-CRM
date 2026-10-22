@@ -321,6 +321,17 @@ const CalculatorPage = {
       const templateSelect = document.getElementById('calc-template');
       if (templateSelect) templateSelect.value = drawingId;
 
+      // Восстановить фиксированную цену если есть
+      const toggle = document.getElementById('calc-fixed-price-toggle');
+      if (drawing.fixed_price !== null && drawing.fixed_price !== undefined && parseFloat(drawing.fixed_price) > 0) {
+        toggle.checked = true;
+        document.getElementById('calc-fixed-price').value = parseFloat(drawing.fixed_price);
+        this.toggleFixedPrice();
+      } else {
+        toggle.checked = false;
+        this.toggleFixedPrice();
+      }
+
       this.renderBom();
       this.recalc();
       Toast.success(`Шаблон «${drawing.name}» загружен`);
@@ -750,12 +761,14 @@ const CalculatorPage = {
     const client_id = document.getElementById('calc-client').value || null;
 
     try {
+      const fixedPrice = this.isFixedPrice() ? (parseFloat(document.getElementById('calc-fixed-price')?.value) || 0) : null;
       const result = await API.post('/drawings', {
         name,
         file_path: document.getElementById('calc-drawing-path').value || null,
         file_type: document.getElementById('calc-drawing-type').value || null,
         description: '',
         client_id,
+        fixed_price: fixedPrice,
         components: this.bomItems.map(item => ({
           component_id: item.component_id,
           modification_id: item.modification_id || null,

@@ -48,16 +48,23 @@ router.delete('/:docId', auth, async (req, res) => {
   }
 });
 
-// === Чертежи клиента (отдельные от калькулятора) ===
+// === Чертежи клиента (единая таблица drawings) ===
 
-// GET /api/clients/:id/drawings
+// GET /api/clients/:id/drawings — все чертежи клиента
 router.get('/drawings', auth, async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT d.*, u.full_name AS uploaded_by_name
-       FROM client_drawings d
-       LEFT JOIN users u ON d.uploaded_by = u.id
+      `SELECT d.*, u.full_name AS author_name,
+        COUNT(dc.id) AS components_count,
+        CASE WHEN d.fixed_price IS NOT NULL THEN d.fixed_price
+          ELSE COALESCE(SUM(comp.price * dc.quantity), 0)
+        END AS base_cost
+       FROM drawings d
+       LEFT JOIN users u ON d.created_by = u.id
+       LEFT JOIN drawing_components dc ON d.id = dc.drawing_id
+       LEFT JOIN components comp ON dc.component_id = comp.id
        WHERE d.client_id = $1
+       GROUP BY d.id, u.full_name
        ORDER BY d.created_at DESC`,
       [req.params.id]
     );
@@ -67,16 +74,16 @@ router.get('/drawings', auth, async (req, res) => {
   }
 });
 
-// POST /api/clients/:id/drawings
+// POST /api/clients/:id/drawings — загрузить чертёж (файл без BOM)
 router.post('/drawings', auth, async (req, res) => {
   try {
     const { name, file_path, file_type, description } = req.body;
     if (!name || !file_path) return res.status(400).json({ error: 'Укажите название и файл' });
 
     const result = await db.query(
-      `INSERT INTO client_drawings (client_id, name, file_path, file_type, description, uploaded_by)
+      `INSERT INTO drawings (name, file_path, file_type, description, client_id, created_by)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [req.params.id, name, file_path, file_type || null, description || null, req.user.id]
+      [name, file_path, file_type || null, description || null, req.params.id, req.user.id]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -87,7 +94,7 @@ router.post('/drawings', auth, async (req, res) => {
 // DELETE /api/clients/:id/drawings/:drawingId
 router.delete('/drawings/:drawingId', auth, async (req, res) => {
   try {
-    await db.query('DELETE FROM client_drawings WHERE id = $1 AND client_id = $2', [req.params.drawingId, req.params.id]);
+    await db.query('DELETE FROM drawings WHERE id = $1 AND client_id = $2', [req.params.drawingId, req.params.id]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -114,12 +121,14 @@ router.get('/stats', auth, async (req, res) => {
     `, [req.params.id]);
 
     const drawingsCount = await db.query(
-      'SELECT COUNT(*) AS count FROM client_drawings WHERE client_id = $1',
+      'SELECT COUNT(*) AS count FROM drawings WHERE client_id = $1',
       [req.params.id]
     );
 
     const calcsCount = await db.query(
-      'SELECT COUNT(*) AS count FROM drawings WHERE client_id = $1',
+      `SELECT COUNT(*) AS count FROM drawings d
+       WHERE d.client_id = $1
+         AND (d.fixed_price IS NOT NULL OR EXISTS (SELECT 1 FROM drawing_components dc WHERE dc.drawing_id = d.id))`,
       [req.params.id]
     );
 
@@ -139,21 +148,23 @@ router.get('/stats', auth, async (req, res) => {
   }
 });
 
-// === Расчёты (шаблоны калькулятора связанные с клиентом) ===
+// === Расчёты (чертежи с BOM или фикс. ценой) ===
 
 // GET /api/clients/:id/calculations
 router.get('/calculations', auth, async (req, res) => {
   try {
-    // Заказы клиента из калькулятора + шаблоны drawings привязанные к клиенту
     const drawings = await db.query(`
       SELECT d.*, u.full_name AS author_name,
         COUNT(dc.id) AS components_count,
-        COALESCE(SUM(comp.price * dc.quantity), 0) AS base_cost
+        CASE WHEN d.fixed_price IS NOT NULL THEN d.fixed_price
+          ELSE COALESCE(SUM(comp.price * dc.quantity), 0)
+        END AS base_cost
       FROM drawings d
       LEFT JOIN users u ON d.created_by = u.id
       LEFT JOIN drawing_components dc ON d.id = dc.drawing_id
       LEFT JOIN components comp ON dc.component_id = comp.id
       WHERE d.client_id = $1
+        AND (d.fixed_price IS NOT NULL OR EXISTS (SELECT 1 FROM drawing_components dc2 WHERE dc2.drawing_id = d.id))
       GROUP BY d.id, u.full_name
       ORDER BY d.created_at DESC
     `, [req.params.id]);

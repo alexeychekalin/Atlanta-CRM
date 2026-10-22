@@ -201,6 +201,7 @@ CREATE TABLE IF NOT EXISTS drawings (
   file_type VARCHAR(20),
   description TEXT,
   client_id INT REFERENCES clients(id) ON DELETE SET NULL,
+  fixed_price NUMERIC(14,2),
   created_by INT REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMP DEFAULT now()
 );

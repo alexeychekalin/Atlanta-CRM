@@ -30,7 +30,9 @@ router.get('/', auth, async (req, res) => {
         c.phone AS client_phone,
         COUNT(dc.id) AS components_count,
         COALESCE(SUM(comp.price * dc.quantity), 0) AS base_cost,
-        COALESCE(SUM( (comp.price * dc.quantity) * (1 + COALESCE(dc.item_markup_pct, 0)/100) + COALESCE(dc.item_markup_rub, 0) ), 0) AS total_cost
+        CASE WHEN d.fixed_price IS NOT NULL THEN d.fixed_price
+          ELSE COALESCE(SUM( (comp.price * dc.quantity) * (1 + COALESCE(dc.item_markup_pct, 0)/100) + COALESCE(dc.item_markup_rub, 0) ), 0)
+        END AS total_cost
       FROM drawings d
       LEFT JOIN users u ON d.created_by = u.id
       LEFT JOIN clients c ON d.client_id = c.id
@@ -81,20 +83,44 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
+// GET /api/drawings/check-duplicate?name=... — проверка дубликатов по имени
+router.get('/check-duplicate', auth, async (req, res) => {
+  try {
+    const { name, client_id } = req.query;
+    if (!name) return res.json({ data: [] });
+
+    const result = await db.query(
+      `SELECT d.id, d.name, d.file_path, d.file_type, c.name AS client_name,
+        COUNT(dc.id) AS components_count
+       FROM drawings d
+       LEFT JOIN clients c ON d.client_id = c.id
+       LEFT JOIN drawing_components dc ON d.id = dc.drawing_id
+       WHERE d.name ILIKE $1
+       GROUP BY d.id, c.name
+       ORDER BY d.created_at DESC
+       LIMIT 10`,
+      [`%${name}%`]
+    );
+    res.json({ data: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/drawings — создать чертёж с компонентами
 router.post('/', auth, adminOnly, async (req, res) => {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
 
-    const { name, file_path, file_type, description, components, client_id } = req.body;
+    const { name, file_path, file_type, description, components, client_id, fixed_price } = req.body;
     if (!name) return res.status(400).json({ error: 'Укажите название чертежа' });
 
     const drawingRes = await client.query(
-      `INSERT INTO drawings (name, file_path, file_type, description, created_by, client_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO drawings (name, file_path, file_type, description, created_by, client_id, fixed_price)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [name, file_path || null, file_type || null, description || null, req.user.id, client_id || null]
+      [name, file_path || null, file_type || null, description || null, req.user.id, client_id || null, fixed_price || null]
     );
     const drawing = drawingRes.rows[0];
 
@@ -125,7 +151,7 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    const { name, file_path, file_type, description, components, client_id } = req.body;
+    const { name, file_path, file_type, description, components, client_id, fixed_price } = req.body;
 
     const drawingRes = await client.query(
       `UPDATE drawings SET
@@ -133,10 +159,11 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
         file_path = COALESCE($2, file_path),
         file_type = COALESCE($3, file_type),
         description = $4,
-        client_id = $5
-       WHERE id = $6
+        client_id = $5,
+        fixed_price = $6
+       WHERE id = $7
        RETURNING *`,
-      [name, file_path, file_type, description, client_id || null, req.params.id]
+      [name, file_path, file_type, description, client_id || null, fixed_price || null, req.params.id]
     );
     if (drawingRes.rows.length === 0) {
       await client.query('ROLLBACK');

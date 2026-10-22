@@ -494,7 +494,7 @@ const ClientProfilePage = {
     } catch (err) { Toast.error(err.message); }
   },
 
-  // =================== ЧЕРТЕЖИ ===================
+  // =================== ЧЕРТЕЖИ (единый вид) ===================
   async loadDrawings(container) {
     const isAdmin = API.isAdmin();
     try {
@@ -510,20 +510,26 @@ const ClientProfilePage = {
         ` : ''}
         ${drawings.length === 0 ? Table.emptyState('Нет чертежей') : `
           <div class="file-grid">
-            ${drawings.map(d => `
+            ${drawings.map(d => {
+              const hasCalc = parseInt(d.components_count) > 0 || d.fixed_price;
+              const cost = parseFloat(d.base_cost) || 0;
+              return `
               <div class="file-card">
-                <div class="file-icon">${this.getFileIcon(d.file_type)}</div>
+                <div class="file-icon">${d.file_path ? this.getFileIcon(d.file_type) : '📐'}</div>
                 <div class="file-info">
                   <div class="file-name">${d.name}</div>
+                  ${hasCalc ? `<div class="file-desc" style="color:var(--accent-teal)">📊 Расчёт: ${Table.formatMoney(cost)}</div>` : ''}
                   ${d.description ? `<div class="file-desc">${d.description}</div>` : ''}
-                  <div class="file-meta">${new Date(d.created_at).toLocaleDateString('ru-RU')} · ${d.uploaded_by_name || ''}</div>
+                  <div class="file-meta">${new Date(d.created_at).toLocaleDateString('ru-RU')} · ${d.author_name || ''}</div>
                 </div>
-                <div class="file-actions">
-                  <a href="${d.file_path}" target="_blank" class="btn btn-secondary btn-sm">Открыть</a>
+                <div class="file-actions" style="display:flex;gap:6px;flex-wrap:wrap">
+                  ${d.file_path ? `<a href="${d.file_path}" target="_blank" class="btn btn-secondary btn-sm">Открыть</a>` : ''}
+                  ${hasCalc ? `<button class="btn btn-secondary btn-sm" onclick="App.navigateTo('calculator/${d.id}')">🧮 Калькулятор</button>` : ''}
+                  ${!hasCalc ? `<button class="btn btn-secondary btn-sm" onclick="App.navigateTo('calculator?drawing=${d.id}&client=${ClientProfilePage.clientId}')">📊 Рассчитать</button>` : ''}
                   ${isAdmin ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteDrawing(${d.id})">✕</button>` : ''}
                 </div>
               </div>
-            `).join('')}
+            `}).join('')}
           </div>
         `}
       `;
@@ -1421,9 +1427,44 @@ const ClientProfilePage = {
     } catch (err) { Toast.error(err.message); }
   },
 
-  // Загрузка чертежа
+  // Загрузка чертежа с проверкой дубликатов
   uploadDrawing() {
     this._uploadFile('Загрузить чертёж', 'drawing', async (fileRes, name, desc) => {
+      // Проверка дубликатов
+      try {
+        const dupRes = await API.get(`/drawings/check-duplicate?name=${encodeURIComponent(name)}`);
+        const duplicates = (dupRes.data || []).filter(d => d.client_id !== this.clientId || d.name !== name);
+
+        if (duplicates.length > 0) {
+          // Найдены похожие — предложить выбрать
+          const dupList = duplicates.map(d =>
+            `<div style="padding:10px;border:1px solid var(--border);border-radius:8px;margin:6px 0;cursor:pointer;transition:background 0.15s"
+                  onmouseenter="this.style.background='var(--bg-hover)'" onmouseleave="this.style.background=''"
+                  onclick="ClientProfilePage._useDuplicate(${d.id})">
+              <strong>${d.name}</strong>
+              <span style="color:var(--text-muted);font-size:0.85rem">${d.client_name ? ' · ' + d.client_name : ''}</span>
+              ${parseInt(d.components_count) > 0 ? '<span style="color:var(--accent-teal);margin-left:6px">📊 с расчётом</span>' : ''}
+            </div>`
+          ).join('');
+
+          Modal.open({
+            title: '⚠️ Найдены похожие чертежи',
+            body: `
+              <p style="margin-bottom:12px">Найдены чертежи с похожим названием:</p>
+              ${dupList}
+              <hr style="margin:16px 0;border:0;border-top:1px solid var(--border)">
+              <p style="color:var(--text-muted);font-size:0.88rem">Или загрузить как новый чертёж:</p>
+            `,
+            footer: `
+              <button class="btn btn-secondary" onclick="Modal.close()">Отмена</button>
+              <button class="btn btn-primary" onclick="ClientProfilePage._uploadDrawingNew('${name.replace(/'/g, "\\'")}', '${fileRes.path}', '${fileRes.file_type || fileRes.path.split('.').pop()}', '${(desc || '').replace(/'/g, "\\'")}')">Загрузить как новый</button>
+            `,
+          });
+          return;
+        }
+      } catch (e) { /* ignore duplicate check errors, proceed with upload */ }
+
+      // Нет дубликатов — загрузить
       await API.post(`/clients/${this.clientId}/documents/drawings`, {
         name, file_path: fileRes.path, file_type: fileRes.file_type || fileRes.path.split('.').pop(), description: desc,
       });
@@ -1431,6 +1472,33 @@ const ClientProfilePage = {
       Modal.close();
       this.switchTab('drawings');
     });
+  },
+
+  async _uploadDrawingNew(name, filePath, fileType, desc) {
+    try {
+      await API.post(`/clients/${this.clientId}/documents/drawings`, {
+        name, file_path: filePath, file_type: fileType, description: desc,
+      });
+      Toast.success('Чертёж загружен');
+      Modal.close();
+      this.switchTab('drawings');
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  async _useDuplicate(drawingId) {
+    // Привязать существующий чертёж к текущему клиенту (если не привязан)
+    try {
+      const drawing = await API.get(`/drawings/${drawingId}`);
+      if (!drawing.client_id || drawing.client_id == this.clientId) {
+        // Привязать к клиенту
+        await API.put(`/drawings/${drawingId}`, { client_id: this.clientId });
+        Toast.success('Чертёж привязан к клиенту');
+      } else {
+        Toast.info(`Чертёж уже привязан к другому клиенту. Откройте его в калькуляторе.`);
+      }
+      Modal.close();
+      this.switchTab('drawings');
+    } catch (err) { Toast.error(err.message); }
   },
 
   // Загрузка документа

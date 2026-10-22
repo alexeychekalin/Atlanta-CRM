@@ -56,6 +56,7 @@ app.use('/api/equipment-types', optionalAuth, require('./routes/equipment-types'
 app.use('/api/pricing-levels', optionalAuth, require('./routes/pricing-levels'));
 app.use('/api/manufacturers', optionalAuth, require('./routes/manufacturers'));
 app.use('/api/manufacturer-products', optionalAuth, require('./routes/manufacturer-products'));
+app.use('/api/search', optionalAuth, require('./routes/search'));
 
 // ZIP-скачивание документов по списку компонентов (для заказов/калькулятора)
 const archiverPkg = require('archiver');
