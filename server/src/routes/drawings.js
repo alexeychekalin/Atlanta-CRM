@@ -2,63 +2,13 @@ const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { normalizeUploadPath, fileSha256 } = require('../utils/files');
-const { calculateDrawingPrice, resolveLevelMarkup, resolveFixedPrice, round2 } = require('../services/drawings');
+const { round2, priceForClient, resolveFixedPrice, bomSubtotalFromRows, parseFixedPriceInput } = require('../services/drawings');
 
 const router = express.Router();
 
 // --- SQL-фрагменты ---------------------------------------------------------
-
-/**
- * Итоговая стоимость чертежа: наценки позиций → уровень цен → общая наценка.
- * `levelExpr` — SQL-выражение наценки уровня (может зависеть от выбранного клиента).
- */
-function totalCostSql(levelExpr) {
-  return `ROUND(
-    COALESCE(SUM(
-      (COALESCE(cm.price_override, comp.price) * dc.quantity) * (1 + COALESCE(dc.item_markup_pct, 0)/100)
-      + COALESCE(dc.item_markup_rub, 0)
-    ), 0)
-    * (1 + COALESCE(${levelExpr}, 0)/100)
-    * (1 + COALESCE(d.global_markup_pct, 0)/100)
-    + COALESCE(d.global_markup_rub, 0)
-  , 2)`;
-}
-
-/** Сумма BOM с наценками позиций — база для расчёта цены каждого клиента. */
-const BOM_SUBTOTAL_SQL = `COALESCE(SUM(
-  (COALESCE(cm.price_override, comp.price) * dc.quantity) * (1 + COALESCE(dc.item_markup_pct, 0)/100)
-  + COALESCE(dc.item_markup_rub, 0)
-), 0)`;
-
-const BASE_COST_SQL = `CASE WHEN d.fixed_price IS NOT NULL THEN d.fixed_price
-  ELSE COALESCE(SUM(COALESCE(cm.price_override, comp.price) * dc.quantity), 0) END`;
-
-/**
- * Фиксированная цена: сначала для клиента (drawing_clients.fixed_price),
- * затем общая у чертежа. NULL — считать по BOM.
- */
-function fixedPriceSql(clientParam) {
-  return clientParam
-    ? `COALESCE(dl_f.fixed_price, d.fixed_price)`
-    : `d.fixed_price`;
-}
-
-/** Сумма BOM с наценками позиций (без уровня и общей наценки) — как в SQL. */
-function bomSubtotal(rows) {
-  return round2(rows.reduce((sum, row) => {
-    const price = row.modification_price !== null && row.modification_price !== undefined
-      ? parseFloat(row.modification_price) : parseFloat(row.price);
-    const base = price * parseFloat(row.quantity);
-    return sum + base + base * (parseFloat(row.item_markup_pct) || 0) / 100
-      + (parseFloat(row.item_markup_rub) || 0);
-  }, 0));
-}
-
-function totalWithFixedSql(levelExpr, fixedExpr) {
-  return `CASE WHEN ${fixedExpr} IS NOT NULL THEN ${fixedExpr}
-    ELSE ${totalCostSql(levelExpr)}
-  END`;
-}
+// Суммы по составу — из общего модуля, цена считается в services/drawings.js.
+const { BOM_SUBTOTAL_SQL, RAW_BASE_SQL } = require('../services/drawings-sql');
 
 function normalizeId(value) {
   return /^\d+$/.test(String(value)) ? Number(value) : null;
@@ -70,9 +20,9 @@ function nullableNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function positiveOrNull(value) {
-  const number = nullableNumber(value);
-  return number !== null && number > 0 ? number : null;
+async function clientExists(runner, clientId) {
+  const res = await runner.query('SELECT 1 FROM clients WHERE id = $1', [clientId]);
+  return res.rows.length > 0;
 }
 
 /**
@@ -92,10 +42,55 @@ async function ensureClientLink(runner, drawingId, clientId, options = {}) {
     [drawingId, clientId,
       nullableNumber(markupPct),
       parseFloat(markupRub) || 0,
-      positiveOrNull(fixedPrice),
+      parseFixedPriceInput(fixedPrice).value,
       markupRub !== undefined,
       Boolean(setFixedPrice)]
   );
+}
+
+/** Строки привязок для набора чертежей: цена каждого клиента считается в JS. */
+async function loadLinksByDrawing(drawingIds) {
+  if (!drawingIds.length) return {};
+  const res = await db.query(`
+    SELECT dcl.drawing_id, dcl.client_id, dcl.markup_pct, dcl.markup_rub, dcl.fixed_price,
+           c.name AS client_name, cpl.markup_pct AS level_markup_pct, cpl.name AS pricing_level_name
+    FROM drawing_clients dcl
+    JOIN clients c ON c.id = dcl.client_id
+    LEFT JOIN client_pricing_levels cpl ON cpl.id = c.pricing_level_id
+    WHERE dcl.drawing_id = ANY($1::int[])
+    ORDER BY c.name`, [drawingIds]);
+
+  const byDrawing = {};
+  res.rows.forEach(link => {
+    (byDrawing[link.drawing_id] = byDrawing[link.drawing_id] || []).push(link);
+  });
+  return byDrawing;
+}
+
+/** Прикрепляет к строкам цену для каждого клиента и итог для выбранного/владельца. */
+function attachClientPrices(rows, linksByDrawing, preferredClientId) {
+  rows.forEach(row => {
+    const subtotal = round2(row.bom_subtotal);
+    const links = linksByDrawing[row.id] || [];
+    row.base_cost = round2(row.raw_base);
+    row.client_prices = links.map(link => ({
+      client_id: link.client_id,
+      fixed_price: resolveFixedPrice({
+        linkFixedPrice: link.fixed_price,
+        drawingFixedPrice: row.fixed_price,
+      }),
+      price: priceForClient({ drawing: row, link, subtotal }),
+    }));
+
+    const preferred = preferredClientId
+      ? row.client_prices.find(p => p.client_id === preferredClientId)
+      : row.client_prices.find(p => p.client_id === row.client_id) || row.client_prices[0];
+
+    const price = preferred ? preferred.price : priceForClient({ drawing: row, subtotal });
+    row.total_cost = price.total;
+    row.client_fixed_price = preferred ? preferred.fixed_price : price.fixedPrice;
+  });
+  return rows;
 }
 
 // =================== Списки и поиск ===================
@@ -111,7 +106,6 @@ router.get('/', auth, async (req, res) => {
     const params = [];
     let joins = '';
     let clientParam = null;
-    let levelExpr = 'd.level_markup_pct';
 
     const clientId = normalizeId(client_id);
     if (clientId) {
@@ -121,7 +115,6 @@ router.get('/', auth, async (req, res) => {
                LEFT JOIN clients fcl ON fcl.id = ${clientParam}
                LEFT JOIN client_pricing_levels fcpl ON fcpl.id = fcl.pricing_level_id`;
       conditions.push(`(d.client_id = ${clientParam} OR dl_f.id IS NOT NULL)`);
-      levelExpr = 'COALESCE(dl_f.markup_pct, fcpl.markup_pct, d.level_markup_pct)';
 
       if (not_calculated === '1' || not_calculated === 'true') {
         conditions.push(`NOT EXISTS (
@@ -164,10 +157,8 @@ router.get('/', auth, async (req, res) => {
            FROM drawing_clients dcl2 JOIN clients c2 ON c2.id = dcl2.client_id
           WHERE dcl2.drawing_id = d.id) AS client_names,
         ${clientSelects}
-        ${BASE_COST_SQL} AS base_cost,
-        ${BOM_SUBTOTAL_SQL} AS bom_subtotal,
-        ${totalWithFixedSql(levelExpr, fixedPriceSql(clientParam))} AS total_cost,
-        ${fixedPriceSql(clientParam)} AS client_fixed_price
+        ${RAW_BASE_SQL} AS raw_base,
+        ${BOM_SUBTOTAL_SQL} AS bom_subtotal
       FROM drawings d
       LEFT JOIN users u ON d.created_by = u.id
       LEFT JOIN clients c ON d.client_id = c.id
@@ -176,60 +167,13 @@ router.get('/', auth, async (req, res) => {
       LEFT JOIN component_modifications cm ON cm.id = dc.modification_id
       ${joins}
       ${where}
-      GROUP BY d.id, u.full_name, c.name, c.phone${clientParam ? ', dl_f.markup_pct, fcpl.markup_pct, dl_f.fixed_price' : ''}
+      GROUP BY d.id, u.full_name, c.name, c.phone
       ORDER BY d.archived_at NULLS FIRST, d.created_at DESC
     `, params);
 
     // Цена для каждого привязанного клиента: у одного BOM цены разные
-    const drawingIds = result.rows.map(row => row.id);
-    if (drawingIds.length > 0) {
-      const linksRes = await db.query(`
-        SELECT dcl.drawing_id, dcl.client_id, dcl.fixed_price, dcl.markup_pct,
-               cpl.markup_pct AS level_markup_pct
-        FROM drawing_clients dcl
-        JOIN clients cl ON cl.id = dcl.client_id
-        LEFT JOIN client_pricing_levels cpl ON cpl.id = cl.pricing_level_id
-        WHERE dcl.drawing_id = ANY($1::int[])
-        ORDER BY cl.name`, [drawingIds]);
-
-      const linksByDrawing = {};
-      linksRes.rows.forEach(link => {
-        (linksByDrawing[link.drawing_id] = linksByDrawing[link.drawing_id] || []).push(link);
-      });
-
-      result.rows.forEach(row => {
-        const subtotal = round2(row.bom_subtotal);
-        row.client_prices = (linksByDrawing[row.id] || []).map(link => {
-          const fixedPrice = resolveFixedPrice({
-            linkFixedPrice: link.fixed_price,
-            drawingFixedPrice: row.fixed_price,
-          });
-          return {
-            client_id: link.client_id,
-            fixed_price: fixedPrice,
-            price: calculateDrawingPrice({
-              subtotal,
-              fixedPrice,
-              levelMarkupPct: resolveLevelMarkup({
-                linkMarkupPct: link.markup_pct,
-                clientLevelPct: link.level_markup_pct,
-                drawingLevelPct: row.level_markup_pct,
-              }),
-              globalMarkupPct: row.global_markup_pct,
-              globalMarkupRub: row.global_markup_rub,
-            }),
-          };
-        });
-
-        // Без фильтра по клиенту показываем цену владельца (если он привязан)
-        if (!clientId && row.client_prices.length > 0) {
-          const owner = row.client_prices.find(p => p.client_id === row.client_id)
-            || row.client_prices[0];
-          row.total_cost = owner.price.total;
-          row.client_fixed_price = owner.fixed_price;
-        }
-      });
-    }
+    const linksByDrawing = await loadLinksByDrawing(result.rows.map(row => row.id));
+    attachClientPrices(result.rows, linksByDrawing, clientId);
 
     res.json({ data: result.rows });
   } catch (err) {
@@ -385,44 +329,36 @@ router.post('/calculations', auth, async (req, res) => {
     });
 
     // Сумму считаем до округления строк — так она совпадает с ценой в списке и карточке
-    const subtotal = bomSubtotal(bomRes.rows);
+    const subtotal = bomSubtotalFromRows(bomRes.rows);
 
-    // Наценка и фикс-цена: ручная у связи с клиентом → уровень цен клиента → снимок в чертеже
-    let linkMarkupPct = null;
-    let linkFixedPrice = null;
-    let clientLevelPct = null;
+    const requestFixed = parseFixedPriceInput(fixed_price);
+    if (requestFixed.error) return res.status(400).json({ error: requestFixed.error });
+
+    let link = null;
     if (clientId) {
       const linkRes = await db.query(
-        'SELECT markup_pct, markup_rub, fixed_price FROM drawing_clients WHERE drawing_id = $1 AND client_id = $2',
-        [drawingId, clientId]
-      );
-      if (linkRes.rows.length > 0) {
-        linkMarkupPct = linkRes.rows[0].markup_pct;
-        linkFixedPrice = linkRes.rows[0].fixed_price;
-      }
-
-      const levelRes = await db.query(
-        `SELECT cpl.markup_pct FROM clients c
+        `SELECT dcl.markup_pct, dcl.fixed_price, cpl.markup_pct AS level_markup_pct
+           FROM clients c
+           LEFT JOIN drawing_clients dcl ON dcl.client_id = c.id AND dcl.drawing_id = $1
            LEFT JOIN client_pricing_levels cpl ON cpl.id = c.pricing_level_id
-          WHERE c.id = $1`, [clientId]);
-      if (levelRes.rows.length > 0) clientLevelPct = levelRes.rows[0].markup_pct;
+          WHERE c.id = $2`, [drawingId, clientId]);
+      if (linkRes.rows.length === 0) return res.status(404).json({ error: 'Клиент не найден' });
+      link = linkRes.rows[0];
     }
 
-    const levelMarkupPct = resolveLevelMarkup({
-      linkMarkupPct,
-      clientLevelPct,
-      drawingLevelPct: drawing.level_markup_pct,
-    });
+    // Снимок общих наценок: из запроса, иначе — из чертежа
+    const drawingForPrice = {
+      ...drawing,
+      global_markup_pct: global_markup_pct !== undefined ? round2(global_markup_pct) : drawing.global_markup_pct,
+      global_markup_rub: global_markup_rub !== undefined ? round2(global_markup_rub) : drawing.global_markup_rub,
+    };
 
-    const price = calculateDrawingPrice({
+    // Приоритет: явно переданная цена → фикс-цена клиента → общая фикс-цена чертежа
+    const price = priceForClient({
+      drawing: drawingForPrice,
+      link,
       subtotal,
-      // Явно переданная цена в запросе → фикс-цена клиента → общая фикс-цена чертежа
-      fixedPrice: positiveOrNull(fixed_price) !== null
-        ? positiveOrNull(fixed_price)
-        : resolveFixedPrice({ linkFixedPrice, drawingFixedPrice: drawing.fixed_price }),
-      levelMarkupPct,
-      globalMarkupPct: global_markup_pct !== undefined ? global_markup_pct : drawing.global_markup_pct,
-      globalMarkupRub: global_markup_rub !== undefined ? global_markup_rub : drawing.global_markup_rub,
+      fixedPrice: requestFixed.value !== null ? requestFixed.value : undefined,
     });
 
     const result = await db.query(
@@ -490,33 +426,15 @@ router.get('/:id', auth, async (req, res) => {
     drawing.components = bomRes.rows;
 
     // Цена для каждого привязанного клиента: своя фикс-цена / уровень цен / наценка связи
-    const subtotal = bomSubtotal(bomRes.rows);
-    drawing.clients = clientsRes.rows.map(linkRow => {
-      const price = calculateDrawingPrice({
-        subtotal,
-        fixedPrice: resolveFixedPrice({
-          linkFixedPrice: linkRow.fixed_price,
-          drawingFixedPrice: drawing.fixed_price,
-        }),
-        levelMarkupPct: resolveLevelMarkup({
-          linkMarkupPct: linkRow.markup_pct,
-          clientLevelPct: linkRow.level_markup_pct,
-          drawingLevelPct: drawing.level_markup_pct,
-        }),
-        globalMarkupPct: drawing.global_markup_pct,
-        globalMarkupRub: drawing.global_markup_rub,
-      });
-      return { ...linkRow, price };
-    });
+    const subtotal = bomSubtotalFromRows(bomRes.rows);
+    drawing.clients = clientsRes.rows.map(linkRow => ({
+      ...linkRow,
+      price: priceForClient({ drawing, link: linkRow, subtotal }),
+    }));
 
-    // Цена без клиента (уровень, зафиксированный в чертеже)
-    drawing.price = calculateDrawingPrice({
-      subtotal,
-      fixedPrice: resolveFixedPrice({ drawingFixedPrice: drawing.fixed_price }),
-      levelMarkupPct: resolveLevelMarkup({ drawingLevelPct: drawing.level_markup_pct }),
-      globalMarkupPct: drawing.global_markup_pct,
-      globalMarkupRub: drawing.global_markup_rub,
-    });
+    // Цена «по умолчанию» — для владельца чертежа (у него всегда есть связь)
+    const ownerLink = drawing.clients.find(link => link.client_id === drawing.client_id);
+    drawing.price = ownerLink ? ownerLink.price : priceForClient({ drawing, subtotal });
 
     res.json(drawing);
   } catch (err) {
@@ -541,38 +459,22 @@ router.get('/:id/price', auth, async (req, res) => {
         LEFT JOIN component_modifications cm ON cm.id = dc.modification_id
        WHERE dc.drawing_id = $1`, [id]);
 
-    const subtotal = round2(bomRes.rows.reduce((sum, row) => {
-      const base = parseFloat(row.price) * parseFloat(row.quantity);
-      return sum + base + base * (parseFloat(row.item_markup_pct) || 0) / 100 + (parseFloat(row.item_markup_rub) || 0);
-    }, 0));
-
+    const subtotal = bomSubtotalFromRows(bomRes.rows);
     const clientId = normalizeId(req.query.client_id);
-    let linkMarkupPct = null;
-    let linkFixedPrice = null;
-    let clientLevelPct = null;
+
+    let link = null;
     if (clientId) {
       const linkRes = await db.query(
-        'SELECT markup_pct, fixed_price FROM drawing_clients WHERE drawing_id = $1 AND client_id = $2',
-        [id, clientId]);
-      if (linkRes.rows.length > 0) {
-        linkMarkupPct = linkRes.rows[0].markup_pct;
-        linkFixedPrice = linkRes.rows[0].fixed_price;
-      }
-      const levelRes = await db.query(
-        `SELECT cpl.markup_pct FROM clients c
+        `SELECT dcl.markup_pct, dcl.fixed_price, cpl.markup_pct AS level_markup_pct
+           FROM clients c
+           LEFT JOIN drawing_clients dcl ON dcl.client_id = c.id AND dcl.drawing_id = $1
            LEFT JOIN client_pricing_levels cpl ON cpl.id = c.pricing_level_id
-          WHERE c.id = $1`, [clientId]);
-      if (levelRes.rows.length > 0) clientLevelPct = levelRes.rows[0].markup_pct;
+          WHERE c.id = $2`, [id, clientId]);
+      if (linkRes.rows.length === 0) return res.status(404).json({ error: 'Клиент не найден' });
+      link = linkRes.rows[0];
     }
 
-    const price = calculateDrawingPrice({
-      subtotal,
-      fixedPrice: resolveFixedPrice({ linkFixedPrice, drawingFixedPrice: drawing.fixed_price }),
-      levelMarkupPct: resolveLevelMarkup({ linkMarkupPct, clientLevelPct, drawingLevelPct: drawing.level_markup_pct }),
-      globalMarkupPct: drawing.global_markup_pct,
-      globalMarkupRub: drawing.global_markup_rub,
-    });
-
+    const price = priceForClient({ drawing, link, subtotal });
     res.json({ drawing_id: id, client_id: clientId, ...price });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -624,28 +526,49 @@ router.post('/', auth, async (req, res) => {
     }
 
     const ownerId = normalizeId(client_id);
-    // Фикс-цена принадлежит клиенту: без клиента — общая у чертежа
-    const drawingFixedPrice = ownerId ? null : positiveOrNull(fixed_price);
+    // Чертёж всегда принадлежит клиенту: общий BOM без владельца не создаём
+    if (!ownerId) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Выберите клиента — чертёж без клиента сохранить нельзя' });
+    }
+    if (!await clientExists(client, ownerId)) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Клиент не найден' });
+    }
+
+    const fixed = parseFixedPriceInput(fixed_price);
+    if (fixed.error) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: fixed.error });
+    }
 
     const drawingRes = await client.query(
-      `INSERT INTO drawings (name, file_path, file_type, description, created_by, client_id, fixed_price,
+      `INSERT INTO drawings (name, file_path, file_type, description, created_by, client_id,
          level_markup_pct, global_markup_pct, global_markup_rub, file_hash)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
       [String(name).slice(0, 255), normalizedFilePath, file_type || null, description || null, req.user.id,
-        ownerId, drawingFixedPrice,
+        ownerId,
         parseFloat(level_markup_pct) || 0, parseFloat(global_markup_pct) || 0, parseFloat(global_markup_rub) || 0,
         hash]
     );
     const drawing = drawingRes.rows[0];
 
-    // Фикс-цена при сохранении из калькулятора принадлежит клиенту, а не общему BOM
+    // Фикс-цена принадлежит клиенту и живёт на связи, а не на общем BOM
     await ensureClientLink(client, drawing.id, ownerId, {
-      fixedPrice: fixed_price,
-      setFixedPrice: ownerId !== null && fixed_price !== undefined,
+      fixedPrice: fixed.value,
+      setFixedPrice: fixed.provided,
     });
     if (Array.isArray(client_ids)) {
-      for (const cid of client_ids) await ensureClientLink(client, drawing.id, normalizeId(cid));
+      for (const cid of client_ids) {
+        const linkClientId = normalizeId(cid);
+        if (!linkClientId) continue;
+        if (!await clientExists(client, linkClientId)) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({ error: `Клиент #${linkClientId} не найден` });
+        }
+        await ensureClientLink(client, drawing.id, linkClientId);
+      }
     }
 
     if (components && components.length > 0) {
@@ -690,9 +613,32 @@ router.put('/:id', auth, async (req, res) => {
       }
     }
 
-    const targetClientId = normalizeId(client_id);
-    // Фикс-цена уходит клиенту, если он выбран; иначе остаётся общей у чертежа
-    const setDrawingFixedPrice = fixed_price !== undefined && targetClientId === null;
+    const existingRes = await client.query('SELECT client_id FROM drawings WHERE id = $1', [id]);
+    if (existingRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Чертёж не найден' });
+    }
+
+    const ownerId = normalizeId(existingRes.rows[0].client_id);
+    // Владелец чертежа не меняется при сохранении из калькулятора:
+    // новый клиент получает связь, а не перехватывает чертёж.
+    const requestedClientId = normalizeId(client_id);
+    const priceClientId = requestedClientId || ownerId;
+
+    if (!priceClientId) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'У чертежа нет клиента — укажите client_id' });
+    }
+    if (!await clientExists(client, priceClientId)) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Клиент не найден' });
+    }
+
+    const fixed = parseFixedPriceInput(fixed_price);
+    if (fixed.error) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: fixed.error });
+    }
 
     const drawingRes = await client.query(
       `UPDATE drawings SET
@@ -700,37 +646,36 @@ router.put('/:id', auth, async (req, res) => {
         file_path = COALESCE($2, file_path),
         file_type = COALESCE($3, file_type),
         description = COALESCE($4, description),
-        client_id = COALESCE($5, client_id),
-        fixed_price = CASE WHEN $6 THEN $7 ELSE fixed_price END,
-        level_markup_pct = COALESCE($8, level_markup_pct),
-        global_markup_pct = COALESCE($9, global_markup_pct),
-        global_markup_rub = COALESCE($10, global_markup_rub),
-        file_hash = COALESCE($11, file_hash)
-       WHERE id = $12
+        level_markup_pct = COALESCE($5, level_markup_pct),
+        global_markup_pct = COALESCE($6, global_markup_pct),
+        global_markup_rub = COALESCE($7, global_markup_rub),
+        file_hash = COALESCE($8, file_hash)
+       WHERE id = $9
        RETURNING *`,
       [name, normalizedFilePath, file_type, description,
-        targetClientId,
-        setDrawingFixedPrice,
-        positiveOrNull(fixed_price),
         level_markup_pct !== undefined ? (parseFloat(level_markup_pct) || 0) : null,
         global_markup_pct !== undefined ? (parseFloat(global_markup_pct) || 0) : null,
         global_markup_rub !== undefined ? (parseFloat(global_markup_rub) || 0) : null,
         normalizedFilePath ? fileSha256(normalizedFilePath) : null,
         id]
     );
-    if (drawingRes.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Чертёж не найден' });
-    }
 
-    if (targetClientId !== null) {
-      await ensureClientLink(client, id, targetClientId, {
-        fixedPrice: fixed_price,
-        setFixedPrice: fixed_price !== undefined,
+    if (requestedClientId || fixed.provided) {
+      await ensureClientLink(client, id, priceClientId, {
+        fixedPrice: fixed.value,
+        setFixedPrice: fixed.provided,
       });
     }
     if (Array.isArray(client_ids)) {
-      for (const cid of client_ids) await ensureClientLink(client, id, normalizeId(cid));
+      for (const cid of client_ids) {
+        const linkClientId = normalizeId(cid);
+        if (!linkClientId) continue;
+        if (!await clientExists(client, linkClientId)) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({ error: `Клиент #${linkClientId} не найден` });
+        }
+        await ensureClientLink(client, id, linkClientId);
+      }
     }
 
     if (components !== undefined) {
@@ -797,11 +742,18 @@ router.post('/:id/clients', auth, async (req, res) => {
   const clientId = normalizeId(req.body.client_id);
   if (!id || !clientId) return res.status(400).json({ error: 'Укажите чертёж и клиента' });
   try {
+    const fixed = parseFixedPriceInput(req.body.fixed_price);
+    if (fixed.error) return res.status(400).json({ error: fixed.error });
+
+    const drawingRes = await db.query('SELECT 1 FROM drawings WHERE id = $1', [id]);
+    if (drawingRes.rows.length === 0) return res.status(404).json({ error: 'Чертёж не найден' });
+    if (!await clientExists(db, clientId)) return res.status(404).json({ error: 'Клиент не найден' });
+
     await ensureClientLink(db, id, clientId, {
       markupPct: req.body.markup_pct,
       markupRub: req.body.markup_rub,
-      fixedPrice: req.body.fixed_price,
-      setFixedPrice: Object.prototype.hasOwnProperty.call(req.body, 'fixed_price'),
+      fixedPrice: fixed.value,
+      setFixedPrice: fixed.provided,
     });
     const link = await db.query(
       'SELECT * FROM drawing_clients WHERE drawing_id = $1 AND client_id = $2', [id, clientId]);
@@ -818,6 +770,9 @@ router.put('/:id/clients/:clientId', auth, async (req, res) => {
   if (!id || !clientId) return res.status(400).json({ error: 'Укажите чертёж и клиента' });
   try {
     const has = key => Object.prototype.hasOwnProperty.call(req.body, key);
+    const fixed = parseFixedPriceInput(req.body.fixed_price);
+    if (fixed.error) return res.status(400).json({ error: fixed.error });
+
     const result = await db.query(
       `UPDATE drawing_clients
           SET markup_pct = CASE WHEN $1 THEN $2 ELSE markup_pct END,
@@ -826,7 +781,7 @@ router.put('/:id/clients/:clientId', auth, async (req, res) => {
         WHERE drawing_id = $7 AND client_id = $8 RETURNING *`,
       [has('markup_pct'), nullableNumber(req.body.markup_pct),
         has('markup_rub'), parseFloat(req.body.markup_rub) || 0,
-        has('fixed_price'), positiveOrNull(req.body.fixed_price),
+        fixed.provided, fixed.value,
         id, clientId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Связь не найдена' });
@@ -842,7 +797,9 @@ router.delete('/:id/clients/:clientId', auth, async (req, res) => {
   const clientId = normalizeId(req.params.clientId);
   if (!id || !clientId) return res.status(400).json({ error: 'Укажите чертёж и клиента' });
   try {
-    await db.query('DELETE FROM drawing_clients WHERE drawing_id = $1 AND client_id = $2', [id, clientId]);
+    const deleted = await db.query(
+      'DELETE FROM drawing_clients WHERE drawing_id = $1 AND client_id = $2 RETURNING id', [id, clientId]);
+    if (deleted.rows.length === 0) return res.status(404).json({ error: 'Связь не найдена' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -547,7 +547,7 @@ const ClientProfilePage = {
                     <td class="text-right">
                       <div class="table-actions" style="justify-content:flex-end">
                         ${d.file_path ? `<a href="${esc(d.file_path)}" target="_blank" rel="noopener" class="btn btn-icon btn-sm" title="Открыть файл" onclick="event.stopPropagation()">📎</a>` : ''}
-                        ${hasCalc ? `<button class="btn btn-icon btn-sm" onclick="App.navigateTo('calculator/${d.id}')" title="Открыть в калькуляторе">🧮</button>` : ''}
+                        ${hasCalc ? `<button class="btn btn-icon btn-sm" onclick="App.navigateTo('calculator?drawing=${d.id}&client=${ClientProfilePage.clientId}')" title="Открыть в калькуляторе">🧮</button>` : ''}
                         ${!hasCalc ? `<button class="btn btn-secondary btn-sm" onclick="App.navigateTo('calculator?drawing=${d.id}&client=${ClientProfilePage.clientId}')">📊 Рассчитать</button>` : ''}
                         ${canDelete ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteDrawing(${d.id})" title="В архив">📥</button>` : ''}
                       </div>
@@ -585,7 +585,7 @@ const ClientProfilePage = {
                     <td>
                       <strong>${esc(j.drawing_name)}</strong>
                       ${j.drawing_archived_at ? '<span class="badge" style="background:var(--bg-tertiary);color:var(--text-muted);margin-left:6px">архив</span>' : ''}
-                      ${j.drawing_id ? `<a href="#" onclick="event.preventDefault();App.navigateTo('calculator', ${j.drawing_id})" style="margin-left:8px;color:var(--accent-teal);font-size:0.8rem">открыть</a>` : ''}
+                      ${j.drawing_id ? `<a href="#" onclick="event.preventDefault();App.navigateTo('calculator?drawing=${j.drawing_id}&client=${this.clientId}')" style="margin-left:8px;color:var(--accent-teal);font-size:0.8rem">открыть</a>` : ''}
                     </td>
                     <td>${esc(j.principal_name) || '—'}</td>
                     <td class="text-right">${Table.formatMoney(j.subtotal)}</td>
@@ -616,7 +616,7 @@ const ClientProfilePage = {
                     <td>${esc(c.author_name) || '—'}</td>
                     <td class="text-right" onclick="event.stopPropagation()">
                       <button class="btn btn-secondary btn-sm" onclick="ClientProfilePage.viewCalculation(${c.id})">👁 Просмотр</button>
-                      <button class="btn btn-secondary btn-sm" onclick="App.navigateTo('calculator', ${c.id})" title="Открыть в калькуляторе">🧮</button>
+                      <button class="btn btn-secondary btn-sm" onclick="App.navigateTo('calculator?drawing=${c.id}&client=${this.clientId}')" title="Открыть в калькуляторе">🧮</button>
                     </td>
                   </tr>`).join('')}
               </tbody>
@@ -732,7 +732,7 @@ const ClientProfilePage = {
         `,
         footer: `
           <button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>
-          ${API.can('calculator', 'view') ? `<button class="btn btn-primary" onclick="Modal.close(); App.navigateTo('calculator', ${drawingId});">📐 Открыть в калькуляторе</button>` : ''}
+          ${API.can('calculator', 'view') ? `<button class="btn btn-primary" onclick="Modal.close(); App.navigateTo('calculator?drawing=${drawingId}&client=${this.clientId}');">📐 Открыть в калькуляторе</button>` : ''}
         `,
       });
     } catch (err) { Toast.error(err.message); }
@@ -1276,7 +1276,7 @@ const ClientProfilePage = {
                 </select>
                 <button class="btn btn-primary btn-sm" onclick="ClientProfilePage.changeApprovalStatus(${a.id})">Сменить</button>
                 ${a.drawing_id
-                  ? `<button class="btn btn-sm" style="background:#10b981;color:#fff;border:0" onclick="Modal.close();App.navigateTo('calculator', ${a.drawing_id})">📐 Открыть чертёж</button>`
+                  ? `<button class="btn btn-sm" style="background:#10b981;color:#fff;border:0" onclick="Modal.close();App.navigateTo('calculator?drawing=${a.drawing_id}&client=${this.clientId}')">📐 Открыть чертёж</button>`
                   : (a.status === 'approved' && lastVersion ? `<button class="btn btn-sm" style="background:#10b981;color:#fff;border:0" onclick="ClientProfilePage.moveToDrawings(${a.id})">📁 В чертежи</button>` : '')}
               </div>
             ` : ''}
@@ -1331,7 +1331,7 @@ const ClientProfilePage = {
         ? 'Чертёж уже создан — открываем его'
         : 'Согласованный чертёж перенесён в «Чертежи»');
       Modal.close();
-      App.navigateTo('calculator', drawing.id);
+      App.navigateTo('calculator?drawing=' + drawing.id + '&client=' + this.clientId);
     } catch (err) { Toast.error(err.message); }
   },
 

@@ -3,6 +3,8 @@ const db = require('../db');
 const auth = require('../middleware/auth');
 const fs = require('fs');
 const { normalizeUploadPath, safeUploadPath, fileSha256 } = require('../utils/files');
+const { round2, priceForClient } = require('../services/drawings');
+const { BOM_SUBTOTAL_SQL, RAW_BASE_SQL } = require('../services/drawings-sql');
 
 const router = express.Router({ mergeParams: true });
 
@@ -57,6 +59,24 @@ router.delete('/:docId', auth, async (req, res) => {
 
 // === Чертежи клиента (единая таблица drawings) ===
 
+/** Цена чертежа для клиента — тем же расчётом, что и в каталоге чертежей. */
+function withClientPrice(row, clientId) {
+  const subtotal = round2(row.bom_subtotal);
+  const link = {
+    client_id: clientId,
+    markup_pct: row.link_markup_pct,
+    fixed_price: row.link_fixed_price,
+    level_markup_pct: row.level_markup_pct,
+  };
+  const price = priceForClient({ drawing: row, link, subtotal });
+  return {
+    ...row,
+    base_cost: round2(row.raw_base),
+    total_cost: price.total,
+    client_fixed_price: price.fixedPrice,
+  };
+}
+
 // GET /api/clients/:id/drawings — чертежи клиента (владелец или привязанные)
 router.get('/drawings', auth, async (req, res) => {
   try {
@@ -65,22 +85,11 @@ router.get('/drawings', auth, async (req, res) => {
         COUNT(dc.id) AS components_count,
         (SELECT array_agg(dcl.client_id) FROM drawing_clients dcl
           WHERE dcl.drawing_id = d.id) AS client_ids,
-        CASE WHEN d.fixed_price IS NOT NULL THEN d.fixed_price
-          ELSE COALESCE(SUM(COALESCE(cm.price_override, comp.price) * dc.quantity), 0)
-        END AS base_cost,
-        CASE WHEN COALESCE(dlc.fixed_price, d.fixed_price) IS NOT NULL
-          THEN COALESCE(dlc.fixed_price, d.fixed_price)
-          ELSE ROUND(
-            COALESCE(SUM(
-              (COALESCE(cm.price_override, comp.price) * dc.quantity) * (1 + COALESCE(dc.item_markup_pct, 0)/100)
-              + COALESCE(dc.item_markup_rub, 0)
-            ), 0)
-            * (1 + COALESCE(dlc.markup_pct, cpl.markup_pct, d.level_markup_pct, 0)/100)
-            * (1 + COALESCE(d.global_markup_pct, 0)/100)
-            + COALESCE(d.global_markup_rub, 0)
-          , 2)
-        END AS total_cost,
-        COALESCE(dlc.fixed_price, d.fixed_price) AS client_fixed_price,
+        ${RAW_BASE_SQL} AS raw_base,
+        ${BOM_SUBTOTAL_SQL} AS bom_subtotal,
+        dlc.markup_pct AS link_markup_pct,
+        dlc.fixed_price AS link_fixed_price,
+        cpl.markup_pct AS level_markup_pct,
         EXISTS (SELECT 1 FROM drawing_calculations calc
                  WHERE calc.drawing_id = d.id AND calc.client_id = $1) AS is_calculated
        FROM drawings d
@@ -93,11 +102,11 @@ router.get('/drawings', auth, async (req, res) => {
        LEFT JOIN client_pricing_levels cpl ON cpl.id = cl.pricing_level_id
        WHERE (d.client_id = $1 OR dlc.id IS NOT NULL)
          AND d.archived_at IS NULL
-       GROUP BY d.id, u.full_name, dlc.markup_pct, cpl.markup_pct, dlc.fixed_price
+       GROUP BY d.id, u.full_name, dlc.markup_pct, dlc.fixed_price, cpl.markup_pct
        ORDER BY d.created_at DESC`,
       [req.params.id]
     );
-    res.json({ data: result.rows });
+    res.json({ data: result.rows.map(row => withClientPrice(row, Number(req.params.id))) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -217,21 +226,11 @@ router.get('/calculations', auth, async (req, res) => {
     const drawings = await db.query(`
       SELECT d.*, u.full_name AS author_name,
         COUNT(dc.id) AS components_count,
-        CASE WHEN d.fixed_price IS NOT NULL THEN d.fixed_price
-          ELSE COALESCE(SUM(COALESCE(cm.price_override, comp.price) * dc.quantity), 0)
-        END AS base_cost,
-        CASE WHEN COALESCE(dlc.fixed_price, d.fixed_price) IS NOT NULL
-          THEN COALESCE(dlc.fixed_price, d.fixed_price)
-          ELSE ROUND(
-            COALESCE(SUM(
-              (COALESCE(cm.price_override, comp.price) * dc.quantity) * (1 + COALESCE(dc.item_markup_pct, 0)/100)
-              + COALESCE(dc.item_markup_rub, 0)
-            ), 0)
-            * (1 + COALESCE(dlc.markup_pct, cpl.markup_pct, d.level_markup_pct, 0)/100)
-            * (1 + COALESCE(d.global_markup_pct, 0)/100)
-            + COALESCE(d.global_markup_rub, 0)
-          , 2)
-        END AS total_cost
+        ${RAW_BASE_SQL} AS raw_base,
+        ${BOM_SUBTOTAL_SQL} AS bom_subtotal,
+        dlc.markup_pct AS link_markup_pct,
+        dlc.fixed_price AS link_fixed_price,
+        cpl.markup_pct AS level_markup_pct
       FROM drawings d
       LEFT JOIN users u ON d.created_by = u.id
       LEFT JOIN drawing_components dc ON d.id = dc.drawing_id
@@ -242,12 +241,13 @@ router.get('/calculations', auth, async (req, res) => {
       LEFT JOIN client_pricing_levels cpl ON cpl.id = cl.pricing_level_id
       WHERE (d.client_id = $1 OR dlc.id IS NOT NULL)
         AND d.archived_at IS NULL
-        AND (d.fixed_price IS NOT NULL OR EXISTS (SELECT 1 FROM drawing_components dc2 WHERE dc2.drawing_id = d.id))
-      GROUP BY d.id, u.full_name, dlc.markup_pct, cpl.markup_pct, dlc.fixed_price
+        AND (dlc.fixed_price IS NOT NULL OR d.fixed_price IS NOT NULL
+             OR EXISTS (SELECT 1 FROM drawing_components dc2 WHERE dc2.drawing_id = d.id))
+      GROUP BY d.id, u.full_name, dlc.markup_pct, dlc.fixed_price, cpl.markup_pct
       ORDER BY d.created_at DESC
     `, [req.params.id]);
 
-    res.json({ data: drawings.rows });
+    res.json({ data: drawings.rows.map(row => withClientPrice(row, Number(req.params.id))) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

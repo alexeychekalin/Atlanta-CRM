@@ -152,8 +152,8 @@ drawings 1──* drawing_components *──1 components
           (quantity, item_markup_pct, item_markup_rub)
 drawing_clients (drawing_id, client_id, markup_pct, markup_rub, fixed_price)
           — цена для конкретного клиента: фикс-сумма или наценка поверх BOM
-drawings.fixed_price — общая фикс-цена (fallback, если у клиента не задана)
-drawings.client_id → clients (владелец/источник загрузки)
+drawings.client_id → clients (обязательный владелец; без клиента чертёж не создаётся)
+drawings.fixed_price — устаревшее поле, читается только для старых данных
 ```
 
 **Продажи**
@@ -474,7 +474,7 @@ total     = (subtotal + levelAmt) × (1 + global_markup%) + global_markup₽
 | BIZ-08 | ✅ | `is_drawing`/`drawing_id`/`metadata` сохраняются в позициях; при PUT метаданные переносятся по ключу | правка заказа сохраняет состав чертежа и метаданные |
 | BIZ-10 | ✅ | PUT сохраняет `invoice_path`, если поле не передано; путь счёта валидируется | PUT без `invoice_path` не обнуляет счёт |
 | BIZ-11 | ✅ | «Сохранить как шаблон» обновляет загруженный чертёж (`PUT`), а не создаёт копию; дубликат файла ловится по SHA-256 | повторное сохранение → та же запись; тот же файл → 409 с существующим чертежом |
-| BIZ-16 | ✅ | Единая модель чертежей: общий BOM у нескольких клиентов (`drawing_clients`), цена от уровня цен клиента и наценки связи | один BOM: клиент «Опт» 15 651,50 ₽, «Розница» 17 693,00 ₽ (subtotal 13 610) |
+| BIZ-16 | ✅ | Единая модель чертежей: обязательный клиент-владелец, общий BOM у нескольких клиентов (`drawing_clients`), цена и фикс-сумма на связи; один серверный расчёт для списка, карточки, журнала и документов | один BOM: 8 002,00 ₽ и 10 402,60 ₽; фикс-цены 777 ₽ и 999 ₽; создание без клиента → 400 |
 | BIZ-17 | ✅ | Архив вместо удаления: `archived_at`, `POST /:id/restore`; чертежи хранятся всегда | `DELETE` → нет в списке, есть в `?archived=1`; restore → снова в списке |
 | BIZ-18 | ✅ | Согласование отделено от расчёта: в чертёж попадает только утверждённый файл, связь `approval_id` уникальна и идемпотентна | до `approved` → 400; после → 201; повторно → тот же `id`, `already_exists` |
 | BIZ-19 | ✅ | Журнал расчётов `drawing_calculations`: снимок цен, состава, клиента, принципала и автора; суммы считает сервер | `POST /api/drawings/calculations` → 13 610 + 30 % + 5 % + 100 = 18 677,65 |
@@ -490,7 +490,7 @@ total     = (subtotal + levelAmt) × (1 + global_markup%) + global_markup₽
 | INFRA-03 | ✅ | Реестр `schema_migrations`, `npm run db:migrate`; `deploy.sh`/`update.sh` используют runner | 18 миграций применены, повторный запуск — 0 новых |
 | INFRA-04 | ✅ | `db:init` = seed → migrate → migrate_roles; роль `guest` и матрицы прав создаются автоматически | чистая БД → `admin`, `viewer`, 5 ролей с правами |
 | INFRA-05 | ✅ | `package-lock.json` в репозитории, `npm ci` в CI/Docker | `npm ci` из чистого клона |
-| INFRA-06 | ✅ | `node:test` (27 тестов: цены/НДС, цена чертежа по уровню, фикс-цена на связи клиента, фильты шаблонов калькулятора, файловые пути, hash-маршруты), ESLint 9, GitHub Actions | `npm test` (27/27), `npm run lint` |
+| INFRA-06 | ✅ | `node:test` (39 тестов: цены/НДС, цена чертежа по уровню и по связи клиента, парсинг фикс-цены, единый расчёт карточки/калькулятора, фильты шаблонов, рендер клиентских страниц, файловые пути, hash-маршруты), ESLint 9, GitHub Actions | `npm test` (39/39), `npm run lint` |
 | INFRA-07 | 🟡 | Пул БД закрывается по сигналу, но при ошибке пула процесс по-прежнему завершается | — |
 | BIZ-09, BIZ-12…15, INFRA-08…14, UX-05…12 | ⏳ | Не входили в раунды P0–P1 и «чертежи» (P2–P3) | — |
 
@@ -544,7 +544,7 @@ total     = (subtotal + levelAmt) × (1 + global_markup%) + global_markup₽
 | `server/src/db.js` | ветка `if (process.env.PGLITE_DIR)` → dev-адаптер |
 | `server/package.json` | `npm run demo:init`, `npm run demo`; `@electric-sql/pglite` в `devDependencies` |
 | `server/src/db/migrate.js` | применение миграций с реестром `schema_migrations` |
-| `server/test/*.test.js` | unit-тесты расчёта цен/НДС и безопасных путей (`npm test`) |
+| `server/test/*.test.js` | unit-тесты цен/НДС, цены чертежа для клиента и рендера клиентских страниц в `vm` (`npm test`) |
 
 Запуск:
 

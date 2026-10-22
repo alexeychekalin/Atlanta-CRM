@@ -210,7 +210,11 @@ CREATE TABLE IF NOT EXISTS drawings (
   file_path VARCHAR(500),
   file_type VARCHAR(20),
   description TEXT,
+  -- Клиент-владелец: API не даёт создать чертёж без него, PUT владельца не меняет.
+  -- NULL допускается только у исторических записей (миграция заполняет их из связей).
   client_id INT REFERENCES clients(id) ON DELETE SET NULL,
+  -- Устарело: фикс-цена хранится на связи drawing_clients.fixed_price.
+  -- Колонка оставлена для чтения старых данных, новые значения сюда не пишутся.
   fixed_price NUMERIC(14,2),
   level_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
   global_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,

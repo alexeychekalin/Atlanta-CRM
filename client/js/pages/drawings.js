@@ -196,7 +196,7 @@ const DrawingsPage = {
     try {
       const [drawRes, clientRes] = await Promise.all([
         API.get(`/drawings?archived=${this.showArchived ? '1' : '0'}`),
-        API.get('/clients'),
+        API.get('/clients?limit=1000'),
       ]);
 
       this.allDrawings = drawRes.data || [];
@@ -436,7 +436,7 @@ const DrawingsPage = {
                   <td class="text-right" onclick="event.stopPropagation()">
                     <div class="table-actions" style="justify-content:flex-end">
                       <button class="btn btn-icon btn-sm" onclick="DrawingsPage.openDrawingModal(${d.id})" title="Просмотр">👁️</button>
-                      ${d.archived_at ? '' : `<button class="btn btn-icon btn-sm" onclick="App.navigateTo('calculator', ${d.id})" title="Открыть в калькуляторе">🧮</button>`}
+                      ${d.archived_at ? '' : `<button class="btn btn-icon btn-sm" onclick="event.stopPropagation();DrawingsPage.openInCalculator(${d.id}, ${d.client_id || 'null'})" title="Открыть в калькуляторе">🧮</button>`}
                       ${canDelete ? (d.archived_at
                         ? `<button class="btn btn-icon btn-sm" onclick="DrawingsPage.restoreDrawing(${d.id})" title="Вернуть из архива">♻️</button>`
                         : `<button class="btn btn-icon btn-sm btn-danger" onclick="DrawingsPage.deleteDrawing(${d.id})" title="В архив">📥</button>`) : ''}
@@ -596,7 +596,7 @@ const DrawingsPage = {
                   <td class="text-right" onclick="event.stopPropagation()">
                     <div class="table-actions" style="justify-content:flex-end">
                       <button class="btn btn-icon btn-sm" onclick="DrawingsPage.openDrawingModal(${d.id})" title="Просмотр">👁️</button>
-                      ${d.archived_at ? '' : `<button class="btn btn-icon btn-sm" onclick="App.navigateTo('calculator', ${d.id})" title="В калькулятор">🧮</button>`}
+                      ${d.archived_at ? '' : `<button class="btn btn-icon btn-sm" onclick="event.stopPropagation();DrawingsPage.openInCalculator(${d.id}, ${groupClient ? groupClient.client_id : 'null'})" title="В калькулятор">🧮</button>`}
                       ${API.can('drawings', 'delete') ? (d.archived_at
                         ? `<button class="btn btn-icon btn-sm" onclick="DrawingsPage.restoreDrawing(${d.id})" title="Вернуть из архива">♻️</button>`
                         : `<button class="btn btn-icon btn-sm btn-danger" onclick="DrawingsPage.deleteDrawing(${d.id})" title="В архив">📥</button>`) : ''}
@@ -639,16 +639,8 @@ const DrawingsPage = {
         subtotalWithMarkups += lineTotal;
       });
 
-      // Фиксированная цена — итог берётся из неё, а не из состава
-      if (drawing.fixed_price !== null && drawing.fixed_price !== undefined && parseFloat(drawing.fixed_price) > 0) {
-        subtotalWithMarkups = parseFloat(drawing.fixed_price);
-      } else {
-        // Уровень цен (снимок) + общая наценка — как в списке чертежей
-        const levelPct = parseFloat(drawing.level_markup_pct) || 0;
-        const globalPct = parseFloat(drawing.global_markup_pct) || 0;
-        const globalRub = parseFloat(drawing.global_markup_rub) || 0;
-        subtotalWithMarkups = subtotalWithMarkups * (1 + levelPct / 100) * (1 + globalPct / 100) + globalRub;
-      }
+      // Итог считает сервер (цена владельца); резерв — сумма по составу
+      const priceTotal = drawing.price ? parseFloat(drawing.price.total) : subtotalWithMarkups;
 
       const dateStr = drawing.created_at ? new Date(drawing.created_at).toLocaleString('ru-RU') : '—';
       const clientName = drawing.client_name || 'Не привязан';
@@ -675,8 +667,9 @@ const DrawingsPage = {
             <td class="text-muted" style="font-size:0.8rem">${details}</td>
             <td class="text-right" style="font-weight:600;color:var(--accent-teal)">${Table.formatMoney(p.total)}</td>
             <td class="text-right" onclick="event.stopPropagation()">
+              ${API.can('calculator', 'view') ? `<button class="btn btn-icon btn-sm" title="Открыть в калькуляторе для этого клиента" onclick="DrawingsPage.openInCalculator(${drawing.id}, ${c.client_id})">🧮</button>` : ''}
               ${canEditDrawings ? `<button class="btn btn-icon btn-sm" title="Наценка и фикс-цена для клиента" onclick="DrawingsPage.openClientPriceModal(${drawing.id}, ${c.client_id})">✏️</button>` : ''}
-              ${canEditDrawings ? `<button class="btn btn-icon btn-sm" title="Отвязать клиента" onclick="DrawingsPage.unlinkClient(${drawing.id}, ${c.client_id}, '${esc(c.client_name).replace(/'/g, "\\'")}')">✖</button>` : ''}
+              ${canEditDrawings ? `<button class="btn btn-icon btn-sm" title="Отвязать клиента" onclick="DrawingsPage.unlinkClient(${drawing.id}, ${c.client_id})">✖</button>` : ''}
             </td>
           </tr>`;
       }).join('');
@@ -745,10 +738,10 @@ const DrawingsPage = {
             <!-- Итоговый блок стоимости -->
             <div style="text-align:right;background:var(--bg-card);padding:12px 18px;border-radius:10px;border:1px solid var(--border)">
               <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">
-                ${linkedClients.length > 0 ? 'Без привязки к клиенту' : 'Итоговая стоимость'}
+                ${linkedClients.length > 0 ? 'Цена владельца' : 'Итоговая стоимость'}
               </div>
               <div style="font-size:1.35rem;font-weight:800;color:var(--accent-teal);margin-top:2px">
-                ${Table.formatMoney(drawing.price ? drawing.price.total : subtotalWithMarkups)}
+                ${Table.formatMoney(priceTotal)}
               </div>
               <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px">
                 Базовая: ${Table.formatMoney(subtotalBase)}
@@ -835,7 +828,7 @@ const DrawingsPage = {
           </div>
           <div style="display:flex;gap:8px">
             <button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>
-            ${drawing.archived_at ? '' : `<button class="btn btn-primary" onclick="Modal.close();App.navigateTo('calculator', ${drawing.id})">
+            ${drawing.archived_at ? '' : `<button class="btn btn-primary" onclick="DrawingsPage.openInCalculator(${drawing.id}, ${drawing.client_id || 'null'})">
               🧮 Открыть в калькуляторе
             </button>`}
           </div>
@@ -932,7 +925,11 @@ const DrawingsPage = {
     }
   },
 
-  async unlinkClient(drawingId, clientId, clientName) {
+  async unlinkClient(drawingId, clientId) {
+    // Имя берём из состояния, а не из inline-обработчика: пользовательские
+    // строки в onclick ломают разметку и открывают XSS.
+    const client = (this.clients || []).find(c => String(c.id) === String(clientId));
+    const clientName = client ? client.name : `Клиент #${clientId}`;
     if (!await ConfirmDialog.delete(`Отвязать чертёж от клиента «${clientName}»? Сам чертёж останется.`)) return;
     try {
       await API.del(`/drawings/${drawingId}/clients/${clientId}`);
@@ -942,6 +939,12 @@ const DrawingsPage = {
     } catch (err) {
       Toast.error(err.message);
     }
+  },
+
+  openInCalculator(drawingId, clientId) {
+    Modal.close();
+    const query = `drawing=${drawingId}${clientId ? `&client=${clientId}` : ''}`;
+    App.navigateTo(`calculator?${query}`);
   },
 
   async deleteDrawing(id) {
