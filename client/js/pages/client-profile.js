@@ -263,7 +263,7 @@ const ClientProfilePage = {
                       <div style="display:flex;gap:4px">
                         <button class="action-btn" title="Просмотр" onclick="ProposalsPage.viewProposal(${p.id})">👁️</button>
                         <button class="action-btn" title="Скачать PDF" onclick="ProposalsPage.downloadPDF(${p.id})">📄</button>
-                        ${p.status !== 'converted' && API.can('proposals', 'edit') ? `<button class="action-btn" title="Перевести в заказ" onclick="ProposalsPage.convertToOrder(${p.id})">📦</button>` : ''}
+                        ${!p.order_id && API.can('proposals', 'edit') ? `<button class="action-btn" title="Перевести в заказ" onclick="ProposalsPage.convertToOrder(${p.id})">📦</button>` : ''}
                       </div>
                     </td>
                   </tr>

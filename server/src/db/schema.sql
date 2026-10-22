@@ -321,7 +321,7 @@ CREATE TABLE IF NOT EXISTS proposals (
   status VARCHAR(20) DEFAULT 'draft',
   valid_until DATE,
   comment TEXT,
-  order_id INT REFERENCES orders(id),
+  order_id INT REFERENCES orders(id) ON DELETE SET NULL,
   subtotal NUMERIC(14,2) NOT NULL DEFAULT 0,
   vat_rate NUMERIC(5,2),
   vat_amount NUMERIC(14,2),

@@ -191,7 +191,7 @@ const ProposalsPage = {
         footer: `
           <button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>
           <button class="btn btn-secondary" onclick="ProposalsPage.downloadPDF(${p.id})">📄 Скачать PDF</button>
-          ${p.status !== 'converted' && API.can('proposals', 'edit') ? `<button class="btn btn-primary" onclick="Modal.close();ProposalsPage.convertToOrder(${p.id})">✅ Перевести в заказ</button>` : ''}
+          ${!p.order_id && API.can('proposals', 'edit') ? `<button class="btn btn-primary" onclick="Modal.close();ProposalsPage.convertToOrder(${p.id})">✅ Перевести в заказ</button>` : ''}
         `,
       });
     } catch (err) { Toast.error(err.message); }

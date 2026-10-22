@@ -324,15 +324,36 @@ router.put('/:id', auth, async (req, res) => {
 
 // DELETE /api/orders/:id
 router.delete('/:id', auth, async (req, res) => {
+  let pgClient;
   try {
-    const result = await db.query('DELETE FROM orders WHERE id = $1 RETURNING id', [req.params.id]);
+    pgClient = await db.pool.connect();
+    await pgClient.query('BEGIN');
+
+    // КП, из которого создан заказ, возвращается в работу: снимаем «В заказе»,
+    // чтобы предложение можно было перевести в новый заказ.
+    await pgClient.query(
+      `UPDATE proposals
+          SET status = CASE WHEN status = 'converted' THEN 'accepted' ELSE status END,
+              updated_at = NOW()
+        WHERE order_id = $1`,
+      [req.params.id]
+    );
+
+    // proposals.order_id обнуляется каскадом (ON DELETE SET NULL)
+    const result = await pgClient.query('DELETE FROM orders WHERE id = $1 RETURNING id', [req.params.id]);
     if (result.rows.length === 0) {
+      await pgClient.query('ROLLBACK');
       return res.status(404).json({ error: 'Заказ не найден' });
     }
+
+    await pgClient.query('COMMIT');
     res.json({ message: 'Заказ удалён' });
   } catch (err) {
+    if (pgClient) await pgClient.query('ROLLBACK').catch(() => {});
     console.error('Ошибка удаления заказа:', err);
     res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  } finally {
+    if (pgClient) pgClient.release();
   }
 });
 
