@@ -68,10 +68,28 @@ test('старый клиент без base_price: цена сохраняетс
   assert.equal(item.line_total, 2999.97);
 });
 
-test('НДС выделяется из суммы, включающей налог', () => {
-  assert.deepEqual(calculateVat(122000, { enabled: true, rate: 22 }), { rate: 22, amount: 22000 });
-  assert.deepEqual(calculateVat(1000, { enabled: false, rate: 22 }), { rate: 0, amount: 0 });
-  assert.deepEqual(calculateVat(1000, { enabled: true, rate: 0 }), { rate: 0, amount: 0 });
+test('НДС начисляется сверху: цены в системе без НДС', () => {
+  assert.deepEqual(calculateVat(1000, { enabled: true, rate: 22 }), {
+    rate: 22,
+    amount: 220,
+    totalWithVat: 1220,
+  });
+  // Выключенный переключатель управляет только отображением, сумма НДС в документе сохраняется
+  assert.deepEqual(calculateVat(1000, { enabled: false, rate: 22 }), {
+    rate: 22,
+    amount: 220,
+    totalWithVat: 1220,
+  });
+  assert.deepEqual(calculateVat(1000, { enabled: true, rate: 0 }), {
+    rate: 0,
+    amount: 0,
+    totalWithVat: 1000,
+  });
+  assert.deepEqual(calculateVat(5291, { enabled: true, rate: 22 }), {
+    rate: 22,
+    amount: 1164.02,
+    totalWithVat: 6455.02,
+  });
 });
 
 test('calculateItems берёт наценку уровня из БД, а не из запроса', async () => {

@@ -378,11 +378,11 @@ router.get('/:id/pdf', auth, async (req, res) => {
     );
     const items = itemsRes.rows;
 
-    // Цены в системе указаны с НДС: итог = сумма позиций, НДС выделяется из неё.
+    // Цены в системе указаны БЕЗ НДС: НДС начисляется сверху от суммы позиций.
     const itemsTotal = items.reduce((s, i) => s + parseFloat(i.line_total), 0);
     const storedSubtotal = proposal.subtotal !== null && proposal.subtotal !== undefined
       ? parseFloat(proposal.subtotal) : 0;
-    const totalWithVAT = storedSubtotal > 0 ? storedSubtotal : itemsTotal;
+    const totalWithoutVAT = storedSubtotal > 0 ? storedSubtotal : itemsTotal;
 
     let vatRate = proposal.vat_rate !== null && proposal.vat_rate !== undefined
       ? parseFloat(proposal.vat_rate)
@@ -399,8 +399,8 @@ router.get('/:id/pdf', auth, async (req, res) => {
 
     const vatAmount = proposal.vat_amount !== null && proposal.vat_amount !== undefined
       ? parseFloat(proposal.vat_amount)
-      : (vatRate > 0 ? Math.round(totalWithVAT * vatRate / (100 + vatRate) * 100) / 100 : 0);
-    const totalWithoutVAT = Math.round((totalWithVAT - vatAmount) * 100) / 100;
+      : calculateVat(totalWithoutVAT, { rate: vatRate }).amount;
+    const totalWithVAT = Math.round((totalWithoutVAT + vatAmount) * 100) / 100;
 
     // Создаём PDF
     const doc = new PDFDocument({ size: 'A4', margin: 40, info: {
@@ -475,7 +475,7 @@ router.get('/:id/pdf', auth, async (req, res) => {
     const fmtMoney = (v) => parseFloat(v).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     const drawTableHeader = (rowY) => {
-      const headerCols = ['№', 'Артикул', 'Наименование', 'Кол-во', 'Цена без НДС', 'Цена с НДС', 'Сумма с НДС'];
+      const headerCols = ['№', 'Артикул', 'Наименование', 'Кол-во', 'Цена, ₽', 'с НДС, ₽', 'Сумма с НДС, ₽'];
       let x = 40;
       doc.rect(x, rowY, pageWidth, 22).fill('#4a90a4');
       doc.font(fontBold).fontSize(7).fillColor('#fff');
@@ -494,9 +494,10 @@ router.get('/:id/pdf', auth, async (req, res) => {
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const article = item.article || (item.is_drawing ? '—' : '—');
-      const unitPriceVAT = parseFloat(item.unit_price);
-      const unitPrice = vatRate > 0 ? unitPriceVAT / (1 + vatRate / 100) : unitPriceVAT;
-      const lineTotalVAT = parseFloat(item.line_total);
+      // В позиции хранится цена без НДС
+      const unitPrice = parseFloat(item.unit_price);
+      const unitPriceVAT = unitPrice * (1 + vatRate / 100);
+      const lineTotalVAT = parseFloat(item.line_total) * (1 + vatRate / 100);
 
       // Вычисляем высоту строки по самому длинному тексту (наименование)
       doc.font(fontRegular).fontSize(8);

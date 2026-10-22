@@ -95,16 +95,20 @@ async function calculateItems(clientId, items, runner = null) {
 }
 
 /**
- * НДС включён в цену: выделяем его из итоговой суммы.
+ * Цены в системе хранятся БЕЗ НДС. НДС начисляется сверху:
+ *   vat_amount = subtotal × rate / 100
+ *   total_with_vat = subtotal + vat_amount
+ * Настройка `enabled` управляет только отображением («показывать с НДС»),
+ * в документе ставка и сумма фиксируются всегда, когда ставка > 0.
  */
 function calculateVat(subtotal, vatSettings) {
-  if (!vatSettings || vatSettings.enabled === false) {
-    return { rate: 0, amount: 0 };
+  const base = round2(subtotal);
+  const rate = vatSettings ? (Number(vatSettings.rate) || 0) : 0;
+  if (rate <= 0) {
+    return { rate: 0, amount: 0, totalWithVat: base };
   }
-  const rate = Number(vatSettings.rate) || 0;
-  if (rate <= 0) return { rate: 0, amount: 0 };
-  const amount = round2(subtotal * rate / (100 + rate));
-  return { rate, amount };
+  const amount = round2(base * rate / 100);
+  return { rate, amount, totalWithVat: round2(base + amount) };
 }
 
 module.exports = {
