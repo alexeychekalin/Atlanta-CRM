@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
-const adminOnly = require('../middleware/role');
+const { hasPermission } = require('../middleware/role');
 
 const router = express.Router();
 
@@ -20,12 +20,16 @@ router.get('/vat', auth, async (req, res) => {
 });
 
 // PUT /api/settings/vat — обновить настройки НДС (только админ)
-router.put('/vat', auth, adminOnly, async (req, res) => {
+router.put('/vat', auth, hasPermission('settings', 'edit'), async (req, res) => {
   try {
     const { enabled, rate } = req.body;
+    const parsedRate = rate !== undefined ? parseFloat(rate) : 22;
+    if (Number.isNaN(parsedRate) || parsedRate < 0 || parsedRate > 100) {
+      return res.status(400).json({ error: 'Ставка НДС должна быть числом от 0 до 100' });
+    }
     const value = {
       enabled: enabled !== undefined ? !!enabled : true,
-      rate: rate !== undefined ? (parseFloat(rate) || 0) : 22,
+      rate: parsedRate,
     };
     await db.query(
       `INSERT INTO system_settings (key, value, updated_at) VALUES ('vat', $1, NOW())

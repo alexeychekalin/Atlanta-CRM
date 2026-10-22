@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
-const adminOnly = require('../middleware/role');
+const { normalizeUploadPath } = require('../utils/files');
 
 const router = express.Router({ mergeParams: true });
 
@@ -28,7 +28,7 @@ router.get('/', auth, async (req, res) => {
 });
 
 // POST /api/components/:id/modifications — создать модификацию
-router.post('/', auth, adminOnly, async (req, res) => {
+router.post('/', auth, async (req, res) => {
   try {
     const { code, name, price_override, is_active, sort_order } = req.body;
     if (!code) return res.status(400).json({ error: 'Укажите код модификации' });
@@ -50,7 +50,7 @@ router.post('/', auth, adminOnly, async (req, res) => {
 });
 
 // PUT /api/components/:id/modifications/:modId — обновить модификацию
-router.put('/:modId', auth, adminOnly, async (req, res) => {
+router.put('/:modId', auth, async (req, res) => {
   try {
     const { code, name, price_override, is_active, sort_order } = req.body;
     const result = await db.query(
@@ -75,7 +75,7 @@ router.put('/:modId', auth, adminOnly, async (req, res) => {
 });
 
 // DELETE /api/components/:id/modifications/:modId — удалить модификацию
-router.delete('/:modId', auth, adminOnly, async (req, res) => {
+router.delete('/:modId', auth, async (req, res) => {
   try {
     await db.query(
       'DELETE FROM component_modifications WHERE id = $1 AND component_id = $2',
@@ -89,15 +89,20 @@ router.delete('/:modId', auth, adminOnly, async (req, res) => {
 });
 
 // POST /api/components/:id/modifications/:modId/images — добавить фото
-router.post('/:modId/images', auth, adminOnly, async (req, res) => {
+router.post('/:modId/images', auth, async (req, res) => {
   try {
     const { image_path, sort_order } = req.body;
     if (!image_path) return res.status(400).json({ error: 'Укажите путь к изображению' });
 
+    const normalizedImage = normalizeUploadPath(image_path);
+    if (!normalizedImage) {
+      return res.status(400).json({ error: 'Недопустимый путь к изображению' });
+    }
+
     const result = await db.query(
       `INSERT INTO component_modification_images (modification_id, image_path, sort_order)
        VALUES ($1, $2, $3) RETURNING *`,
-      [req.params.modId, image_path, sort_order || 0]
+      [req.params.modId, normalizedImage, sort_order || 0]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -107,7 +112,7 @@ router.post('/:modId/images', auth, adminOnly, async (req, res) => {
 });
 
 // DELETE /api/components/:id/modifications/:modId/images/:imgId — удалить фото
-router.delete('/:modId/images/:imgId', auth, adminOnly, async (req, res) => {
+router.delete('/:modId/images/:imgId', auth, async (req, res) => {
   try {
     await db.query(
       'DELETE FROM component_modification_images WHERE id = $1 AND modification_id = $2',

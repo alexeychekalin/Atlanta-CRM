@@ -48,7 +48,7 @@ const CalculatorPage = {
               ${this.drawings.length > 0 ? `
                 <select class="filter-select" id="calc-template" style="width:auto" onchange="CalculatorPage.loadTemplate(this.value)">
                   <option value="">Загрузить шаблон...</option>
-                  ${this.drawings.map(d => `<option value="${d.id}">${d.name} (${d.components_count} комп.)</option>`).join('')}
+                  ${this.drawings.map(d => `<option value="${d.id}">${esc(d.name)} (${d.components_count} комп.)</option>`).join('')}
                 </select>
               ` : ''}
             </div>
@@ -73,7 +73,7 @@ const CalculatorPage = {
                 <label>Клиент</label>
                 <select class="form-control" id="calc-client" onchange="CalculatorPage.onClientChange(this.value)">
                   <option value="">Не выбран</option>
-                  ${this.clients.map(c => `<option value="${c.id}" data-markup="${c.pricing_markup_pct || 0}" data-level="${c.pricing_level_name || ''}">${c.name}</option>`).join('')}
+                  ${this.clients.map(c => `<option value="${c.id}" data-markup="${c.pricing_markup_pct || 0}" data-level="${esc(c.pricing_level_name)}">${esc(c.name)}</option>`).join('')}
                 </select>
                 <div id="calc-client-level" style="margin-top:4px;font-size:0.78rem"></div>
               </div>
@@ -162,8 +162,10 @@ const CalculatorPage = {
             </div>
 
             <div style="margin-top:20px;display:flex;flex-direction:column;gap:8px">
-              ${API.isAdmin() ? `
+              ${API.can('drawings', 'edit') ? `
                 <button class="btn btn-primary btn-full" onclick="CalculatorPage.saveAsDrawing()">💾 Сохранить как шаблон</button>
+              ` : ''}
+              ${API.can('orders', 'edit') ? `
                 <button class="btn btn-secondary btn-full" onclick="CalculatorPage.saveAsOrder()">📋 Сохранить как заказ</button>
               ` : ''}
             </div>
@@ -241,7 +243,7 @@ const CalculatorPage = {
                    onmouseleave="this.style.background='var(--bg-main)'"
                    onclick="CalculatorPage.loadTemplate(${c.id})">
                 <div>
-                  <div style="font-weight:600;font-size:0.85rem">${c.name}</div>
+                  <div style="font-weight:600;font-size:0.85rem">${esc(c.name)}</div>
                   <div style="font-size:0.75rem;color:var(--text-muted)">${c.components_count} комп. · ${new Date(c.created_at).toLocaleDateString('ru-RU')}</div>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px">
@@ -327,15 +329,21 @@ const CalculatorPage = {
         document.getElementById('calc-drawing-type').value = drawing.file_type || '';
         const preview = document.getElementById('calc-drawing-preview');
         if (['jpg', 'jpeg', 'png', 'webp'].includes(drawing.file_type)) {
-          preview.innerHTML = `<img src="${drawing.file_path}" style="max-height:200px;border-radius:8px;display:block;margin:8px auto">`;
+          preview.innerHTML = `<img src="${esc(drawing.file_path)}" style="max-height:200px;border-radius:8px;display:block;margin:8px auto">`;
         } else if (drawing.file_type === 'pdf') {
-          preview.innerHTML = `<div style="padding:16px;text-align:center"><div style="font-size:2rem">📄</div><a href="${drawing.file_path}" target="_blank" style="color:var(--accent-teal)">Открыть PDF →</a></div>`;
+          preview.innerHTML = `<div style="padding:16px;text-align:center"><div style="font-size:2rem">📄</div><a href="${esc(drawing.file_path)}" target="_blank" rel="noopener" style="color:var(--accent-teal)">Открыть PDF →</a></div>`;
         }
       }
 
       // Выставить шаблон в select если он есть
       const templateSelect = document.getElementById('calc-template');
       if (templateSelect) templateSelect.value = drawingId;
+
+      // Восстановить общие наценки шаблона
+      const markupPctInput = document.getElementById('calc-markup-pct');
+      const markupRubInput = document.getElementById('calc-markup-rub');
+      if (markupPctInput) markupPctInput.value = parseFloat(drawing.global_markup_pct) || 0;
+      if (markupRubInput) markupRubInput.value = parseFloat(drawing.global_markup_rub) || 0;
 
       // Восстановить фиксированную цену если есть
       const toggle = document.getElementById('calc-fixed-price-toggle');
@@ -385,10 +393,10 @@ const CalculatorPage = {
                 const modCount = parseInt(c.modifications_count) || 0;
                 return `
                   <tr style="cursor:pointer;${already ? 'opacity:0.5' : ''}" onclick="CalculatorPage.addComponent(${c.id})" title="Добавить компонент">
-                    <td>${c.image_path ? `<img src="${c.image_path}" style="width:32px;height:32px;object-fit:cover;border-radius:4px;cursor:zoom-in" onclick="event.stopPropagation();CalculatorPage.zoomImage('${c.image_path}')">` : '📦'}</td>
-                    <td class="font-mono" style="color:var(--accent-teal)">${c.article}</td>
-                    <td>${c.name}${modCount > 0 ? `<span style="margin-left:6px;padding:1px 6px;border-radius:8px;font-size:0.65rem;font-weight:600;background:var(--accent-teal);color:#fff">${modCount} мод.</span>` : ''}</td>
-                    <td><span class="badge badge-in_progress" style="font-size:0.7rem">${c.category_name || '—'}</span></td>
+                    <td>${c.image_path ? `<img src="${esc(c.image_path)}" style="width:32px;height:32px;object-fit:cover;border-radius:4px;cursor:zoom-in" onclick="event.stopPropagation();CalculatorPage.zoomImage(this.src)">` : '📦'}</td>
+                    <td class="font-mono" style="color:var(--accent-teal)">${esc(c.article)}</td>
+                    <td>${esc(c.name)}${modCount > 0 ? `<span style="margin-left:6px;padding:1px 6px;border-radius:8px;font-size:0.65rem;font-weight:600;background:var(--accent-teal);color:#fff">${modCount} мод.</span>` : ''}</td>
+                    <td><span class="badge badge-in_progress" style="font-size:0.7rem">${esc(c.category_name) || '—'}</span></td>
                     <td class="text-right">${Table.formatMoney(c.price)}</td>
                     <td class="text-right" onclick="event.stopPropagation()">${already ? '✓' : `<button class="btn btn-primary btn-sm" onclick="CalculatorPage.addComponent(${c.id})">+</button>`}</td>
                   </tr>`;
@@ -412,7 +420,7 @@ const CalculatorPage = {
           <div class="form-group" style="margin-bottom:0">
             <select class="form-control" id="calc-comp-cat">
               <option value="">Все категории</option>
-              ${this.categories.map(cat => `<option value="${cat.id}">${cat.name}</option>`).join('')}
+              ${this.categories.map(cat => `<option value="${cat.id}">${esc(cat.name)}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -533,7 +541,7 @@ const CalculatorPage = {
                onmouseenter="this.style.borderColor='var(--accent-teal)'" onmouseleave="this.style.borderColor='var(--border)'"` : ''}>
             <div style="display:flex;justify-content:space-between;align-items:center">
               <div>
-                <div style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;color:var(--text-primary)">${comp.article}</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;color:var(--text-primary)">${esc(comp.article)}</div>
                 <div style="font-size:0.85rem;color:var(--text-secondary)">Базовый компонент (без модификации)</div>
               </div>
               <div style="font-weight:600">${Table.formatMoney(comp.price)}</div>
@@ -642,11 +650,11 @@ const CalculatorPage = {
               const lineTotal = base + mPct + mRub;
               return `
                 <tr>
-                  <td>${item.image_path ? `<img src="${item.image_path}" class="calc-comp-thumb" style="width:28px;height:28px;object-fit:cover;border-radius:4px;cursor:zoom-in;transition:transform 0.2s,box-shadow 0.2s" onmouseenter="this.style.transform='scale(3)';this.style.zIndex='100';this.style.position='relative';this.style.boxShadow='0 8px 30px rgba(0,0,0,0.4)'" onmouseleave="this.style.transform='scale(1)';this.style.zIndex='';this.style.position='';this.style.boxShadow=''" onclick="CalculatorPage.zoomImage('${item.image_path}')">` : '📦'}</td>
+                  <td>${item.image_path ? `<img src="${esc(item.image_path)}" class="calc-comp-thumb" style="width:28px;height:28px;object-fit:cover;border-radius:4px;cursor:zoom-in;transition:transform 0.2s,box-shadow 0.2s" onmouseenter="this.style.transform='scale(3)';this.style.zIndex='100';this.style.position='relative';this.style.boxShadow='0 8px 30px rgba(0,0,0,0.4)'" onmouseleave="this.style.transform='scale(1)';this.style.zIndex='';this.style.position='';this.style.boxShadow=''" onclick="CalculatorPage.zoomImage(this.src)">` : '📦'}</td>
                   <td>
-                    <div style="font-weight:600;font-size:0.85rem">${item.name}${item.doc_count > 0 ? ` <a href="/api/components/${item.component_id}/documents/download-all?token=${API.getToken()}" title="Скачать документы (${item.doc_count})" style="text-decoration:none;cursor:pointer">📎<sup style="font-size:0.65rem;color:var(--accent-teal)">${item.doc_count}</sup></a>` : ''}</div>
-                    <div style="font-size:0.75rem;color:var(--accent-teal)" class="font-mono">${item.article}</div>
-                    ${item.modification_name ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:1px">${item.modification_name}</div>` : ''}
+                    <div style="font-weight:600;font-size:0.85rem">${esc(item.name)}${item.doc_count > 0 ? ` <a href="/api/components/${item.component_id}/documents/download-all" title="Скачать документы (${item.doc_count})" style="text-decoration:none;cursor:pointer">📎<sup style="font-size:0.65rem;color:var(--accent-teal)">${item.doc_count}</sup></a>` : ''}</div>
+                    <div style="font-size:0.75rem;color:var(--accent-teal)" class="font-mono">${esc(item.article)}</div>
+                    ${item.modification_name ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:1px">${esc(item.modification_name)}</div>` : ''}
                   </td>
                   <td class="text-center"><div style="display:flex;align-items:stretch;border-radius:6px;border:1px solid var(--border);overflow:hidden;height:30px;margin:0 auto;max-width:100px"><button type="button" onclick="CalculatorPage.updateBomItem(${i},'quantity',Math.max(1,${item.quantity}-1))" style="width:24px;border:none;background:var(--bg-tertiary);color:var(--text-secondary);cursor:pointer;font-size:0.9rem;font-weight:700;display:flex;align-items:center;justify-content:center;transition:all 0.15s" onmouseenter="this.style.background='var(--accent-teal)';this.style.color='#fff'" onmouseleave="this.style.background='var(--bg-tertiary)';this.style.color='var(--text-secondary)'">−</button><input type="number" value="${item.quantity}" min="1" step="1" style="flex:1;font-size:0.85rem;padding:0;text-align:center;border:none;border-left:1px solid var(--border);border-right:1px solid var(--border);border-radius:0;-moz-appearance:textfield;-webkit-appearance:none;min-width:0;font-weight:700;height:100%;line-height:30px;background:var(--bg-input);color:var(--text-primary);outline:none;box-sizing:border-box" onchange="CalculatorPage.updateBomItem(${i},'quantity',this.value)"><button type="button" onclick="CalculatorPage.updateBomItem(${i},'quantity',${item.quantity}+1)" style="width:24px;border:none;background:var(--bg-tertiary);color:var(--text-secondary);cursor:pointer;font-size:0.9rem;font-weight:700;display:flex;align-items:center;justify-content:center;transition:all 0.15s" onmouseenter="this.style.background='var(--accent-teal)';this.style.color='#fff'" onmouseleave="this.style.background='var(--bg-tertiary)';this.style.color='var(--text-secondary)'">+</button></div></td>
                   <td class="text-right" style="font-size:0.85rem">${Table.formatMoney(item.price)}</td>
@@ -785,6 +793,12 @@ const CalculatorPage = {
         description: '',
         client_id,
         fixed_price: fixedPrice,
+        level_markup_pct: (() => {
+          const opt = document.getElementById('calc-client')?.selectedOptions[0];
+          return parseFloat(opt?.dataset?.markup) || 0;
+        })(),
+        global_markup_pct: parseFloat(document.getElementById('calc-markup-pct')?.value) || 0,
+        global_markup_rub: parseFloat(document.getElementById('calc-markup-rub')?.value) || 0,
         components: this.bomItems.map(item => ({
           component_id: item.component_id,
           modification_id: item.modification_id || null,
@@ -900,6 +914,6 @@ const CalculatorPage = {
   downloadAllDocs() {
     const ids = [...new Set(this.bomItems.filter(it => it.doc_count > 0).map(it => it.component_id))];
     if (ids.length === 0) { Toast.error('Нет документов для скачивания'); return; }
-    window.open(`/api/component-documents/download-zip?ids=${ids.join(',')}&token=${API.getToken()}`, '_blank');
+    window.open(`/api/component-documents/download-zip?ids=${ids.join(',')}`, '_blank');
   },
 };

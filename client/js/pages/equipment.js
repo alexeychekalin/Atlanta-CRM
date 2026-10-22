@@ -114,7 +114,7 @@ const EquipmentPage = {
         <div class="filter-group" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <select class="filter-select" id="eq-type-filter" style="min-width:160px">
             <option value="">Все типы техники</option>
-            ${this.equipmentTypes.map(t => `<option value="${t.id}" ${this.selectedTypeId == t.id ? 'selected' : ''}>${t.icon || ''} ${t.name}</option>`).join('')}
+            ${this.equipmentTypes.map(t => `<option value="${t.id}" ${this.selectedTypeId == t.id ? 'selected' : ''}>${esc(t.icon || '')} ${esc(t.name)}</option>`).join('')}
           </select>
           <select class="filter-select" id="eq-sort" style="min-width:140px">
             <option value="name" ${this.sortBy === 'name' ? 'selected' : ''}>По названию</option>
@@ -138,7 +138,7 @@ const EquipmentPage = {
         <button class="btn ${!this.selectedTypeId ? 'btn-primary' : 'btn-secondary'} btn-sm" onclick="EquipmentPage.filterByType(null)">Все</button>
         ${this.equipmentTypes.map(t => `
           <button class="btn ${this.selectedTypeId == t.id ? 'btn-primary' : 'btn-secondary'} btn-sm" onclick="EquipmentPage.filterByType(${t.id})">
-            ${t.icon || ''} ${t.name}
+            ${esc(t.icon || '')} ${esc(t.name)}
           </button>
         `).join('')}
       </div>
@@ -253,10 +253,10 @@ const EquipmentPage = {
                onmouseenter="this.style.background='var(--bg-main)'" onmouseleave="this.style.background=''">
             ${m.logo_path
               ? `<img src="${m.logo_path}" style="width:56px;height:56px;object-fit:contain;border-radius:10px;background:var(--bg-main);padding:4px">`
-              : `<div style="width:56px;height:56px;background:linear-gradient(135deg,var(--accent-teal),var(--accent-blue));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700;color:#fff">${m.name.charAt(0)}</div>`
+              : `<div style="width:56px;height:56px;background:linear-gradient(135deg,var(--accent-teal),var(--accent-blue));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700;color:#fff">${esc(m.name.charAt(0))}</div>`
             }
             <div style="flex:1;min-width:0">
-              <div style="font-weight:700;font-size:1.05rem;color:var(--text-primary)">${m.name}</div>
+              <div style="font-weight:700;font-size:1.05rem;color:var(--text-primary)">${esc(m.name)}</div>
               <div style="font-size:0.82rem;color:var(--text-muted);margin-top:2px">
                 ${m.country ? `<span>🌍 ${m.country}</span>` : ''}
                 ${m.phone ? ` · <span>📞 ${m.phone}</span>` : ''}
@@ -298,9 +298,9 @@ const EquipmentPage = {
               <tr style="cursor:pointer" onclick="EquipmentPage.toggleManufacturer(${m.id})">
                 <td>${m.logo_path
                   ? `<img src="${m.logo_path}" style="width:36px;height:36px;object-fit:contain;border-radius:6px">`
-                  : `<div style="width:36px;height:36px;background:linear-gradient(135deg,var(--accent-teal),var(--accent-blue));border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff">${m.name.charAt(0)}</div>`
+                  : `<div style="width:36px;height:36px;background:linear-gradient(135deg,var(--accent-teal),var(--accent-blue));border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff">${esc(m.name.charAt(0))}</div>`
                 }</td>
-                <td style="font-weight:600">${m.name}</td>
+                <td style="font-weight:600">${esc(m.name)}</td>
                 <td>${m.country || '—'}</td>
                 <td>${m.phone || '—'}</td>
                 <td>${m.website ? `<a href="${m.website.startsWith('http') ? m.website : 'https://' + m.website}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent-teal)">↗</a>` : '—'}</td>
@@ -358,10 +358,10 @@ const EquipmentPage = {
 
     detail.innerHTML = `
       <div style="padding:12px 20px;background:var(--bg-main);display:flex;gap:24px;flex-wrap:wrap;font-size:0.85rem">
-        ${mfr.address ? `<div><span style="color:var(--text-muted)">📍 Адрес:</span> ${mfr.address}</div>` : ''}
-        ${mfr.email ? `<div><span style="color:var(--text-muted)">📧</span> <a href="mailto:${mfr.email}" style="color:var(--accent-teal)">${mfr.email}</a></div>` : ''}
-        ${mfr.contact_person ? `<div><span style="color:var(--text-muted)">👤</span> ${mfr.contact_person}</div>` : ''}
-        ${mfr.description ? `<div style="flex-basis:100%;color:var(--text-secondary)">${mfr.description}</div>` : ''}
+        ${mfr.address ? `<div><span style="color:var(--text-muted)">📍 Адрес:</span> ${esc(mfr.address)}</div>` : ''}
+        ${mfr.email ? `<div><span style="color:var(--text-muted)">📧</span> <a href="mailto:${esc(mfr.email)}" style="color:var(--accent-teal)">${esc(mfr.email)}</a></div>` : ''}
+        ${mfr.contact_person ? `<div><span style="color:var(--text-muted)">👤</span> ${esc(mfr.contact_person)}</div>` : ''}
+        ${mfr.description ? `<div style="flex-basis:100%;color:var(--text-secondary)">${esc(mfr.description)}</div>` : ''}
       </div>
       <div style="padding:16px 20px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -378,6 +378,10 @@ const EquipmentPage = {
   _renderProductCard(product, mfr, canEdit) {
     const comps = product.components || [];
     const isExpanded = this.expandedProd === product.id;
+    // Кэш данных карточки: кнопки «В корзину» передают только id,
+    // чтобы названия не попадали в inline-JS (защита от XSS).
+    this._productData = this._productData || {};
+    this._productData[product.id] = { product, mfr, comps };
 
     return `
       <div style="margin-bottom:10px;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--bg-card)">
@@ -385,14 +389,14 @@ const EquipmentPage = {
              onclick="EquipmentPage.toggleProduct(${product.id}, ${mfr.id})"
              onmouseenter="this.style.background='var(--bg-main)'" onmouseleave="this.style.background=''">
           ${product.image_path
-            ? `<img src="${product.image_path}" style="width:48px;height:48px;object-fit:cover;border-radius:8px">`
+            ? `<img src="${esc(product.image_path)}" style="width:48px;height:48px;object-fit:cover;border-radius:8px">`
             : `<div style="width:48px;height:48px;background:var(--bg-main);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.3rem">📦</div>`
           }
           <div style="flex:1;min-width:0">
-            <div style="font-weight:600;color:var(--text-primary)">${product.name}</div>
+            <div style="font-weight:600;color:var(--text-primary)">${esc(product.name)}</div>
             <div style="font-size:0.8rem;color:var(--text-muted)">
-              ${product.model ? `Модель: ${product.model}` : ''}
-              ${product.equipment_type_name ? ` · ${product.equipment_type_name}` : ''}
+              ${product.model ? `Модель: ${esc(product.model)}` : ''}
+              ${product.equipment_type_name ? ` · ${esc(product.equipment_type_name)}` : ''}
               · ${comps.length} компонентов
             </div>
           </div>
@@ -428,23 +432,13 @@ const EquipmentPage = {
                     const price = c.modification_price !== null && c.modification_price !== undefined ? parseFloat(c.modification_price) : parseFloat(c.component_price);
                     return `
                       <tr>
-                        <td>${c.component_image ? `<img src="${c.component_image}" style="width:32px;height:32px;object-fit:cover;border-radius:4px">` : '📦'}</td>
-                        <td><span class="font-mono" style="color:var(--accent-teal);font-weight:600">${fullArticle}</span></td>
-                        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${displayName}">${displayName}</td>
+                        <td>${c.component_image ? `<img src="${esc(c.component_image)}" style="width:32px;height:32px;object-fit:cover;border-radius:4px">` : '📦'}</td>
+                        <td><span class="font-mono" style="color:var(--accent-teal);font-weight:600">${esc(fullArticle)}</span></td>
+                        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(displayName)}">${esc(displayName)}</td>
                         <td class="text-right">${Table.formatMoney(price)}</td>
                         <td class="text-right">${c.quantity}</td>
                         <td class="text-right">
-                          <button class="btn btn-primary btn-sm" onclick="EquipmentPage.addToCart({
-                            component_id: ${c.component_id},
-                            modification_id: ${c.modification_id || 'null'},
-                            article: '${fullArticle}',
-                            name: '${displayName.replace(/'/g, "\\'")}',
-                            price: ${price},
-                            quantity: ${c.quantity},
-                            image_path: '${c.component_image || ''}',
-                            manufacturer_name: '${mfr.name.replace(/'/g, "\\'")}',
-                            product_name: '${product.name.replace(/'/g, "\\'")}'
-                          })" title="В корзину">🛒</button>
+                          <button class="btn btn-primary btn-sm" onclick="EquipmentPage.addCompToCart(${product.id}, ${c.id})" title="В корзину">🛒</button>
                           ${canEdit ? `<button class="btn btn-danger btn-sm" onclick="EquipmentPage.unlinkComponent(${product.id}, ${c.id}, ${mfr.id})" title="Отвязать">✕</button>` : ''}
                         </td>
                       </tr>
@@ -468,6 +462,28 @@ const EquipmentPage = {
       const mfr = await API.get(`/manufacturers/${mfrId}`);
       this._renderManufacturerDetail(mfr);
     } catch (err) { Toast.error(err.message); }
+  },
+
+  addCompToCart(productId, compId) {
+    const data = (this._productData || {})[productId];
+    if (!data) return;
+    const c = (data.comps || []).find(x => x.id === compId);
+    if (!c) return;
+    const fullArticle = c.modification_code ? c.article + '.' + c.modification_code : c.article;
+    const displayName = c.modification_name ? c.component_name + ' — ' + c.modification_name : c.component_name;
+    const price = c.modification_price !== null && c.modification_price !== undefined
+      ? parseFloat(c.modification_price) : parseFloat(c.component_price);
+    this.addToCart({
+      component_id: c.component_id,
+      modification_id: c.modification_id || null,
+      article: fullArticle,
+      name: displayName,
+      price,
+      quantity: c.quantity,
+      image_path: c.component_image || '',
+      manufacturer_name: data.mfr.name,
+      product_name: data.product.name,
+    });
   },
 
   _addAllToCart(productId, mfrId) {
@@ -567,9 +583,9 @@ const EquipmentPage = {
                   : `<div style="width:44px;height:44px;border-radius:8px;background:var(--bg-main);display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0">📦</div>`
                 }
                 <div style="flex:1;min-width:0">
-                  <div class="font-mono" style="font-size:0.75rem;color:var(--accent-teal);font-weight:700">${item.article}</div>
-                  <div style="font-size:0.85rem;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.name}">${item.name}</div>
-                  ${item.product_name ? `<div style="font-size:0.72rem;color:var(--text-muted);margin-top:1px">📦 ${item.product_name}</div>` : ''}
+                  <div class="font-mono" style="font-size:0.75rem;color:var(--accent-teal);font-weight:700">${esc(item.article)}</div>
+                  <div style="font-size:0.85rem;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(item.name)}">${esc(item.name)}</div>
+                  ${item.product_name ? `<div style="font-size:0.72rem;color:var(--text-muted);margin-top:1px">📦 ${esc(item.product_name)}</div>` : ''}
                   <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
                     <div style="display:flex;align-items:center;border:1px solid var(--border);border-radius:6px;overflow:hidden">
                       <button onclick="EquipmentPage.updateCartQty(${item._index}, ${item.quantity - 1})" style="width:28px;height:28px;border:none;background:var(--bg-main);cursor:pointer;color:var(--text-primary);font-size:0.9rem;display:flex;align-items:center;justify-content:center" ${item.quantity <= 1 ? 'disabled style="opacity:0.3;cursor:default"' : ''}>−</button>
@@ -652,7 +668,7 @@ const EquipmentPage = {
           <div class="form-row">
             <div class="form-group" style="flex:1">
               <label>Название *</label>
-              <input type="text" class="form-control" id="mfr-name" value="${mfr.name || ''}" required>
+              <input type="text" class="form-control" id="mfr-name" value="${esc(mfr.name)}" required>
             </div>
             <div class="form-group" style="flex:1">
               <label>Страна</label>
@@ -689,7 +705,7 @@ const EquipmentPage = {
           </div>
           <div class="form-group">
             <label>Описание</label>
-            <textarea class="form-control" id="mfr-desc" rows="2">${mfr.description || ''}</textarea>
+            <textarea class="form-control" id="mfr-desc" rows="2">${esc(mfr.description)}</textarea>
           </div>
         </form>
       `,
@@ -760,11 +776,11 @@ const EquipmentPage = {
           <div class="form-row">
             <div class="form-group" style="flex:1">
               <label>Название *</label>
-              <input type="text" class="form-control" id="prod-name" value="${product.name || ''}">
+              <input type="text" class="form-control" id="prod-name" value="${esc(product.name)}">
             </div>
             <div class="form-group" style="flex:1">
               <label>Модель</label>
-              <input type="text" class="form-control" id="prod-model" value="${product.model || ''}">
+              <input type="text" class="form-control" id="prod-model" value="${esc(product.model)}">
             </div>
           </div>
           <div class="form-row">
@@ -772,14 +788,14 @@ const EquipmentPage = {
               <label>Тип техники</label>
               <select class="form-control" id="prod-type">
                 <option value="">— Не указан —</option>
-                ${this.equipmentTypes.map(t => `<option value="${t.id}" ${product.equipment_type_id == t.id ? 'selected' : ''}>${t.icon || ''} ${t.name}</option>`).join('')}
+                ${this.equipmentTypes.map(t => `<option value="${t.id}" ${product.equipment_type_id == t.id ? 'selected' : ''}>${esc(t.icon || '')} ${esc(t.name)}</option>`).join('')}
               </select>
             </div>
             <div class="form-group" style="flex:1">
               <label>Чертёж</label>
               <select class="form-control" id="prod-drawing">
                 <option value="">— Без чертежа —</option>
-                ${drawings.map(d => `<option value="${d.id}" ${product.drawing_id == d.id ? 'selected' : ''}>${d.name || d.title || 'Чертёж #' + d.id}</option>`).join('')}
+                ${drawings.map(d => `<option value="${d.id}" ${product.drawing_id == d.id ? 'selected' : ''}>${esc(d.name || d.title) || 'Чертёж #' + d.id}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -789,7 +805,7 @@ const EquipmentPage = {
           </div>
           <div class="form-group">
             <label>Описание</label>
-            <textarea class="form-control" id="prod-desc" rows="2">${product.description || ''}</textarea>
+            <textarea class="form-control" id="prod-desc" rows="2">${esc(product.description)}</textarea>
           </div>
         </form>
       `,
@@ -866,9 +882,9 @@ const EquipmentPage = {
                 return `
                   <tr style="cursor:pointer" onclick="EquipmentPage._addCatalogComponent(${c.id})">
                     <td>${c.image_path ? `<img src="${c.image_path}" style="width:32px;height:32px;object-fit:cover;border-radius:4px">` : '📦'}</td>
-                    <td class="font-mono" style="color:var(--accent-teal)">${c.article}</td>
-                    <td>${c.name}${modCount > 0 ? `<span style="margin-left:6px;padding:1px 6px;border-radius:8px;font-size:0.65rem;font-weight:600;background:var(--accent-teal);color:#fff">${modCount} мод.</span>` : ''}</td>
-                    <td><span class="badge badge-in_progress" style="font-size:0.7rem">${c.category_name || '—'}</span></td>
+                    <td class="font-mono" style="color:var(--accent-teal)">${esc(c.article)}</td>
+                    <td>${esc(c.name)}${modCount > 0 ? `<span style="margin-left:6px;padding:1px 6px;border-radius:8px;font-size:0.65rem;font-weight:600;background:var(--accent-teal);color:#fff">${modCount} мод.</span>` : ''}</td>
+                    <td><span class="badge badge-in_progress" style="font-size:0.7rem">${esc(c.category_name) || '—'}</span></td>
                     <td class="text-right">${Table.formatMoney(c.price)}</td>
                     <td class="text-right"><button class="btn btn-primary btn-sm" onclick="event.stopPropagation();EquipmentPage._addCatalogComponent(${c.id})">+</button></td>
                   </tr>`;
@@ -945,7 +961,7 @@ const EquipmentPage = {
 
     content.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <h3 style="margin:0;color:var(--text-primary)">Модификации: ${comp.article}</h3>
+        <h3 style="margin:0;color:var(--text-primary)">Модификации: ${esc(comp.article)}</h3>
         <button onclick="document.getElementById('eq-comp-picker').remove()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-muted);padding:4px 8px">✕</button>
       </div>
       <div style="margin-bottom:12px;font-size:0.85rem;color:var(--text-muted)">Выберите модификацию или базовый компонент</div>
@@ -955,7 +971,7 @@ const EquipmentPage = {
              onmouseenter="this.style.borderColor='var(--accent-teal)'" onmouseleave="this.style.borderColor='var(--border)'">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <div>
-              <div class="font-mono" style="font-weight:700">${comp.article}</div>
+              <div class="font-mono" style="font-weight:700">${esc(comp.article)}</div>
               <div style="font-size:0.85rem;color:var(--text-secondary)">Базовый компонент</div>
             </div>
             <div style="font-weight:600">${Table.formatMoney(comp.price)}</div>
@@ -971,7 +987,7 @@ const EquipmentPage = {
               <div style="display:flex;justify-content:space-between;align-items:center">
                 <div style="flex:1">
                   <span class="font-mono" style="font-weight:700;color:var(--accent-teal)">${fullArticle}</span>
-                  ${m.name ? `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:2px">${m.name}</div>` : ''}
+                  ${m.name ? `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:2px">${esc(m.name)}</div>` : ''}
                 </div>
                 <div style="font-weight:600;margin-left:12px">${Table.formatMoney(price)}</div>
               </div>

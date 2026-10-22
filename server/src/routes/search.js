@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
+const { sectionAllowed } = require('../middleware/access');
 
 const router = express.Router();
 
@@ -11,15 +12,15 @@ router.get('/', auth, async (req, res) => {
 
   const searchTerm = `%${q.trim()}%`;
   const results = [];
+  const canView = (section) => sectionAllowed(req.user, section, 'view');
 
   try {
     // 1. Клиенты
-    const clients = await db.query(
+    const clients = canView('clients') ? await db.query(
       `SELECT id, name, phone, email, 'client' AS type
        FROM clients
        WHERE name ILIKE $1 OR phone ILIKE $1 OR email ILIKE $1 OR inn ILIKE $1
-       LIMIT 5`, [searchTerm]
-    );
+       LIMIT 5`, [searchTerm]) : { rows: [] };
     clients.rows.forEach(r => results.push({
       type: 'client',
       icon: '👤',
@@ -29,13 +30,12 @@ router.get('/', auth, async (req, res) => {
     }));
 
     // 2. Заказы
-    const orders = await db.query(
+    const orders = canView('orders') ? await db.query(
       `SELECT o.id, o.order_number, o.status, c.name AS client_name
        FROM orders o
        LEFT JOIN clients c ON o.client_id = c.id
        WHERE o.order_number ILIKE $1 OR o.comment ILIKE $1 OR c.name ILIKE $1
-       LIMIT 5`, [searchTerm]
-    );
+       LIMIT 5`, [searchTerm]) : { rows: [] };
     const statusLabels = { new: 'Новый', in_progress: 'В работе', paid: 'Оплачен', completed: 'Выполнен', cancelled: 'Отменён' };
     orders.rows.forEach(r => results.push({
       type: 'order',
@@ -47,13 +47,12 @@ router.get('/', auth, async (req, res) => {
     }));
 
     // 3. Компоненты
-    const components = await db.query(
+    const components = canView('components') ? await db.query(
       `SELECT c.id, c.article, c.name, c.price, cc.name AS category_name
        FROM components c
        LEFT JOIN component_categories cc ON c.category_id = cc.id
        WHERE c.name ILIKE $1 OR c.article ILIKE $1 OR c.description ILIKE $1
-       LIMIT 5`, [searchTerm]
-    );
+       LIMIT 5`, [searchTerm]) : { rows: [] };
     components.rows.forEach(r => results.push({
       type: 'component',
       icon: '🔩',
@@ -64,13 +63,12 @@ router.get('/', auth, async (req, res) => {
     }));
 
     // 4. Чертежи
-    const drawings = await db.query(
+    const drawings = canView('drawings') ? await db.query(
       `SELECT d.id, d.name, c.name AS client_name
        FROM drawings d
        LEFT JOIN clients c ON d.client_id = c.id
        WHERE d.name ILIKE $1 OR d.description ILIKE $1 OR c.name ILIKE $1
-       LIMIT 5`, [searchTerm]
-    );
+       LIMIT 5`, [searchTerm]) : { rows: [] };
     drawings.rows.forEach(r => results.push({
       type: 'drawing',
       icon: '📐',
@@ -80,13 +78,12 @@ router.get('/', auth, async (req, res) => {
     }));
 
     // 5. КП
-    const proposals = await db.query(
+    const proposals = canView('proposals') ? await db.query(
       `SELECT p.id, p.proposal_number, p.status, c.name AS client_name
        FROM proposals p
        LEFT JOIN clients c ON p.client_id = c.id
        WHERE p.proposal_number ILIKE $1 OR c.name ILIKE $1
-       LIMIT 5`, [searchTerm]
-    );
+       LIMIT 5`, [searchTerm]) : { rows: [] };
     const propStatuses = { draft: 'Черновик', sent: 'Отправлено', accepted: 'Принято', rejected: 'Отклонено' };
     proposals.rows.forEach(r => results.push({
       type: 'proposal',
@@ -98,12 +95,11 @@ router.get('/', auth, async (req, res) => {
     }));
 
     // 6. Производители
-    const manufacturers = await db.query(
+    const manufacturers = canView('equipment') ? await db.query(
       `SELECT id, name, country
        FROM manufacturers
        WHERE name ILIKE $1 OR country ILIKE $1
-       LIMIT 5`, [searchTerm]
-    );
+       LIMIT 5`, [searchTerm]) : { rows: [] };
     manufacturers.rows.forEach(r => results.push({
       type: 'manufacturer',
       icon: '🏭',

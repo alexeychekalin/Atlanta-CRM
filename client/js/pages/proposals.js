@@ -35,7 +35,7 @@ const ProposalsPage = {
           </select>
           <select class="filter-select" id="proposals-client-filter">
             <option value="">Все клиенты</option>
-            ${this.clients.map(c => `<option value="${c.id}" ${this.filters.client_id == c.id ? 'selected' : ''}>${c.name}</option>`).join('')}
+            ${this.clients.map(c => `<option value="${c.id}" ${this.filters.client_id == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
           </select>
         </div>
         ${canEdit ? '<button class="btn btn-primary" onclick="ProposalsPage.openCreateModal()">+ Новое КП</button>' : ''}
@@ -102,9 +102,9 @@ const ProposalsPage = {
                 const st = statusMap[p.status] || statusMap.draft;
                 return `
                   <tr style="cursor:pointer" onclick="ProposalsPage.viewProposal(${p.id})" title="Нажмите для просмотра">
-                    <td class="font-mono" style="font-weight:600">${p.proposal_number}</td>
+                    <td class="font-mono" style="font-weight:600">${esc(p.proposal_number)}</td>
                     <td>${Table.formatDate(p.created_at)}</td>
-                    <td><a href="#" onclick="event.stopPropagation();App.navigateTo('client-profile',${p.client_id});return false" class="client-link">${p.client_name || '—'}</a></td>
+                    <td><a href="#" onclick="event.stopPropagation();App.navigateTo('client-profile',${p.client_id});return false" class="client-link">${esc(p.client_name) || '—'}</a></td>
                     <td>
                       <span class="badge" style="background:${st.color}15;color:${st.color};border:1px solid ${st.color}30;font-size:0.75rem;padding:2px 8px;border-radius:12px;font-weight:600">
                         ${st.label}
@@ -153,18 +153,18 @@ const ProposalsPage = {
         wide: true,
         body: `
           <div class="grid-2 mb-2">
-            <div><strong>Клиент:</strong> ${p.client_name || '—'}</div>
-            <div><strong>Принципал:</strong> ${p.principal_name || '—'}</div>
+            <div><strong>Клиент:</strong> ${esc(p.client_name) || '—'}</div>
+            <div><strong>Принципал:</strong> ${esc(p.principal_name) || '—'}</div>
             <div><strong>Дата:</strong> ${Table.formatDate(p.created_at)}</div>
             <div><strong>Статус:</strong> ${statusMap[p.status] || p.status}</div>
             ${p.valid_until ? `<div><strong>Действ. до:</strong> ${Table.formatDate(p.valid_until)}</div>` : ''}
             ${p.order_id ? `<div><strong>Заказ:</strong> <a href="#" onclick="Modal.close();App.navigateTo('orders')" style="color:var(--accent-teal)">Перейти к заказу</a></div>` : ''}
           </div>
           ${p.client_inn ? `<div class="mb-2" style="padding:10px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border);font-size:0.85rem">
-            <strong>Реквизиты:</strong> ИНН ${p.client_inn}${p.client_kpp ? ' / КПП ' + p.client_kpp : ''}
-            ${p.client_legal_address ? '<br>' + p.client_legal_address : ''}
+            <strong>Реквизиты:</strong> ИНН ${esc(p.client_inn)}${p.client_kpp ? ' / КПП ' + esc(p.client_kpp) : ''}
+            ${p.client_legal_address ? '<br>' + esc(p.client_legal_address) : ''}
           </div>` : ''}
-          ${p.comment ? `<div class="mb-2"><strong>Комментарий:</strong> ${p.comment}</div>` : ''}
+          ${p.comment ? `<div class="mb-2"><strong>Комментарий:</strong> ${esc(p.comment)}</div>` : ''}
           <h4 class="mb-1" style="color:var(--text-secondary)">Позиции</h4>
           <div class="table-wrapper">
             <table class="data-table">
@@ -173,9 +173,9 @@ const ProposalsPage = {
                 ${(p.items || []).map((item, i) => `
                   <tr>
                     <td style="color:var(--text-muted)">${i + 1}</td>
-                    <td><span class="font-mono" style="color:var(--accent-teal);font-size:0.82rem">${item.article || '—'}</span></td>
-                    <td title="${(item.product_name || '').replace(/"/g, '&quot;')}" style="font-weight:500"><span style="display:inline-block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle">${item.product_name}${item.description ? '<br><span style="font-size:0.8rem;color:var(--text-muted)">' + item.description + '</span>' : ''} ${item.is_drawing ? '📐' : ''}</span></td>
-                    ${(p.items || []).some(i => i.image_path) ? `<td>${item.image_path ? `<img src="${item.image_path}" style="width:48px;height:48px;object-fit:cover;border-radius:6px">` : ''}</td>` : ''}
+                    <td><span class="font-mono" style="color:var(--accent-teal);font-size:0.82rem">${esc(item.article) || '—'}</span></td>
+                    <td title="${esc(item.product_name)}" style="font-weight:500"><span style="display:inline-block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle">${esc(item.product_name)}${item.description ? '<br><span style="font-size:0.8rem;color:var(--text-muted)">' + esc(item.description) + '</span>' : ''} ${item.is_drawing ? '📐' : ''}</span></td>
+                    ${(p.items || []).some(i => i.image_path) ? `<td>${item.image_path ? `<img src="${esc(item.image_path)}" style="width:48px;height:48px;object-fit:cover;border-radius:6px">` : ''}</td>` : ''}
                     <td class="text-right">${Table.formatMoney(item.unit_price)}</td>
                     <td class="text-right">${item.quantity}</td>
                     <td class="text-right" style="font-weight:600">${Table.formatMoney(item.line_total)}</td>
@@ -191,7 +191,7 @@ const ProposalsPage = {
         footer: `
           <button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>
           <button class="btn btn-secondary" onclick="ProposalsPage.downloadPDF(${p.id})">📄 Скачать PDF</button>
-          ${p.status !== 'converted' && API.isAdmin() ? `<button class="btn btn-primary" onclick="Modal.close();ProposalsPage.convertToOrder(${p.id})">✅ Перевести в заказ</button>` : ''}
+          ${p.status !== 'converted' && API.can('proposals', 'edit') ? `<button class="btn btn-primary" onclick="Modal.close();ProposalsPage.convertToOrder(${p.id})">✅ Перевести в заказ</button>` : ''}
         `,
       });
     } catch (err) { Toast.error(err.message); }
@@ -221,7 +221,7 @@ const ProposalsPage = {
               <label>Клиент *</label>
               <select class="form-control" id="prop-client">
                 <option value="">Выберите клиента</option>
-                ${this.clients.map(c => `<option value="${c.id}" data-markup="${c.pricing_markup_pct || 0}" data-level="${c.pricing_level_name || ''}" ${isEdit && proposal.client_id == c.id ? 'selected' : ''}>${c.name}</option>`).join('')}
+                ${this.clients.map(c => `<option value="${c.id}" data-markup="${c.pricing_markup_pct || 0}" data-level="${esc(c.pricing_level_name)}" ${isEdit && proposal.client_id == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
               </select>
               <div id="prop-client-level" style="margin-top:4px;font-size:0.78rem"></div>
             </div>
@@ -229,7 +229,7 @@ const ProposalsPage = {
               <label>Принципал</label>
               <select class="form-control" id="prop-principal">
                 <option value="">Без принципала</option>
-                ${this.principals.map((p, i) => `<option value="${p.id}" ${isEdit ? (proposal.principal_id == p.id ? 'selected' : '') : (i === 0 ? 'selected' : '')}>${p.name}</option>`).join('')}
+                ${this.principals.map((p, i) => `<option value="${p.id}" ${isEdit ? (proposal.principal_id == p.id ? 'selected' : '') : (i === 0 ? 'selected' : '')}>${esc(p.name)}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -250,7 +250,7 @@ const ProposalsPage = {
           </div>
           <div class="form-group">
             <label>Комментарий</label>
-            <textarea class="form-control" id="prop-comment" rows="2">${isEdit ? (proposal.comment || '') : ''}</textarea>
+            <textarea class="form-control" id="prop-comment" rows="2">${isEdit ? esc(proposal.comment) : ''}</textarea>
           </div>
 
           <h4 class="mb-1 mt-2" style="color:var(--text-secondary)">Позиции</h4>
@@ -281,7 +281,9 @@ const ProposalsPage = {
     const displayName = item.product_name || (isDrawing ? 'Чертёж' : 'Позиция');
     const icon = isDrawing ? '📐' : '📦';
     const article = item.article || '';
-    const price = item.unit_price || 0;
+    // Базовая цена без наценок; итог считает сервер
+    const price = item.base_price !== null && item.base_price !== undefined ? item.base_price : (item.unit_price || 0);
+    const markupPct = item.markup_pct || 0;
     const qty = item.quantity || 1;
     const sw = 'display:flex;align-items:stretch;border-radius:6px;border:1px solid var(--border);overflow:hidden;height:32px';
     const sb = 'width:26px;border:none;background:var(--bg-tertiary);color:var(--text-secondary);cursor:pointer;font-size:0.95rem;font-weight:700;display:flex;align-items:center;justify-content:center;transition:all 0.15s;flex-shrink:0';
@@ -294,8 +296,8 @@ const ProposalsPage = {
           <span style="font-size:1rem;flex-shrink:0">${icon}</span>
           <div style="flex:1;min-width:80px;overflow:hidden">
             <div style="display:flex;align-items:baseline;gap:6px">
-              ${article ? `<span class="font-mono" style="font-weight:700;font-size:0.82rem;color:var(--accent-teal);white-space:nowrap">${article}</span>` : ''}
-              <span style="font-size:0.78rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${displayName.replace(/"/g, '&quot;')}">${displayName}</span>
+              ${article ? `<span class="font-mono" style="font-weight:700;font-size:0.82rem;color:var(--accent-teal);white-space:nowrap">${esc(article)}</span>` : ''}
+              <span style="font-size:0.78rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(displayName)}">${esc(displayName)}</span>
             </div>
           </div>
           <div style="flex-shrink:0;width:140px">
@@ -310,7 +312,7 @@ const ProposalsPage = {
             <div style="font-size:0.6rem;color:var(--text-muted);margin-bottom:2px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Нац. %</div>
             <div style="${sw}">
               <button type="button" onclick="var inp=this.nextElementSibling;inp.value=parseInt(inp.value||0)-1;inp.dispatchEvent(new Event('input'))" style="${sb}" onmouseenter="${hi}" onmouseleave="${ho}">−</button>
-              <input type="number" step="1" class="form-control prop-item-markup" value="0" style="${si}" oninput="ProposalsPage._applyMarkup(this)">
+              <input type="number" step="1" class="form-control prop-item-markup" value="${markupPct}" style="${si}" oninput="ProposalsPage._applyMarkup(this)">
               <button type="button" onclick="var inp=this.previousElementSibling;inp.value=parseInt(inp.value||0)+1;inp.dispatchEvent(new Event('input'))" style="${sb}" onmouseenter="${hi}" onmouseleave="${ho}">+</button>
             </div>
           </div>
@@ -365,9 +367,9 @@ const ProposalsPage = {
                 return `
                   <tr style="cursor:pointer" onclick="ProposalsPage._addCatalogComponent(${c.id})">
                     <td>${c.image_path ? `<img src="${c.image_path}" style="width:32px;height:32px;object-fit:cover;border-radius:4px">` : '📦'}</td>
-                    <td class="font-mono" style="color:var(--accent-teal)">${c.article}</td>
-                    <td>${c.name}${modCount > 0 ? `<span style="margin-left:6px;padding:1px 6px;border-radius:8px;font-size:0.65rem;font-weight:600;background:var(--accent-teal);color:#fff">${modCount} мод.</span>` : ''}</td>
-                    <td><span class="badge badge-in_progress" style="font-size:0.7rem">${c.category_name || '—'}</span></td>
+                    <td class="font-mono" style="color:var(--accent-teal)">${esc(c.article)}</td>
+                    <td>${esc(c.name)}${modCount > 0 ? `<span style="margin-left:6px;padding:1px 6px;border-radius:8px;font-size:0.65rem;font-weight:600;background:var(--accent-teal);color:#fff">${modCount} мод.</span>` : ''}</td>
+                    <td><span class="badge badge-in_progress" style="font-size:0.7rem">${esc(c.category_name) || '—'}</span></td>
                     <td class="text-right">${Table.formatMoney(c.price)}</td>
                     <td class="text-right"><button class="btn btn-primary btn-sm" onclick="event.stopPropagation();ProposalsPage._addCatalogComponent(${c.id})">+</button></td>
                   </tr>`;
@@ -392,7 +394,7 @@ const ProposalsPage = {
           <input type="text" class="form-control" id="prop-cat-search" placeholder="Поиск по артикулу или названию..." style="flex:1">
           <select class="form-control" id="prop-cat-filter" style="width:180px">
             <option value="">Все категории</option>
-            ${categories.map(cat => `<option value="${cat}">${cat}</option>`).join('')}
+            ${categories.map(cat => `<option value="${esc(cat)}">${esc(cat)}</option>`).join('')}
           </select>
         </div>
         <div id="prop-cat-list" style="flex:1;overflow-y:auto">${renderList()}</div>
@@ -439,7 +441,7 @@ const ProposalsPage = {
     const renderMods = () => {
       return `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-          <h3 style="margin:0;color:var(--text-primary)">Модификации: ${comp.article}</h3>
+          <h3 style="margin:0;color:var(--text-primary)">Модификации: ${esc(comp.article)}</h3>
           <button onclick="document.getElementById('prop-catalog-overlay').remove()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-muted);padding:4px 8px">✕</button>
         </div>
         <div style="margin-bottom:12px;font-size:0.85rem;color:var(--text-muted)">Выберите модификацию или базовый компонент</div>
@@ -449,7 +451,7 @@ const ProposalsPage = {
                onmouseenter="this.style.borderColor='var(--accent-teal)'" onmouseleave="this.style.borderColor='var(--border)'">
             <div style="display:flex;justify-content:space-between;align-items:center">
               <div>
-                <div class="font-mono" style="font-weight:700">${comp.article}</div>
+                <div class="font-mono" style="font-weight:700">${esc(comp.article)}</div>
                 <div style="font-size:0.85rem;color:var(--text-secondary)">Базовый компонент</div>
               </div>
               <div style="font-weight:600">${Table.formatMoney(comp.price)}</div>
@@ -464,8 +466,8 @@ const ProposalsPage = {
                    onmouseenter="this.style.borderColor='var(--accent-teal)'" onmouseleave="this.style.borderColor='var(--border)'">
                 <div style="display:flex;justify-content:space-between;align-items:center">
                   <div style="flex:1">
-                    <span class="font-mono" style="font-weight:700;color:var(--accent-teal)">${fullArticle}</span>
-                    ${m.name ? `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:2px">${m.name}</div>` : ''}
+                    <span class="font-mono" style="font-weight:700;color:var(--accent-teal)">${esc(fullArticle)}</span>
+                    ${m.name ? `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:2px">${esc(m.name)}</div>` : ''}
                   </div>
                   <div style="font-weight:600;margin-left:12px">${Table.formatMoney(price)}</div>
                 </div>
@@ -559,8 +561,8 @@ const ProposalsPage = {
                    onclick="ProposalsPage.addDrawingItem(${d.id})">
                 <div style="width:48px;height:48px;background:var(--bg-main);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:1.2rem">📐</div>
                 <div style="flex:1;min-width:0">
-                  <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.title || d.name || 'Чертёж #' + d.id}</div>
-                  <div style="font-size:0.8rem;color:var(--text-muted)">${d.client_name || ''} · <strong>${Table.formatMoneyRaw(d.total_cost || 0)}</strong></div>
+                  <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(d.title || d.name) || 'Чертёж #' + d.id}</div>
+                  <div style="font-size:0.8rem;color:var(--text-muted)">${esc(d.client_name)} · <strong>${Table.formatMoneyRaw(d.total_cost || 0)}</strong></div>
                 </div>
               </div>
             `).join('')}
@@ -640,29 +642,11 @@ const ProposalsPage = {
   },
 
   _applyMarkup(input) {
-    const row = input.closest('[data-prop-item]');
-    const priceInput = row.querySelector('.prop-item-price');
-    const basePriceInput = row.querySelector('.prop-item-base-price');
-    let basePrice = parseFloat(basePriceInput.value) || 0;
-
-    // If no base price, use current price as base
-    if (basePrice === 0) {
-      basePrice = parseFloat(priceInput.value) || 0;
-      if (basePrice > 0) basePriceInput.value = basePrice;
-    }
-
-    const pct = parseInt(input.value) || 0;
-    if (basePrice > 0) {
-      const newPrice = Math.round(basePrice * (1 + pct / 100) * 100) / 100;
-      priceInput.value = Math.max(0, newPrice);
-    }
+    // Поле цены всегда содержит базовую цену, наценка показывается в итогах
     this.recalcTotals();
   },
 
   _onPriceManualChange(input) {
-    const row = input.closest('[data-prop-item]');
-    const markupInput = row.querySelector('.prop-item-markup');
-    if (markupInput) markupInput.value = 0;
     this.recalcTotals();
   },
 
@@ -691,7 +675,9 @@ const ProposalsPage = {
     rows.forEach(row => {
       const price = parseFloat(row.querySelector('.prop-item-price')?.value) || 0;
       const qty = parseInt(row.querySelector('.prop-item-qty')?.value) || 1;
-      const priceWithLevel = price * (1 + levelMarkupPct / 100);
+      const markupPct = parseFloat(row.querySelector('.prop-item-markup')?.value) || 0;
+      const isDrawing = row.querySelector('.prop-item-is-drawing')?.value === 'true';
+      const priceWithLevel = isDrawing ? price : price * (1 + levelMarkupPct / 100) * (1 + markupPct / 100);
       totalBase += price * qty;
       totalWithLevel += priceWithLevel * qty;
       const totalEl = row.querySelector('.prop-item-total');
@@ -702,7 +688,7 @@ const ProposalsPage = {
     if (el) {
       el.innerHTML = `
         <div style="font-size:1.1rem">Итого: <strong style="color:var(--accent-teal)">${Table.formatMoney(totalWithLevel)}</strong></div>
-        ${levelName ? `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:4px">💰 Наценка уровня «${levelName}» (${levelMarkupPct > 0 ? '+' : ''}${levelMarkupPct}%): <strong>${levelDiff >= 0 ? '+' : ''}${Table.formatMoneyRaw(levelDiff)}</strong></div>` : ''}
+        ${levelName ? `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:4px">💰 Наценка уровня «${esc(levelName)}» (${levelMarkupPct > 0 ? '+' : ''}${levelMarkupPct}%): <strong>${levelDiff >= 0 ? '+' : ''}${Table.formatMoneyRaw(levelDiff)}</strong></div>` : ''}
       `;
     }
   },
@@ -732,16 +718,16 @@ const ProposalsPage = {
       const product_name = nameInput ? nameInput.value : '';
 
       const price = parseFloat(priceInput.value) || 0;
-      // Применить наценку уровня клиента к цене при сохранении
-      const clientOpt = document.getElementById('prop-client')?.selectedOptions[0];
-      const lvlMarkup = parseFloat(clientOpt?.dataset?.markup) || 0;
-      const finalPrice = price * (1 + lvlMarkup / 100);
+      const markupPct = parseFloat(row.querySelector('.prop-item-markup')?.value) || 0;
       if (product_name && price > 0) {
+        // Итоговую цену с наценкой уровня рассчитывает сервер
         items.push({
           product_id,
           product_name,
           description: '',
-          unit_price: Math.round(finalPrice * 100) / 100,
+          base_price: price,
+          markup_pct: markupPct,
+          markup_rub: 0,
           quantity: parseInt(qtyInput.value) || 1,
           image_path: imgInput ? imgInput.value || null : null,
           drawing_id: drawingIdInput && drawingIdInput.value ? parseInt(drawingIdInput.value) : null,
@@ -767,9 +753,8 @@ const ProposalsPage = {
 
   // === PDF ===
   downloadPDF(id) {
-    const token = API.getToken();
     const vat = Table.getVATSettings();
-    window.open(`/api/proposals/${id}/pdf?token=${token}&vat_rate=${vat.rate}`, '_blank');
+    window.open(`/api/proposals/${id}/pdf?vat_rate=${vat.rate}`, '_blank');
   },
 
   // === ПЕРЕВОД В ЗАКАЗ ===

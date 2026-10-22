@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
-const adminOnly = require('../middleware/role');
+const { normalizeUploadPath } = require('../utils/files');
 
 const router = express.Router({ mergeParams: true });
 
@@ -80,7 +80,7 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // POST /api/clients/:clientId/approvals — создать согласование
-router.post('/', auth, adminOnly, async (req, res) => {
+router.post('/', auth, async (req, res) => {
   try {
     const { title, description, status } = req.body;
     if (!title) return res.status(400).json({ error: 'Укажите название' });
@@ -98,7 +98,7 @@ router.post('/', auth, adminOnly, async (req, res) => {
 });
 
 // PUT /api/clients/:clientId/approvals/:id — обновить
-router.put('/:id', auth, adminOnly, async (req, res) => {
+router.put('/:id', auth, async (req, res) => {
   try {
     const { title, description } = req.body;
     if (!title) return res.status(400).json({ error: 'Укажите название' });
@@ -116,7 +116,7 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
 });
 
 // PATCH /api/clients/:clientId/approvals/:id/status — сменить статус
-router.patch('/:id/status', auth, adminOnly, async (req, res) => {
+router.patch('/:id/status', auth, async (req, res) => {
   try {
     const { status } = req.body;
     if (!STATUSES[status]) return res.status(400).json({ error: 'Недопустимый статус' });
@@ -134,7 +134,7 @@ router.patch('/:id/status', auth, adminOnly, async (req, res) => {
 });
 
 // DELETE /api/clients/:clientId/approvals/:id
-router.delete('/:id', auth, adminOnly, async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
   try {
     const result = await db.query(
       'DELETE FROM drawing_approvals WHERE id = $1 AND client_id = $2 RETURNING id',
@@ -150,10 +150,15 @@ router.delete('/:id', auth, adminOnly, async (req, res) => {
 // === Версии файлов ===
 
 // POST /api/clients/:clientId/approvals/:id/versions — загрузить версию
-router.post('/:id/versions', auth, adminOnly, async (req, res) => {
+router.post('/:id/versions', auth, async (req, res) => {
   try {
     const { file_path, file_type, source, comment } = req.body;
     if (!file_path) return res.status(400).json({ error: 'Укажите файл' });
+
+    const normalizedFilePath = normalizeUploadPath(file_path);
+    if (!normalizedFilePath) {
+      return res.status(400).json({ error: 'Недопустимый путь к файлу' });
+    }
 
     // Определяем номер версии
     const countRes = await db.query(
@@ -165,7 +170,7 @@ router.post('/:id/versions', auth, adminOnly, async (req, res) => {
     const result = await db.query(
       `INSERT INTO drawing_approval_versions (approval_id, version_number, file_path, file_type, source, comment, uploaded_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [req.params.id, versionNumber, file_path, file_type || null, source || 'client', comment || null, req.user.id]
+      [req.params.id, versionNumber, normalizedFilePath, file_type || null, source || 'client', comment || null, req.user.id]
     );
 
     // Обновить updated_at у согласования
@@ -179,7 +184,7 @@ router.post('/:id/versions', auth, adminOnly, async (req, res) => {
 });
 
 // DELETE /api/clients/:clientId/approvals/:approvalId/versions/:id
-router.delete('/:approvalId/versions/:id', auth, adminOnly, async (req, res) => {
+router.delete('/:approvalId/versions/:id', auth, async (req, res) => {
   try {
     const result = await db.query(
       'DELETE FROM drawing_approval_versions WHERE id = $1 AND approval_id = $2 RETURNING id',
@@ -222,7 +227,7 @@ router.post('/:id/comments', auth, async (req, res) => {
 });
 
 // DELETE /api/clients/:clientId/approvals/:approvalId/comments/:id
-router.delete('/:approvalId/comments/:id', auth, adminOnly, async (req, res) => {
+router.delete('/:approvalId/comments/:id', auth, async (req, res) => {
   try {
     const result = await db.query(
       'DELETE FROM drawing_approval_comments WHERE id = $1 AND approval_id = $2 RETURNING id',

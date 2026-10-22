@@ -30,17 +30,26 @@ echo -e "${CYAN}━━━ 1/4 • Остановка сервиса ━━━${N
 systemctl stop atlanta-crm 2>/dev/null || warn "Сервис не был запущен"
 log "Сервис остановлен"
 
-# 2. Применить миграцию БД
-echo -e "${CYAN}━━━ 2/4 • Миграция БД ━━━${NC}"
-sudo -u postgres psql -d $DB_NAME -f "$APP_DIR/server/src/db/migration_sync_v2.sql" 2>&1 | tail -10
-log "Миграция применена"
-
-# 3. Установить зависимости (если изменились)
-echo -e "${CYAN}━━━ 3/4 • npm install ━━━${NC}"
+# 2. Установить зависимости (нужны для раннера миграций)
+echo -e "${CYAN}━━━ 2/4 • npm install ━━━${NC}"
 cd "$APP_DIR/server"
 npm install --omit=dev 2>&1 | tail -3
 cd "$APP_DIR"
 log "Зависимости обновлены"
+
+echo -e "${CYAN}━━━ 2.1 • Миграция БД ━━━${NC}"
+cd "$APP_DIR/server"
+if node src/db/migrate.js; then
+  log "Миграции применены"
+else
+  err "Ошибка миграции БД"
+fi
+
+# Обновить роли (добавляет новые разделы, не сбрасывая настройки прав)
+if [ -f "$APP_DIR/server/src/db/migrate_roles.js" ]; then
+  node src/db/migrate_roles.js >/dev/null 2>&1 && log "Роли обновлены" || warn "Миграция ролей не выполнена"
+fi
+cd "$APP_DIR"
 
 # 4. Запустить сервис
 echo -e "${CYAN}━━━ 4/4 • Запуск сервиса ━━━${NC}"

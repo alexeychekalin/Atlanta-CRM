@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
-const adminOnly = require('../middleware/role');
+const { hasPermission } = require('../middleware/role');
 
 const router = express.Router();
 
@@ -18,7 +18,7 @@ router.get('/', auth, async (req, res) => {
 });
 
 // PUT /api/pricing-levels/:id — обновить уровень
-router.put('/:id', auth, adminOnly, async (req, res) => {
+router.put('/:id', auth, hasPermission('settings', 'edit'), async (req, res) => {
   try {
     const { name, markup_pct, sort_order } = req.body;
     const result = await db.query(

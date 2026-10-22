@@ -216,7 +216,7 @@ const ComponentsCatalogPage = {
     container.innerHTML = `
       <button class="chip-filter ${!activeId ? 'active' : ''}" onclick="ComponentsCatalogPage.filterByChip('')">Все</button>
       ${this.categories.map(c => `
-        <button class="chip-filter ${activeId == c.id ? 'active' : ''}" onclick="ComponentsCatalogPage.filterByChip('${c.id}')">${c.name}</button>
+        <button class="chip-filter ${activeId == c.id ? 'active' : ''}" onclick="ComponentsCatalogPage.filterByChip('${c.id}')">${esc(c.name)}</button>
       `).join('')}
     `;
   },
@@ -291,15 +291,15 @@ const ComponentsCatalogPage = {
           <div class="comp-card" onclick="ComponentsCatalogPage.viewComponent(${c.id})">
             <div class="comp-card-img">
               ${c.image_path
-                ? `<img src="${c.image_path}" alt="${c.name}" loading="lazy">`
+                ? `<img src="${esc(c.image_path)}" alt="${esc(c.name)}" loading="lazy">`
                 : '<div class="comp-placeholder">📦</div>'}
-              ${c.category_name ? `<div class="comp-card-category">${c.category_name}</div>` : ''}
+              ${c.category_name ? `<div class="comp-card-category">${esc(c.category_name)}</div>` : ''}
               <div class="comp-card-status" style="background:${c.is_active !== false ? '#22c55e' : '#ef4444'}"></div>
             </div>
             <div class="comp-card-body">
-              <div class="comp-card-article">${c.article}</div>
-              <div class="comp-card-name">${c.name}</div>
-              ${c.description ? `<div class="comp-card-desc">${c.description}</div>` : ''}
+              <div class="comp-card-article">${esc(c.article)}</div>
+              <div class="comp-card-name">${esc(c.name)}</div>
+              ${c.description ? `<div class="comp-card-desc">${esc(c.description)}</div>` : ''}
               ${parseInt(c.modifications_count) > 0 ? `<div style="margin-top:4px"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.7rem;font-weight:600;background:var(--accent-teal);color:#fff">${c.modifications_count} мод.</span></div>` : ''}
             </div>
             <div class="comp-card-footer">
@@ -341,12 +341,12 @@ const ComponentsCatalogPage = {
               <tr style="cursor:pointer" onclick="ComponentsCatalogPage.viewComponent(${c.id})">
                 <td>
                   ${c.image_path
-                    ? `<img src="${c.image_path}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">`
+                    ? `<img src="${esc(c.image_path)}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">`
                     : '<div style="width:40px;height:40px;border-radius:6px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:16px">📦</div>'}
                 </td>
-                <td class="font-mono" style="color:var(--accent-teal)">${c.article}</td>
-                <td><strong>${c.name}</strong>${c.description ? `<div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px">${c.description.substring(0, 60)}</div>` : ''}${parseInt(c.modifications_count) > 0 ? `<span style="display:inline-block;margin-top:2px;padding:1px 7px;border-radius:8px;font-size:0.7rem;font-weight:600;background:var(--accent-teal);color:#fff">${c.modifications_count} мод.</span>` : ''}</td>
-                <td><span class="badge badge-in_progress">${c.category_name || '—'}</span></td>
+                <td class="font-mono" style="color:var(--accent-teal)">${esc(c.article)}</td>
+                <td><strong>${esc(c.name)}</strong>${c.description ? `<div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px">${esc(c.description.substring(0, 60))}</div>` : ''}${parseInt(c.modifications_count) > 0 ? `<span style="display:inline-block;margin-top:2px;padding:1px 7px;border-radius:8px;font-size:0.7rem;font-weight:600;background:var(--accent-teal);color:#fff">${c.modifications_count} мод.</span>` : ''}</td>
+                <td><span class="badge badge-in_progress">${esc(c.category_name) || '—'}</span></td>
                 <td class="text-right" style="font-weight:600">${Table.formatMoney(c.price)}</td>
                 <td>${c.is_active !== false ? '<span class="badge badge-completed">Активен</span>' : '<span class="badge badge-cancelled">Неактивен</span>'}</td>
                 ${hasActions ? `<td class="text-right" onclick="event.stopPropagation()">
@@ -436,14 +436,14 @@ const ComponentsCatalogPage = {
           <div style="display:grid;grid-template-columns:${comp.image_path ? '1fr 1fr' : '1fr'};gap:20px">
             ${comp.image_path ? `
               <div style="border-radius:12px;overflow:hidden;border:1px solid var(--border);max-height:350px">
-                <img src="${comp.image_path}" alt="${comp.name}" style="width:100%;height:100%;object-fit:cover">
+                <img src="${esc(comp.image_path)}" alt="${esc(comp.name)}" style="width:100%;height:100%;object-fit:cover">
               </div>
             ` : ''}
             <div>
               <div style="margin-bottom:16px">
-                <div style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;color:var(--accent-teal);margin-bottom:4px">${comp.article}</div>
-                <div style="font-size:1.3rem;font-weight:700;margin-bottom:8px">${comp.name}</div>
-                ${comp.category_name ? `<span class="badge badge-in_progress" style="font-size:0.8rem">${comp.category_name}</span>` : ''}
+                <div style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;color:var(--accent-teal);margin-bottom:4px">${esc(comp.article)}</div>
+                <div style="font-size:1.3rem;font-weight:700;margin-bottom:8px">${esc(comp.name)}</div>
+                ${comp.category_name ? `<span class="badge badge-in_progress" style="font-size:0.8rem">${esc(comp.category_name)}</span>` : ''}
               </div>
               <div style="background:var(--bg-main);border-radius:10px;padding:16px;border:1px solid var(--border);margin-bottom:12px">
                 <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px">Базовая цена</div>
@@ -452,7 +452,7 @@ const ComponentsCatalogPage = {
               ${comp.description ? `
                 <div style="margin-bottom:12px">
                   <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">Описание</div>
-                  <div style="font-size:0.9rem;line-height:1.5">${comp.description}</div>
+                  <div style="font-size:0.9rem;line-height:1.5">${esc(comp.description)}</div>
                 </div>
               ` : ''}
               ${comp.comment ? `
@@ -464,7 +464,7 @@ const ComponentsCatalogPage = {
               ${comp.gisp_url ? `
                 <div style="margin-bottom:12px">
                   <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">ГИСП</div>
-                  <a href="${comp.gisp_url}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:#1d4ed822;color:#3b82f6;border-radius:8px;font-size:0.85rem;font-weight:600;text-decoration:none;border:1px solid #3b82f644;transition:all 0.2s" onmouseover="this.style.background='#1d4ed833'" onmouseout="this.style.background='#1d4ed822'">🏢 Открыть в ГИСП ↗</a>
+                  <a href="${safeUrl(comp.gisp_url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:#1d4ed822;color:#3b82f6;border-radius:8px;font-size:0.85rem;font-weight:600;text-decoration:none;border:1px solid #3b82f644;transition:all 0.2s" onmouseover="this.style.background='#1d4ed833'" onmouseout="this.style.background='#1d4ed822'">🏢 Открыть в ГИСП ↗</a>
                 </div>
               ` : ''}
               <div style="display:flex;gap:12px;font-size:0.82rem;color:var(--text-muted)">
@@ -476,7 +476,7 @@ const ComponentsCatalogPage = {
           <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
               <div style="font-size:1rem;font-weight:700">📎 Документы</div>
-              <button class="btn btn-sm btn-secondary" onclick="window.open('/api/components/${comp.id}/documents/download-all?token='+API.getToken(),'_blank')" title="Скачать все документы ZIP">📦 Скачать ZIP</button>
+              <button class="btn btn-sm btn-secondary" onclick="window.open('/api/components/${comp.id}/documents/download-all','_blank')" title="Скачать все документы ZIP">📦 Скачать ZIP</button>
             </div>
             <div id="view-comp-docs" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div style="color:var(--text-muted);font-size:0.82rem;grid-column:1/-1">Загрузка...</div></div>
           </div>
@@ -543,7 +543,7 @@ const ComponentsCatalogPage = {
       if (select) {
         const val = select.value;
         select.innerHTML = '<option value="">Все категории</option>' +
-          this.categories.map(c => `<option value="${c.id}" ${val == c.id ? 'selected' : ''}>${c.name}</option>`).join('');
+          this.categories.map(c => `<option value="${c.id}" ${val == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
       }
     } catch (err) {
       console.error(err);
@@ -569,7 +569,7 @@ const ComponentsCatalogPage = {
             <tbody>
               ${this.categories.map(c => `
                 <tr ${canEdit ? `style="cursor:pointer" onclick="ComponentsCatalogPage.openCategoryModal(${c.id})" title="Редактировать категорию"` : ''}>
-                  <td><strong>${c.name}</strong></td>
+                  <td><strong>${esc(c.name)}</strong></td>
                   <td class="text-right">${c.sort_order}</td>
                   ${hasActions ? `<td class="text-right" onclick="event.stopPropagation()">
                     <div class="table-actions" style="justify-content:flex-end">

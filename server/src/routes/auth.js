@@ -3,11 +3,35 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 const auth = require('../middleware/auth');
+const { rateLimit } = require('express-rate-limit');
 
 const router = express.Router();
 
+// Защита от подбора паролей: 10 неудачных попыток за 15 минут с одного IP
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: 'Слишком много попыток входа. Повторите через 15 минут.' },
+});
+
+const TOKEN_TTL = '12h';
+const COOKIE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+
+function setAuthCookie(res, token) {
+  res.cookie('atlanta_token', token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.COOKIE_SECURE === 'true',
+    maxAge: COOKIE_MAX_AGE_MS,
+    path: '/',
+  });
+}
+
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { username, password } = req.body;
 
@@ -46,11 +70,13 @@ router.post('/login', async (req, res) => {
         username: user.username, 
         full_name: user.full_name, 
         role: effectiveRole,
-        permissions: effectivePermissions,
+        tv: user.token_version || 0,
       },
       process.env.JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: TOKEN_TTL }
     );
+
+    setAuthCookie(res, token);
 
     res.json({
       token,
@@ -69,6 +95,12 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// POST /api/auth/logout — очищает httpOnly-cookie
+router.post('/logout', (req, res) => {
+  res.clearCookie('atlanta_token', { path: '/' });
+  res.json({ ok: true });
+});
+
 // GET /api/auth/me
 router.get('/me', auth, async (req, res) => {
   try {
@@ -79,6 +111,7 @@ router.get('/me', auth, async (req, res) => {
         u.full_name, 
         u.role, 
         u.role_id,
+        u.token_version,
         u.created_at,
         r.name as role_name,
         r.display_name as role_display_name,
@@ -92,6 +125,21 @@ router.get('/me', auth, async (req, res) => {
       return res.status(404).json({ error: 'Пользователь не найден' });
     }
     const user = result.rows[0];
+
+    // Освежаем cookie и продлеваем сессию: ссылки на PDF/ZIP используют cookie
+    const freshToken = jwt.sign(
+      {
+        id: user.id,
+        username: user.username,
+        full_name: user.full_name,
+        role: user.role_name || user.role,
+        tv: user.token_version || 0,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: TOKEN_TTL }
+    );
+    setAuthCookie(res, freshToken);
+
     res.json({
       id: user.id,
       username: user.username,

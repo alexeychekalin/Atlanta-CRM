@@ -15,10 +15,11 @@ const pool = new Pool({
 
 pool.on('error', (err) => {
   console.error('Непредвиденная ошибка подключения к БД:', err);
-  process.exit(-1);
+  process.exit(1);
 });
 
 module.exports = {
   query: (text, params) => pool.query(text, params),
   pool,
+  close: () => pool.end(),
 };

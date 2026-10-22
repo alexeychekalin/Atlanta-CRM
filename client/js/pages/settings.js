@@ -262,7 +262,7 @@ const SettingsPage = {
                     <div style="display:flex;align-items:center;gap:8px">
                       <strong style="font-size:0.95rem;color:var(--text-primary)">${r.display_name}</strong>
                       <span class="badge" style="background:${isSys ? 'rgba(239,68,68,0.15);color:#ef4444' : 'rgba(20,184,166,0.15);color:var(--accent-teal)'}">
-                        ${r.name}
+                        ${esc(r.name)}
                       </span>
                       ${isSys ? '<span class="badge" style="background:var(--bg-tertiary);color:var(--text-muted);font-size:0.7rem">системная</span>' : ''}
                     </div>
@@ -626,11 +626,11 @@ const SettingsPage = {
                     <td>
                       <div style="display:flex;align-items:center;gap:10px">
                         <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#14b8a6,#3b82f6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:0.8rem">
-                          ${(u.full_name || '?').charAt(0).toUpperCase()}
+                          ${esc((u.full_name || '?').charAt(0).toUpperCase())}
                         </div>
                         <div>
-                          <div style="font-weight:600">${u.full_name} ${isSelf ? '<span style="font-size:0.75rem;color:var(--accent-teal)">(Вы)</span>' : ''}</div>
-                          <div style="font-size:0.75rem;color:var(--text-muted)">@${u.username}</div>
+                          <div style="font-weight:600">${esc(u.full_name)} ${isSelf ? '<span style="font-size:0.75rem;color:var(--accent-teal)">(Вы)</span>' : ''}</div>
+                          <div style="font-size:0.75rem;color:var(--text-muted)">@${esc(u.username)}</div>
                         </div>
                       </div>
                     </td>
@@ -688,23 +688,23 @@ const SettingsPage = {
     const isEdit = !!user;
 
     Modal.open({
-      title: isEdit ? `Редактировать пользователя: ${user.full_name}` : 'Новый пользователь',
+      title: isEdit ? `Редактировать пользователя: ${esc(user.full_name)}` : 'Новый пользователь',
       body: `
         <form id="user-form">
           <div class="form-group">
             <label>ФИО пользователя *</label>
-            <input type="text" class="form-control" id="user-fullname" value="${isEdit ? user.full_name : ''}" placeholder="например, Иванов Иван Иванович" required>
+            <input type="text" class="form-control" id="user-fullname" value="${isEdit ? esc(user.full_name) : ''}" placeholder="например, Иванов Иван Иванович" required>
           </div>
           <div class="form-group">
             <label>Логин для входа *</label>
-            <input type="text" class="form-control" id="user-login" value="${isEdit ? user.username : ''}" ${isEdit ? 'disabled' : ''} placeholder="например, ivanov" required>
+            <input type="text" class="form-control" id="user-login" value="${isEdit ? esc(user.username) : ''}" ${isEdit ? 'disabled' : ''} placeholder="например, ivanov" required>
           </div>
           <div class="form-group">
             <label>Роль доступа *</label>
             <select class="form-control" id="user-role-id" required>
               ${roles.map(r => `
                 <option value="${r.id}" ${isEdit && (user.role_id === r.id || user.role === r.name) ? 'selected' : (!isEdit && r.name === 'manager' ? 'selected' : '')}>
-                  ${r.display_name} (${r.description || r.name})
+                  ${esc(r.display_name)} (${esc(r.description || r.name)})
                 </option>
               `).join('')}
             </select>
@@ -797,7 +797,7 @@ const SettingsPage = {
             <tbody>
               ${principals.map(p => `
                 <tr style="cursor:pointer" onclick="SettingsPage.openPrincipalModal(${p.id})" title="Редактировать принципала">
-                  <td><strong>${p.name}</strong></td>
+                  <td><strong>${esc(p.name)}</strong></td>
                   <td class="text-right text-accent">${p.agent_commission_pct}%</td>
                   <td class="text-right" onclick="event.stopPropagation()">
                     <div class="table-actions" style="justify-content:flex-end">
@@ -924,7 +924,7 @@ const SettingsPage = {
             <div style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-radius:8px;border:1px solid var(--border);transition:all var(--transition-fast)" onclick="SettingsPage.openStatusModal(${s.id})" title="Редактировать статус" onmouseover="this.style.borderColor='var(--accent-teal)'" onmouseout="this.style.borderColor='var(--border)'">
               <div style="display:flex;align-items:center;gap:10px">
                 <span style="width:14px;height:14px;border-radius:50%;background:${s.color};flex-shrink:0"></span>
-                <span style="font-weight:500;font-size:0.9rem">${s.name}</span>
+                <span style="font-weight:500;font-size:0.9rem">${esc(s.name)}</span>
                 ${!s.is_active ? '<span style="font-size:0.7rem;color:var(--text-muted);margin-left:4px">(скрыт)</span>' : ''}
               </div>
               <div style="display:flex;gap:4px" onclick="event.stopPropagation()">
@@ -1045,7 +1045,7 @@ const SettingsPage = {
             ${types.map(t => `
               <tr>
                 <td style="font-size:1.2rem;text-align:center">${t.icon || '—'}</td>
-                <td style="font-weight:600">${t.name}</td>
+                <td style="font-weight:600">${esc(t.name)}</td>
                 <td class="text-center">${t.sort_order}</td>
                 <td class="text-right">
                   <button class="btn btn-secondary btn-sm" onclick="SettingsPage.showEquipTypeForm(${t.id}, '${t.name.replace(/'/g, "\\'")}', '${(t.icon || '').replace(/'/g, "\\'")}', ${t.sort_order})">✏️</button>
@@ -1147,7 +1147,7 @@ const SettingsPage = {
           <tbody>
             ${levels.map(l => `
               <tr>
-                <td style="font-weight:600">${l.name}</td>
+                <td style="font-weight:600">${esc(l.name)}</td>
                 <td><code style="font-size:0.8rem;color:var(--accent-teal)">${l.code}</code></td>
                 <td class="text-right">
                   <input type="number" value="${l.markup_pct}" step="0.5" 

@@ -212,7 +212,7 @@ const DrawingsPage = {
     if (!select) return;
 
     select.innerHTML = '<option value="">Все клиенты</option><option value="none">Без клиента</option>' +
-      this.clients.map(c => `<option value="${c.id}" ${this.selectedClientId == c.id ? 'selected' : ''}>${c.name}</option>`).join('');
+      this.clients.map(c => `<option value="${c.id}" ${this.selectedClientId == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
   },
 
   updateClientChips() {
@@ -253,7 +253,7 @@ const DrawingsPage = {
         const isSelected = String(this.selectedClientId) === String(c.id);
         html += `
           <button class="btn btn-sm" style="border-radius:20px;padding:4px 12px;font-size:0.78rem;${isSelected ? activeStyle : inactiveStyle}" onclick="DrawingsPage.selectClientChip('${c.id}')">
-            ${c.name} (${count})
+            ${esc(c.name)} (${count})
           </button>
         `;
       }
@@ -352,14 +352,14 @@ const DrawingsPage = {
         <div class="drawing-card-header">
           <div class="drawing-card-icon">📐</div>
           <div style="flex:1;min-width:0">
-            <div class="drawing-card-title">${d.name}</div>
+            <div class="drawing-card-title">${esc(d.name)}</div>
             <div class="drawing-card-client">
-              👤 ${clientName}
+              👤 ${esc(clientName)}
             </div>
           </div>
         </div>
         <div class="drawing-card-body">
-          ${d.description ? `<div class="drawing-card-desc">${d.description}</div>` : '<div style="font-size:0.8rem;color:var(--text-muted);font-style:italic;">Без описания</div>'}
+          ${d.description ? `<div class="drawing-card-desc">${esc(d.description)}</div>` : '<div style="font-size:0.8rem;color:var(--text-muted);font-style:italic;">Без описания</div>'}
           
           <div class="drawing-card-stats">
             <div class="drawing-stat-item">
@@ -373,7 +373,7 @@ const DrawingsPage = {
           </div>
         </div>
         <div class="drawing-card-footer">
-          <span>${authorStr} · ${dateStr}</span>
+          <span>${esc(authorStr)} · ${esc(dateStr)}</span>
           <span style="color:var(--accent-teal);font-weight:600">Подробнее →</span>
         </div>
       </div>
@@ -406,9 +406,9 @@ const DrawingsPage = {
                   <td>
                     <div style="font-weight:600;display:flex;align-items:center;gap:8px">
                       <span style="font-size:1.1rem">📐</span>
-                      <span>${d.name}</span>
+                      <span>${esc(d.name)}</span>
                     </div>
-                    ${d.description ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-left:24px">${d.description}</div>` : ''}
+                    ${d.description ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-left:24px">${esc(d.description)}</div>` : ''}
                   </td>
                   <td>
                     ${d.client_id ? `
@@ -554,7 +554,7 @@ const DrawingsPage = {
               const totalCost = parseFloat(d.total_cost || d.base_cost) || 0;
               return `
                 <tr style="cursor:pointer" onclick="DrawingsPage.openDrawingModal(${d.id})">
-                  <td><strong>${d.name}</strong></td>
+                  <td><strong>${esc(d.name)}</strong></td>
                   <td class="text-center">${d.components_count || 0}</td>
                   <td class="text-right">${Table.formatMoney(baseCost)}</td>
                   <td class="text-right"><strong style="color:var(--accent-teal)">${Table.formatMoney(totalCost)}</strong></td>
@@ -603,6 +603,15 @@ const DrawingsPage = {
         subtotalWithMarkups += lineTotal;
       });
 
+      // Фиксированная цена — итог берётся из неё, а не из состава
+      if (drawing.fixed_price !== null && drawing.fixed_price !== undefined && parseFloat(drawing.fixed_price) > 0) {
+        subtotalWithMarkups = parseFloat(drawing.fixed_price);
+      } else {
+        const globalPct = parseFloat(drawing.global_markup_pct) || 0;
+        const globalRub = parseFloat(drawing.global_markup_rub) || 0;
+        subtotalWithMarkups = subtotalWithMarkups * (1 + globalPct / 100) + globalRub;
+      }
+
       const dateStr = drawing.created_at ? new Date(drawing.created_at).toLocaleString('ru-RU') : '—';
       const clientName = drawing.client_name || 'Не привязан';
 
@@ -613,20 +622,20 @@ const DrawingsPage = {
             <div>
               <div style="display:flex;align-items:center;gap:10px">
                 <span style="font-size:1.5rem">📐</span>
-                <h3 style="margin:0;font-size:1.25rem;font-weight:700;color:var(--text-primary)">${drawing.name}</h3>
+                <h3 style="margin:0;font-size:1.25rem;font-weight:700;color:var(--text-primary)">${esc(drawing.name)}</h3>
               </div>
               <div style="margin-top:8px;display:flex;gap:14px;flex-wrap:wrap;font-size:0.85rem;color:var(--text-secondary)">
                 <span>👤 Клиент: 
                   ${drawing.client_id ? `
                     <a href="#" class="client-link" style="font-weight:600" onclick="Modal.close();App.navigateTo('client-profile', ${drawing.client_id})">
-                      ${clientName}
+                      ${esc(clientName)}
                     </a>
                   ` : '<span class="text-muted">Без клиента</span>'}
                 </span>
-                <span>👨‍💼 Автор: <strong>${drawing.author_name || '—'}</strong></span>
+                <span>👨‍💼 Автор: <strong>${esc(drawing.author_name) || '—'}</strong></span>
                 <span>📅 Создан: <strong>${dateStr}</strong></span>
               </div>
-              ${drawing.description ? `<p style="margin-top:8px;font-size:0.85rem;color:var(--text-secondary);line-height:1.4">${drawing.description}</p>` : ''}
+              ${drawing.description ? `<p style="margin-top:8px;font-size:0.85rem;color:var(--text-secondary);line-height:1.4">${esc(drawing.description)}</p>` : ''}
             </div>
 
             <!-- Итоговый блок стоимости -->
@@ -689,9 +698,9 @@ const DrawingsPage = {
                       return `
                         <tr>
                           <td style="color:var(--text-muted)">${idx + 1}</td>
-                          <td><span class="font-mono" style="color:var(--accent-teal);font-size:0.8rem">${c.modification_code ? c.article + '.' + c.modification_code : (c.article || '—')}</span></td>
-                          <td><strong>${c.component_name}</strong>${c.modification_name ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:1px">${c.modification_name}</div>` : ''}</td>
-                          <td><span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary)">${c.category_name || '—'}</span></td>
+                          <td><span class="font-mono" style="color:var(--accent-teal);font-size:0.8rem">${esc(c.modification_code ? c.article + '.' + c.modification_code : (c.article || '—'))}</span></td>
+                          <td><strong>${esc(c.component_name)}</strong>${c.modification_name ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:1px">${esc(c.modification_name)}</div>` : ''}</td>
+                          <td><span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary)">${esc(c.category_name) || '—'}</span></td>
                           <td class="text-right">${Table.formatMoney(c.modification_price !== null && c.modification_price !== undefined ? c.modification_price : c.price)}</td>
                           <td class="text-center">${c.quantity}</td>
                           <td class="text-center" style="font-size:0.8rem;color:${markupPct < 0 || markupRub < 0 ? '#ef4444' : markupPct > 0 || markupRub > 0 ? '#22c55e' : 'var(--text-muted)'}">
@@ -726,7 +735,7 @@ const DrawingsPage = {
       `;
 
       Modal.open({
-        title: `Карточка чертежа: ${drawing.name}`,
+        title: `Карточка чертежа: ${esc(drawing.name)}`,
         body: bodyHtml,
         footer: footerHtml,
         wide: true,

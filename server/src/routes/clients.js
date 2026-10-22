@@ -1,7 +1,6 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
-const adminOnly = require('../middleware/role');
 
 const router = express.Router();
 
@@ -74,7 +73,7 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // POST /api/clients
-router.post('/', auth, adminOnly, async (req, res) => {
+router.post('/', auth, async (req, res) => {
   try {
     const { name, phone, email, address, notes, avatar_path, status_id, pricing_level_id,
             delivery_address, delivery_contact_name, delivery_contact_phone,
@@ -106,7 +105,7 @@ router.post('/', auth, adminOnly, async (req, res) => {
 });
 
 // PUT /api/clients/:id
-router.put('/:id', auth, adminOnly, async (req, res) => {
+router.put('/:id', auth, async (req, res) => {
   try {
     const { name, phone, email, address, notes, avatar_path, status_id, pricing_level_id,
             delivery_address, delivery_contact_name, delivery_contact_phone,
@@ -146,7 +145,7 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
 });
 
 // PATCH /api/clients/:id/avatar — обновить только аватар
-router.patch('/:id/avatar', auth, adminOnly, async (req, res) => {
+router.patch('/:id/avatar', auth, async (req, res) => {
   try {
     const { avatar_path } = req.body;
     const result = await db.query(
@@ -161,7 +160,7 @@ router.patch('/:id/avatar', auth, adminOnly, async (req, res) => {
 });
 
 // PATCH /api/clients/:id/status — обновить только статус
-router.patch('/:id/status', auth, adminOnly, async (req, res) => {
+router.patch('/:id/status', auth, async (req, res) => {
   try {
     const { status_id } = req.body;
     const result = await db.query(
@@ -176,7 +175,7 @@ router.patch('/:id/status', auth, adminOnly, async (req, res) => {
 });
 
 // DELETE /api/clients/:id
-router.delete('/:id', auth, adminOnly, async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
   try {
     const result = await db.query('DELETE FROM clients WHERE id = $1 RETURNING id', [req.params.id]);
     if (result.rows.length === 0) {

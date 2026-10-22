@@ -1,7 +1,6 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
-const adminOnly = require('../middleware/role');
 
 const router = express.Router();
 
@@ -79,7 +78,7 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // POST /api/manufacturers
-router.post('/', auth, adminOnly, async (req, res) => {
+router.post('/', auth, async (req, res) => {
   try {
     const { name, address, website, phone, email, logo_path, description, contact_person, country } = req.body;
     if (!name) return res.status(400).json({ error: 'Укажите название' });
@@ -96,7 +95,7 @@ router.post('/', auth, adminOnly, async (req, res) => {
 });
 
 // PUT /api/manufacturers/:id
-router.put('/:id', auth, adminOnly, async (req, res) => {
+router.put('/:id', auth, async (req, res) => {
   try {
     const { name, address, website, phone, email, logo_path, description, contact_person, country, is_active } = req.body;
     const result = await db.query(
@@ -122,7 +121,7 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
 });
 
 // DELETE /api/manufacturers/:id
-router.delete('/:id', auth, adminOnly, async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
   try {
     await db.query('DELETE FROM manufacturers WHERE id = $1', [req.params.id]);
     res.json({ success: true });

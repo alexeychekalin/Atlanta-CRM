@@ -1,7 +1,6 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
-const adminOnly = require('../middleware/role');
 
 const router = express.Router({ mergeParams: true });
 

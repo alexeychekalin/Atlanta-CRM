@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
   full_name VARCHAR(255) NOT NULL,
   role VARCHAR(100) NOT NULL DEFAULT 'viewer',
   role_id INT REFERENCES roles(id) ON DELETE SET NULL,
+  token_version INT NOT NULL DEFAULT 0,
   created_at TIMESTAMP DEFAULT now()
 );
 
@@ -114,6 +115,9 @@ CREATE TABLE IF NOT EXISTS orders (
   commission_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
   commission_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
   total NUMERIC(14,2) NOT NULL DEFAULT 0,
+  level_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  vat_rate NUMERIC(5,2),
+  vat_amount NUMERIC(14,2),
   comment TEXT,
   invoice_path VARCHAR(500),
   invoice_number VARCHAR(100),
@@ -133,6 +137,12 @@ CREATE TABLE IF NOT EXISTS order_items (
   unit_price NUMERIC(14,2) NOT NULL DEFAULT 0,
   quantity NUMERIC(10,2) NOT NULL DEFAULT 1,
   line_total NUMERIC(14,2) NOT NULL DEFAULT 0,
+  base_price NUMERIC(14,2),
+  markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  markup_rub NUMERIC(14,2) NOT NULL DEFAULT 0,
+  level_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  is_drawing BOOLEAN NOT NULL DEFAULT false,
+  drawing_id INT,
   metadata JSONB
 );
 
@@ -202,6 +212,9 @@ CREATE TABLE IF NOT EXISTS drawings (
   description TEXT,
   client_id INT REFERENCES clients(id) ON DELETE SET NULL,
   fixed_price NUMERIC(14,2),
+  level_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  global_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  global_markup_rub NUMERIC(14,2) NOT NULL DEFAULT 0,
   created_by INT REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMP DEFAULT now()
 );
@@ -309,6 +322,9 @@ CREATE TABLE IF NOT EXISTS proposals (
   valid_until DATE,
   comment TEXT,
   order_id INT REFERENCES orders(id),
+  subtotal NUMERIC(14,2) NOT NULL DEFAULT 0,
+  vat_rate NUMERIC(5,2),
+  vat_amount NUMERIC(14,2),
   created_by INT REFERENCES users(id),
   created_at TIMESTAMP DEFAULT now(),
   updated_at TIMESTAMP DEFAULT now()
@@ -326,7 +342,11 @@ CREATE TABLE IF NOT EXISTS proposal_items (
   line_total NUMERIC(12,2) NOT NULL DEFAULT 0,
   is_drawing BOOLEAN DEFAULT false,
   drawing_id INT,
-  image_path VARCHAR(500)
+  image_path VARCHAR(500),
+  base_price NUMERIC(14,2),
+  markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  markup_rub NUMERIC(14,2) NOT NULL DEFAULT 0,
+  level_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0
 );
 
 -- Типы техники (настраиваемый справочник)
@@ -409,7 +429,7 @@ CREATE INDEX IF NOT EXISTS idx_drawing_approval_comments_approval ON drawing_app
 
 -- Админ (пароль: admin123)
 INSERT INTO users (username, password_hash, full_name, role)
-VALUES ('admin', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Администратор', 'admin')
+VALUES ('admin', '$2a$10$wr.oIZCvbDUhaHnS.ZBg6uOTJKKWbQ6sKtStEmT4EB2blefDO1d9m', 'Администратор', 'admin')
 ON CONFLICT (username) DO NOTHING;
 
 -- Статусы клиентов по умолчанию

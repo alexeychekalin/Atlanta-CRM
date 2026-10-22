@@ -41,15 +41,15 @@ const ClientProfilePage = {
     const canEdit = API.can('clients', 'edit');
 
     const avatarContent = c.avatar_path 
-      ? `<img src="${c.avatar_path}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+      ? `<img src="${esc(c.avatar_path)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
       : (c.name || '?').charAt(0).toUpperCase();
 
     const statusBadge = c.status_name 
-      ? `<span class="badge" style="background:${c.status_color}20;color:${c.status_color};border:1px solid ${c.status_color}40;font-size:0.8rem;padding:4px 12px;border-radius:20px">${c.status_name}</span>`
+      ? `<span class="badge" style="background:${esc(c.status_color)}20;color:${esc(c.status_color)};border:1px solid ${esc(c.status_color)}40;font-size:0.8rem;padding:4px 12px;border-radius:20px">${esc(c.status_name)}</span>`
       : '<span style="color:var(--text-muted);font-size:0.85rem">Статус не задан</span>';
 
     const pricingBadge = c.pricing_level_name
-      ? `<span class="badge" style="background:var(--accent-teal)15;color:var(--accent-teal);border:1px solid var(--accent-teal)40;font-size:0.8rem;padding:4px 12px;border-radius:20px">💰 ${c.pricing_level_name} (${c.pricing_markup_pct > 0 ? '+' : ''}${c.pricing_markup_pct}%)</span>`
+      ? `<span class="badge" style="background:var(--accent-teal)15;color:var(--accent-teal);border:1px solid var(--accent-teal)40;font-size:0.8rem;padding:4px 12px;border-radius:20px">💰 ${esc(c.pricing_level_name)} (${c.pricing_markup_pct > 0 ? '+' : ''}${c.pricing_markup_pct}%)</span>`
       : '<span class="badge" style="background:var(--accent-red)15;color:var(--accent-red);border:1px solid var(--accent-red)40;font-size:0.8rem;padding:4px 12px;border-radius:20px">⚠️ Уровень цен не задан</span>';
 
     content.innerHTML = `
@@ -67,26 +67,26 @@ const ClientProfilePage = {
         </div>
         <div class="profile-info">
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <h2 class="profile-name" style="margin:0">${c.name}</h2>
+            <h2 class="profile-name" style="margin:0">${esc(c.name)}</h2>
             <div id="client-status-badge" style="cursor:${canEdit ? 'pointer' : 'default'}" ${canEdit ? 'onclick="ClientProfilePage.openStatusPicker()"' : ''}>
               ${statusBadge}
             </div>
             <div>${pricingBadge}</div>
           </div>
           <div class="profile-contacts" style="margin-top:6px">
-            ${c.phone ? `<span class="profile-contact-item"><a href="tel:${c.phone}" style="color:inherit;text-decoration:none">📞 ${c.phone}</a></span>` : ''}
-            ${c.email ? `<span class="profile-contact-item"><a href="mailto:${c.email}" style="color:inherit;text-decoration:none">✉️ ${c.email}</a></span>` : ''}
-            ${c.address ? `<span class="profile-contact-item">📍 ${c.address}</span>` : ''}
-            ${c.telegram ? `<span class="profile-contact-item"><a href="https://t.me/${c.telegram.replace('@','')}" target="_blank" style="color:#29b6f6;text-decoration:none;font-weight:500" title="Telegram">✈️ ${c.telegram}</a></span>` : ''}
-            ${c.max_messenger ? `<span class="profile-contact-item"><a href="${c.max_messenger}" target="_blank" style="color:#7c4dff;text-decoration:none;font-weight:500" title="MAX">💬 MAX</a></span>` : ''}
+            ${c.phone ? `<span class="profile-contact-item"><a href="tel:${esc(c.phone)}" style="color:inherit;text-decoration:none">📞 ${esc(c.phone)}</a></span>` : ''}
+            ${c.email ? `<span class="profile-contact-item"><a href="mailto:${esc(c.email)}" style="color:inherit;text-decoration:none">✉️ ${esc(c.email)}</a></span>` : ''}
+            ${c.address ? `<span class="profile-contact-item">📍 ${esc(c.address)}</span>` : ''}
+            ${c.telegram ? `<span class="profile-contact-item"><a href="https://t.me/${esc(String(c.telegram).replace('@','').replace(/[^A-Za-z0-9_]/g,''))}" target="_blank" rel="noopener" style="color:#29b6f6;text-decoration:none;font-weight:500" title="Telegram">✈️ ${esc(c.telegram)}</a></span>` : ''}
+            ${c.max_messenger ? `<span class="profile-contact-item">${safeUrl(c.max_messenger) ? `<a href="${safeUrl(c.max_messenger)}" target="_blank" rel="noopener" style="color:#7c4dff;text-decoration:none;font-weight:500" title="MAX">💬 MAX</a>` : ''}</span>` : ''}
           </div>
           ${(c.delivery_address || c.delivery_contact_name || c.delivery_contact_phone) ? `
             <div style="margin-top:10px;padding:10px 14px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border)">
               <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;font-weight:600">📦 Данные доставки</div>
               <div class="profile-contacts" style="margin-top:2px">
-                ${c.delivery_address ? `<span class="profile-contact-item">🏢 ${c.delivery_address}</span>` : ''}
-                ${c.delivery_contact_name ? `<span class="profile-contact-item">👤 ${c.delivery_contact_name}</span>` : ''}
-                ${c.delivery_contact_phone ? `<span class="profile-contact-item">📱 ${c.delivery_contact_phone}</span>` : ''}
+                ${c.delivery_address ? `<span class="profile-contact-item">🏢 ${esc(c.delivery_address)}</span>` : ''}
+                ${c.delivery_contact_name ? `<span class="profile-contact-item">👤 ${esc(c.delivery_contact_name)}</span>` : ''}
+                ${c.delivery_contact_phone ? `<span class="profile-contact-item">📱 ${esc(c.delivery_contact_phone)}</span>` : ''}
               </div>
             </div>
           ` : ''}
@@ -94,16 +94,16 @@ const ClientProfilePage = {
             <div style="margin-top:10px;padding:10px 14px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border)">
               <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;font-weight:600">🏛️ Реквизиты ${c.client_type === 'ip' ? '<span style="color:#f59e0b">(ИП)</span>' : '<span style="color:#3b82f6">(ООО)</span>'}</div>
               <div class="profile-contacts" style="margin-top:2px">
-                ${c.inn ? `<span class="profile-contact-item">ИНН ${c.inn}${c.kpp ? ' / КПП ' + c.kpp : ''}</span>` : ''}
-                ${c.ogrn ? `<span class="profile-contact-item">ОГРН ${c.ogrn}</span>` : ''}
-                ${c.ogrnip ? `<span class="profile-contact-item">ОГРНИП ${c.ogrnip}</span>` : ''}
-                ${c.legal_address ? `<span class="profile-contact-item">📍 Юр. адрес: ${c.legal_address}</span>` : ''}
-                ${c.postal_address ? `<span class="profile-contact-item">📮 Почт. адрес: ${c.postal_address}</span>` : ''}
-                ${c.bank_account ? `<span class="profile-contact-item">💳 Р/С: ${c.bank_account}</span>` : ''}
-                ${c.corr_account ? `<span class="profile-contact-item">К/С: ${c.corr_account}</span>` : ''}
-                ${c.bank_name ? `<span class="profile-contact-item">🏦 ${c.bank_name}${c.bik ? ', БИК: ' + c.bik : ''}</span>` : ''}
-                ${c.director ? `<span class="profile-contact-item">👤 ${c.client_type === 'ip' ? '' : 'Ген. директор: '}${c.director}</span>` : ''}
-                ${c.bank_details ? `<span class="profile-contact-item" style="color:var(--text-muted);font-size:0.78rem">📋 ${c.bank_details}</span>` : ''}
+                ${c.inn ? `<span class="profile-contact-item">ИНН ${esc(c.inn)}${c.kpp ? ' / КПП ' + esc(c.kpp) : ''}</span>` : ''}
+                ${c.ogrn ? `<span class="profile-contact-item">ОГРН ${esc(c.ogrn)}</span>` : ''}
+                ${c.ogrnip ? `<span class="profile-contact-item">ОГРНИП ${esc(c.ogrnip)}</span>` : ''}
+                ${c.legal_address ? `<span class="profile-contact-item">📍 Юр. адрес: ${esc(c.legal_address)}</span>` : ''}
+                ${c.postal_address ? `<span class="profile-contact-item">📮 Почт. адрес: ${esc(c.postal_address)}</span>` : ''}
+                ${c.bank_account ? `<span class="profile-contact-item">💳 Р/С: ${esc(c.bank_account)}</span>` : ''}
+                ${c.corr_account ? `<span class="profile-contact-item">К/С: ${esc(c.corr_account)}</span>` : ''}
+                ${c.bank_name ? `<span class="profile-contact-item">🏦 ${esc(c.bank_name)}${c.bik ? ', БИК: ' + esc(c.bik) : ''}</span>` : ''}
+                ${c.director ? `<span class="profile-contact-item">👤 ${c.client_type === 'ip' ? '' : 'Ген. директор: '}${esc(c.director)}</span>` : ''}
+                ${c.bank_details ? `<span class="profile-contact-item" style="color:var(--text-muted);font-size:0.78rem">📋 ${esc(c.bank_details)}</span>` : ''}
               </div>
             </div>
           ` : ''}
@@ -263,7 +263,7 @@ const ClientProfilePage = {
                       <div style="display:flex;gap:4px">
                         <button class="action-btn" title="Просмотр" onclick="ProposalsPage.viewProposal(${p.id})">👁️</button>
                         <button class="action-btn" title="Скачать PDF" onclick="ProposalsPage.downloadPDF(${p.id})">📄</button>
-                        ${p.status !== 'converted' ? `<button class="action-btn" title="Перевести в заказ" onclick="ProposalsPage.convertToOrder(${p.id})">📦</button>` : ''}
+                        ${p.status !== 'converted' && API.can('proposals', 'edit') ? `<button class="action-btn" title="Перевести в заказ" onclick="ProposalsPage.convertToOrder(${p.id})">📦</button>` : ''}
                       </div>
                     </td>
                   </tr>
@@ -340,11 +340,11 @@ const ClientProfilePage = {
                 return `
                   <tr style="cursor:pointer" onclick="ClientProfilePage.viewOrder(${o.id})" title="Нажмите для просмотра">
                     <td><strong>${o.order_number}</strong></td>
-                    <td>${o.invoice_number || '<span class="text-muted">—</span>'}</td>
+                    <td>${esc(o.invoice_number) || '<span class="text-muted">—</span>'}</td>
                     <td class="text-right" style="font-weight:600">${Table.formatMoney(o.total)}</td>
                     <td>${new Date(o.order_date).toLocaleDateString('ru-RU')}</td>
                     <td>${o.payment_date ? `<span style="color:var(--accent-green,#22c55e);font-weight:500">${new Date(o.payment_date).toLocaleDateString('ru-RU')}</span>` : '<span class="text-muted">—</span>'}</td>
-                    <td>${o.tracking_number ? `<span style="font-family:var(--font-mono,monospace);font-size:0.83rem">${o.tracking_number}</span>` : '<span class="text-muted">—</span>'}</td>
+                    <td>${o.tracking_number ? `<span style="font-family:var(--font-mono,monospace);font-size:0.83rem">${esc(o.tracking_number)}</span>` : '<span class="text-muted">—</span>'}</td>
                     <td>
                       ${isPaid 
                         ? '<span class="badge" style="background:#22c55e20;color:#22c55e;border:1px solid #22c55e40">✅ Оплачен</span>'
@@ -353,7 +353,7 @@ const ClientProfilePage = {
                     </td>
                     <td class="text-right" onclick="event.stopPropagation()">
                       ${o.invoice_path 
-                        ? `<a href="${o.invoice_path}" target="_blank" class="btn btn-secondary btn-sm">📄 Открыть</a>`
+                        ? `<a href="${esc(o.invoice_path)}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">📄 Открыть</a>`
                         : '<span class="text-muted" style="font-size:0.8rem">—</span>'
                       }
                     </td>
@@ -488,7 +488,7 @@ const ClientProfilePage = {
         `,
         footer: `
           <button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>
-          ${API.isAdmin() ? `<button class="btn btn-primary" onclick="Modal.close(); App.navigateTo('orders');">📋 Перейти к заказам</button>` : ''}
+          ${API.can('orders', 'view') ? `<button class="btn btn-primary" onclick="Modal.close(); App.navigateTo('orders');">📋 Перейти к заказам</button>` : ''}
         `,
       });
     } catch (err) { Toast.error(err.message); }
@@ -496,13 +496,14 @@ const ClientProfilePage = {
 
   // =================== ЧЕРТЕЖИ (единый вид) ===================
   async loadDrawings(container) {
-    const isAdmin = API.isAdmin();
+    const canEdit = API.can('drawings', 'edit');
+    const canDelete = API.can('drawings', 'delete');
     try {
       const res = await API.get(`/clients/${this.clientId}/documents/drawings`);
       const drawings = res.data;
 
       container.innerHTML = `
-        ${isAdmin ? `
+        ${canEdit ? `
           <div class="toolbar">
             <div></div>
             <button class="btn btn-primary btn-sm" onclick="ClientProfilePage.uploadDrawing()">📎 Загрузить чертёж</button>
@@ -531,21 +532,21 @@ const ClientProfilePage = {
                       <div style="display:flex;align-items:center;gap:8px">
                         <span style="font-size:1.1rem">${d.file_path ? this.getFileIcon(d.file_type) : '📐'}</span>
                         <div>
-                          <div style="font-weight:600">${d.name}</div>
-                          ${d.description ? `<div style="font-size:0.78rem;color:var(--text-muted)">${d.description}</div>` : ''}
+                          <div style="font-weight:600">${esc(d.name)}</div>
+                          ${d.description ? `<div style="font-size:0.78rem;color:var(--text-muted)">${esc(d.description)}</div>` : ''}
                           ${hasCalc ? `<span class="badge" style="background:var(--accent-teal);color:#fff;font-size:0.7rem;margin-top:2px">📊 Расчёт</span>` : ''}
                         </div>
                       </div>
                     </td>
                     <td class="text-right" style="font-weight:600;${hasCalc ? 'color:var(--accent-teal)' : ''}">${hasCalc ? Table.formatMoney(cost) : '—'}</td>
                     <td class="text-muted" style="font-size:0.83rem">${dateStr}</td>
-                    <td class="text-muted" style="font-size:0.83rem">${d.author_name || '—'}</td>
+                    <td class="text-muted" style="font-size:0.83rem">${esc(d.author_name) || '—'}</td>
                     <td class="text-right">
                       <div class="table-actions" style="justify-content:flex-end">
-                        ${d.file_path ? `<a href="${d.file_path}" target="_blank" class="btn btn-icon btn-sm" title="Открыть файл" onclick="event.stopPropagation()">📎</a>` : ''}
+                        ${d.file_path ? `<a href="${esc(d.file_path)}" target="_blank" rel="noopener" class="btn btn-icon btn-sm" title="Открыть файл" onclick="event.stopPropagation()">📎</a>` : ''}
                         ${hasCalc ? `<button class="btn btn-icon btn-sm" onclick="App.navigateTo('calculator/${d.id}')" title="Открыть в калькуляторе">🧮</button>` : ''}
                         ${!hasCalc ? `<button class="btn btn-secondary btn-sm" onclick="App.navigateTo('calculator?drawing=${d.id}&client=${ClientProfilePage.clientId}')">📊 Рассчитать</button>` : ''}
-                        ${isAdmin ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteDrawing(${d.id})" title="Удалить">✕</button>` : ''}
+                        ${canDelete ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteDrawing(${d.id})" title="Удалить">✕</button>` : ''}
                       </div>
                     </td>
                   </tr>
@@ -688,7 +689,7 @@ const ClientProfilePage = {
         `,
         footer: `
           <button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>
-          ${API.isAdmin() ? `<button class="btn btn-primary" onclick="Modal.close(); App.navigateTo('calculator', ${drawingId});">📐 Открыть в калькуляторе</button>` : ''}
+          ${API.can('calculator', 'view') ? `<button class="btn btn-primary" onclick="Modal.close(); App.navigateTo('calculator', ${drawingId});">📐 Открыть в калькуляторе</button>` : ''}
         `,
       });
     } catch (err) { Toast.error(err.message); }
@@ -696,13 +697,14 @@ const ClientProfilePage = {
 
   // =================== ТАЙМЛАЙН ===================
   async loadTimeline(container) {
-    const isAdmin = API.isAdmin();
+    const canEdit = API.can('clients', 'edit');
+    const canDelete = API.can('clients', 'delete');
     try {
       const res = await API.get(`/clients/${this.clientId}/timeline`);
       const events = res.data;
 
       container.innerHTML = `
-        ${isAdmin ? `
+        ${canEdit ? `
           <div class="toolbar">
             <div></div>
             <button class="btn btn-primary btn-sm" onclick="ClientProfilePage.openTimelineModal()">+ Добавить событие</button>
@@ -717,18 +719,18 @@ const ClientProfilePage = {
                   <div class="timeline-marker" style="background:${type.color}">${type.icon}</div>
                   <div class="timeline-content">
                     <div class="timeline-header">
-                      <span class="timeline-title">${e.title}</span>
+                      <span class="timeline-title">${esc(e.title)}</span>
                       <span class="timeline-date">${new Date(e.event_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                      ${isAdmin ? `
+                      ${(canEdit || canDelete) ? `
                         <div class="timeline-actions">
-                          <button class="btn btn-icon btn-sm" onclick="ClientProfilePage.openTimelineModal(${e.id})" title="Ред.">✏️</button>
-                          <button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteTimelineEvent(${e.id})" title="Удалить">✕</button>
+                          ${canEdit ? `<button class="btn btn-icon btn-sm" onclick="ClientProfilePage.openTimelineModal(${e.id})" title="Ред.">✏️</button>` : ''}
+                          ${canDelete ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteTimelineEvent(${e.id})" title="Удалить">✕</button>` : ''}
                         </div>
                       ` : ''}
                     </div>
                     <div class="timeline-badge" style="background:${type.color}20;color:${type.color}">${type.label}</div>
-                    ${e.description ? `<div class="timeline-desc">${e.description}</div>` : ''}
-                    ${e.author_name ? `<div class="timeline-author">${e.author_name}</div>` : ''}
+                    ${e.description ? `<div class="timeline-desc">${esc(e.description)}</div>` : ''}
+                    ${e.author_name ? `<div class="timeline-author">${esc(e.author_name)}</div>` : ''}
                   </div>
                 </div>
               `;
@@ -772,21 +774,21 @@ const ClientProfilePage = {
                   <tr>
                     <td style="font-weight:600">
                       <div style="display:flex;align-items:center;gap:8px">
-                        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:0.75rem;flex-shrink:0">${(c.full_name || '?').charAt(0).toUpperCase()}</div>
-                        ${c.full_name}
+                        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:0.75rem;flex-shrink:0">${esc((c.full_name || '?').charAt(0).toUpperCase())}</div>
+                        ${esc(c.full_name)}
                       </div>
                     </td>
-                    <td>${c.position || '<span class="text-muted">—</span>'}</td>
-                    <td>${c.phone ? `<a href="tel:${c.phone}" style="color:var(--accent-teal)" onclick="event.stopPropagation()">${c.phone}</a>` : '<span class="text-muted">—</span>'}</td>
-                    <td>${c.email ? `<a href="mailto:${c.email}" style="color:var(--accent-teal)" onclick="event.stopPropagation()">${c.email}</a>` : '<span class="text-muted">—</span>'}</td>
+                    <td>${esc(c.position) || '<span class="text-muted">—</span>'}</td>
+                    <td>${c.phone ? `<a href="tel:${esc(c.phone)}" style="color:var(--accent-teal)" onclick="event.stopPropagation()">${esc(c.phone)}</a>` : '<span class="text-muted">—</span>'}</td>
+                    <td>${c.email ? `<a href="mailto:${esc(c.email)}" style="color:var(--accent-teal)" onclick="event.stopPropagation()">${esc(c.email)}</a>` : '<span class="text-muted">—</span>'}</td>
                     <td>
                       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-                        ${c.telegram ? `<a href="https://t.me/${c.telegram.replace('@','')}" target="_blank" style="color:#29b6f6;text-decoration:none;font-size:0.85rem" onclick="event.stopPropagation()" title="Telegram">✈️ ${c.telegram}</a>` : ''}
-                        ${c.max_messenger ? `<a href="${c.max_messenger}" target="_blank" style="color:#7c4dff;text-decoration:none;font-size:0.85rem" onclick="event.stopPropagation()" title="MAX">💬 MAX</a>` : ''}
+                        ${c.telegram ? `<a href="https://t.me/${esc(String(c.telegram).replace('@','').replace(/[^A-Za-z0-9_]/g,''))}" target="_blank" rel="noopener" style="color:#29b6f6;text-decoration:none;font-size:0.85rem" onclick="event.stopPropagation()" title="Telegram">✈️ ${esc(c.telegram)}</a>` : ''}
+                        ${c.max_messenger ? `${safeUrl(c.max_messenger) ? `<a href="${safeUrl(c.max_messenger)}" target="_blank" rel="noopener" style="color:#7c4dff;text-decoration:none;font-size:0.85rem" onclick="event.stopPropagation()" title="MAX">💬 MAX</a>` : ''}` : ''}
                         ${!c.telegram && !c.max_messenger ? '<span class="text-muted">—</span>' : ''}
                       </div>
                     </td>
-                    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);font-size:0.85rem">${c.notes || ''}</td>
+                    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);font-size:0.85rem">${esc(c.notes)}</td>
                     ${canEdit ? `
                       <td class="text-right">
                         <div class="table-actions" style="justify-content:flex-end">
@@ -872,13 +874,14 @@ const ClientProfilePage = {
 
   // =================== ДОКУМЕНТЫ ===================
   async loadDocuments(container) {
-    const isAdmin = API.isAdmin();
+    const canEdit = API.can('clients', 'edit');
+    const canDelete = API.can('clients', 'delete');
     try {
       const res = await API.get(`/clients/${this.clientId}/documents`);
       const docs = res.data;
 
       container.innerHTML = `
-        ${isAdmin ? `
+        ${canEdit ? `
           <div class="toolbar">
             <div></div>
             <button class="btn btn-primary btn-sm" onclick="ClientProfilePage.uploadDocument()">📎 Загрузить документ</button>
@@ -890,13 +893,13 @@ const ClientProfilePage = {
               <div class="file-card">
                 <div class="file-icon">${this.getFileIcon(d.file_type)}</div>
                 <div class="file-info">
-                  <div class="file-name">${d.name}</div>
-                  ${d.description ? `<div class="file-desc">${d.description}</div>` : ''}
-                  <div class="file-meta">${new Date(d.created_at).toLocaleDateString('ru-RU')} · ${d.uploaded_by_name || ''}</div>
+                  <div class="file-name">${esc(d.name)}</div>
+                  ${d.description ? `<div class="file-desc">${esc(d.description)}</div>` : ''}
+                  <div class="file-meta">${new Date(d.created_at).toLocaleDateString('ru-RU')} · ${esc(d.uploaded_by_name)}</div>
                 </div>
                 <div class="file-actions">
-                  <a href="${d.file_path}" target="_blank" class="btn btn-secondary btn-sm">Открыть</a>
-                  ${isAdmin ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteDocument(${d.id})">✕</button>` : ''}
+                  <a href="${esc(d.file_path)}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">Открыть</a>
+                  ${canDelete ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteDocument(${d.id})">✕</button>` : ''}
                 </div>
               </div>
             `).join('')}
@@ -1075,7 +1078,7 @@ const ClientProfilePage = {
   },
 
   async loadApprovals(container) {
-    const canEdit = API.isAdmin();
+    const canEdit = API.can('clients', 'edit');
     try {
       const res = await API.get(`/clients/${this.clientId}/approvals`);
       const approvals = res.data;
@@ -1094,7 +1097,7 @@ const ClientProfilePage = {
                    onmouseout="this.style.borderColor='var(--border)'">
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
                   <div style="display:flex;align-items:center;gap:10px">
-                    <span style="font-weight:600;font-size:0.95rem">${a.title}</span>
+                    <span style="font-weight:600;font-size:0.95rem">${esc(a.title)}</span>
                     ${this._statusBadge(a.status)}
                   </div>
                   <div style="display:flex;align-items:center;gap:12px;font-size:0.8rem;color:var(--text-muted)">
@@ -1103,7 +1106,7 @@ const ClientProfilePage = {
                     <span>${new Date(a.updated_at).toLocaleDateString('ru-RU')}</span>
                   </div>
                 </div>
-                ${a.description ? `<div style="margin-top:6px;font-size:0.83rem;color:var(--text-secondary)">${a.description}</div>` : ''}
+                ${a.description ? `<div style="margin-top:6px;font-size:0.83rem;color:var(--text-secondary)">${esc(a.description)}</div>` : ''}
               </div>
             `).join('')}
           </div>
@@ -1150,7 +1153,7 @@ const ClientProfilePage = {
     try {
       const data = await API.get(`/clients/${this.clientId}/approvals/${id}`);
       const a = data;
-      const canEdit = API.isAdmin();
+      const canEdit = API.can('clients', 'edit');
       const lastVersion = a.versions.length > 0 ? a.versions[a.versions.length - 1] : null;
 
       const statusOptions = Object.entries(this._approvalStatuses)
@@ -1233,7 +1236,7 @@ const ClientProfilePage = {
               </div>
             ` : ''}
           </div>
-          ${a.description ? `<div style="padding:10px 14px;background:var(--bg-main);border-radius:8px;margin-bottom:16px;font-size:0.88rem;color:var(--text-secondary)">${a.description}</div>` : ''}
+          ${a.description ? `<div style="padding:10px 14px;background:var(--bg-main);border-radius:8px;margin-bottom:16px;font-size:0.88rem;color:var(--text-secondary)">${esc(a.description)}</div>` : ''}
 
           <!-- Действия -->
           <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">

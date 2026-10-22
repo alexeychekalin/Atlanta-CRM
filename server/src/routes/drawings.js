@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
-const adminOnly = require('../middleware/role');
+const { normalizeUploadPath } = require('../utils/files');
 
 const router = express.Router();
 
@@ -29,15 +29,24 @@ router.get('/', auth, async (req, res) => {
         c.name AS client_name,
         c.phone AS client_phone,
         COUNT(dc.id) AS components_count,
-        COALESCE(SUM(comp.price * dc.quantity), 0) AS base_cost,
+        COALESCE(SUM(COALESCE(cm.price_override, comp.price) * dc.quantity), 0) AS base_cost,
         CASE WHEN d.fixed_price IS NOT NULL THEN d.fixed_price
-          ELSE COALESCE(SUM( (comp.price * dc.quantity) * (1 + COALESCE(dc.item_markup_pct, 0)/100) + COALESCE(dc.item_markup_rub, 0) ), 0)
+          ELSE ROUND(
+            COALESCE(SUM(
+              (COALESCE(cm.price_override, comp.price) * dc.quantity) * (1 + COALESCE(dc.item_markup_pct, 0)/100)
+              + COALESCE(dc.item_markup_rub, 0)
+            ), 0)
+            * (1 + COALESCE(d.level_markup_pct, 0)/100)
+            * (1 + COALESCE(d.global_markup_pct, 0)/100)
+            + COALESCE(d.global_markup_rub, 0)
+          , 2)
         END AS total_cost
       FROM drawings d
       LEFT JOIN users u ON d.created_by = u.id
       LEFT JOIN clients c ON d.client_id = c.id
       LEFT JOIN drawing_components dc ON d.id = dc.drawing_id
       LEFT JOIN components comp ON dc.component_id = comp.id
+      LEFT JOIN component_modifications cm ON cm.id = dc.modification_id
       ${where}
       GROUP BY d.id, u.full_name, c.name, c.phone
       ORDER BY d.created_at DESC
@@ -108,19 +117,31 @@ router.get('/check-duplicate', auth, async (req, res) => {
 });
 
 // POST /api/drawings — создать чертёж с компонентами
-router.post('/', auth, adminOnly, async (req, res) => {
+router.post('/', auth, async (req, res) => {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
 
-    const { name, file_path, file_type, description, components, client_id, fixed_price } = req.body;
+    const { name, file_path, file_type, description, components, client_id, fixed_price,
+            level_markup_pct, global_markup_pct, global_markup_rub } = req.body;
     if (!name) return res.status(400).json({ error: 'Укажите название чертежа' });
 
+    let normalizedFilePath = null;
+    if (file_path) {
+      normalizedFilePath = normalizeUploadPath(file_path);
+      if (!normalizedFilePath) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Недопустимый путь к файлу чертежа' });
+      }
+    }
+
     const drawingRes = await client.query(
-      `INSERT INTO drawings (name, file_path, file_type, description, created_by, client_id, fixed_price)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO drawings (name, file_path, file_type, description, created_by, client_id, fixed_price,
+       level_markup_pct, global_markup_pct, global_markup_rub)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [name, file_path || null, file_type || null, description || null, req.user.id, client_id || null, fixed_price || null]
+      [name, normalizedFilePath, file_type || null, description || null, req.user.id, client_id || null, fixed_price || null,
+       parseFloat(level_markup_pct) || 0, parseFloat(global_markup_pct) || 0, parseFloat(global_markup_rub) || 0]
     );
     const drawing = drawingRes.rows[0];
 
@@ -146,12 +167,22 @@ router.post('/', auth, adminOnly, async (req, res) => {
 });
 
 // PUT /api/drawings/:id — обновить чертёж
-router.put('/:id', auth, adminOnly, async (req, res) => {
+router.put('/:id', auth, async (req, res) => {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
 
-    const { name, file_path, file_type, description, components, client_id, fixed_price } = req.body;
+    const { name, file_path, file_type, description, components, client_id, fixed_price,
+            level_markup_pct, global_markup_pct, global_markup_rub } = req.body;
+
+    let normalizedFilePath = file_path;
+    if (file_path !== undefined && file_path !== null) {
+      normalizedFilePath = normalizeUploadPath(file_path);
+      if (!normalizedFilePath) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Недопустимый путь к файлу чертежа' });
+      }
+    }
 
     const drawingRes = await client.query(
       `UPDATE drawings SET
@@ -160,10 +191,17 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
         file_type = COALESCE($3, file_type),
         description = $4,
         client_id = $5,
-        fixed_price = $6
-       WHERE id = $7
+        fixed_price = $6,
+        level_markup_pct = COALESCE($7, level_markup_pct),
+        global_markup_pct = COALESCE($8, global_markup_pct),
+        global_markup_rub = COALESCE($9, global_markup_rub)
+       WHERE id = $10
        RETURNING *`,
-      [name, file_path, file_type, description, client_id || null, fixed_price || null, req.params.id]
+      [name, normalizedFilePath, file_type, description, client_id || null, fixed_price || null,
+       level_markup_pct !== undefined ? (parseFloat(level_markup_pct) || 0) : null,
+       global_markup_pct !== undefined ? (parseFloat(global_markup_pct) || 0) : null,
+       global_markup_rub !== undefined ? (parseFloat(global_markup_rub) || 0) : null,
+       req.params.id]
     );
     if (drawingRes.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -195,9 +233,12 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
 });
 
 // DELETE /api/drawings/:id
-router.delete('/:id', auth, adminOnly, async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
   try {
-    await db.query('DELETE FROM drawings WHERE id = $1', [req.params.id]);
+    const result = await db.query('DELETE FROM drawings WHERE id = $1 RETURNING id', [req.params.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Чертёж не найден' });
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

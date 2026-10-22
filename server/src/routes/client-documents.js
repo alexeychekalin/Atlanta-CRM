@@ -1,6 +1,8 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
+const fs = require('fs');
+const { normalizeUploadPath, safeUploadPath } = require('../utils/files');
 
 const router = express.Router({ mergeParams: true });
 
@@ -27,10 +29,15 @@ router.post('/', auth, async (req, res) => {
     const { name, file_path, file_type, description } = req.body;
     if (!name || !file_path) return res.status(400).json({ error: 'Укажите название и файл' });
 
+    const normalizedPath = normalizeUploadPath(file_path);
+    if (!normalizedPath || !fs.existsSync(safeUploadPath(normalizedPath))) {
+      return res.status(400).json({ error: 'Недопустимый путь к файлу' });
+    }
+
     const result = await db.query(
       `INSERT INTO client_documents (client_id, name, file_path, file_type, description, uploaded_by)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [req.params.id, name, file_path, file_type || null, description || null, req.user.id]
+      [req.params.id, String(name).slice(0, 300), normalizedPath, file_type || null, description || null, req.user.id]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -57,8 +64,19 @@ router.get('/drawings', auth, async (req, res) => {
       `SELECT d.*, u.full_name AS author_name,
         COUNT(dc.id) AS components_count,
         CASE WHEN d.fixed_price IS NOT NULL THEN d.fixed_price
-          ELSE COALESCE(SUM(comp.price * dc.quantity), 0)
-        END AS base_cost
+          ELSE COALESCE(SUM(COALESCE(cm.price_override, comp.price) * dc.quantity), 0)
+        END AS base_cost,
+        CASE WHEN d.fixed_price IS NOT NULL THEN d.fixed_price
+          ELSE ROUND(
+            COALESCE(SUM(
+              (COALESCE(cm.price_override, comp.price) * dc.quantity) * (1 + COALESCE(dc.item_markup_pct, 0)/100)
+              + COALESCE(dc.item_markup_rub, 0)
+            ), 0)
+            * (1 + COALESCE(d.level_markup_pct, 0)/100)
+            * (1 + COALESCE(d.global_markup_pct, 0)/100)
+            + COALESCE(d.global_markup_rub, 0)
+          , 2)
+        END AS total_cost
        FROM drawings d
        LEFT JOIN users u ON d.created_by = u.id
        LEFT JOIN drawing_components dc ON d.id = dc.drawing_id
@@ -80,10 +98,15 @@ router.post('/drawings', auth, async (req, res) => {
     const { name, file_path, file_type, description } = req.body;
     if (!name || !file_path) return res.status(400).json({ error: 'Укажите название и файл' });
 
+    const normalizedPath = normalizeUploadPath(file_path);
+    if (!normalizedPath || !fs.existsSync(safeUploadPath(normalizedPath))) {
+      return res.status(400).json({ error: 'Недопустимый путь к файлу' });
+    }
+
     const result = await db.query(
       `INSERT INTO drawings (name, file_path, file_type, description, client_id, created_by)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [name, file_path, file_type || null, description || null, req.params.id, req.user.id]
+      [String(name).slice(0, 300), normalizedPath, file_type || null, description || null, req.params.id, req.user.id]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -157,12 +180,24 @@ router.get('/calculations', auth, async (req, res) => {
       SELECT d.*, u.full_name AS author_name,
         COUNT(dc.id) AS components_count,
         CASE WHEN d.fixed_price IS NOT NULL THEN d.fixed_price
-          ELSE COALESCE(SUM(comp.price * dc.quantity), 0)
-        END AS base_cost
+          ELSE COALESCE(SUM(COALESCE(cm.price_override, comp.price) * dc.quantity), 0)
+        END AS base_cost,
+        CASE WHEN d.fixed_price IS NOT NULL THEN d.fixed_price
+          ELSE ROUND(
+            COALESCE(SUM(
+              (COALESCE(cm.price_override, comp.price) * dc.quantity) * (1 + COALESCE(dc.item_markup_pct, 0)/100)
+              + COALESCE(dc.item_markup_rub, 0)
+            ), 0)
+            * (1 + COALESCE(d.level_markup_pct, 0)/100)
+            * (1 + COALESCE(d.global_markup_pct, 0)/100)
+            + COALESCE(d.global_markup_rub, 0)
+          , 2)
+        END AS total_cost
       FROM drawings d
       LEFT JOIN users u ON d.created_by = u.id
       LEFT JOIN drawing_components dc ON d.id = dc.drawing_id
       LEFT JOIN components comp ON dc.component_id = comp.id
+      LEFT JOIN component_modifications cm ON cm.id = dc.modification_id
       WHERE d.client_id = $1
         AND (d.fixed_price IS NOT NULL OR EXISTS (SELECT 1 FROM drawing_components dc2 WHERE dc2.drawing_id = d.id))
       GROUP BY d.id, u.full_name

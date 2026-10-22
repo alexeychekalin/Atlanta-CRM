@@ -12,11 +12,19 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - DATABASE_URL=postgresql://atlanta_user:atlanta_pass@db:5432/atlanta_crm
-      - JWT_SECRET=atlanta_production_jwt_secret_key_2026
+      - DATABASE_URL=postgresql://atlanta_user:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/atlanta_crm
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - TRUST_PROXY=true
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     volumes:
       - uploads_data:/app/server/uploads
 
@@ -26,13 +34,14 @@ services:
     restart: always
     environment:
       - POSTGRES_USER=atlanta_user
-      - POSTGRES_PASSWORD=atlanta_pass
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       - POSTGRES_DB=atlanta_crm
-    ports:
-      - "5432:5432"
+    # База доступна только внутри docker-сети, наружу порт не публикуется
+    expose:
+      - "5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./server/src/db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./server/src/db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U atlanta_user -d atlanta_crm"]
       interval: 5s

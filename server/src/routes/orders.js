@@ -1,7 +1,8 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
-const adminOnly = require('../middleware/role');
+const { calculateItems, getVatSettings, calculateVat } = require('../services/pricing');
+const { normalizeUploadPath } = require('../utils/files');
 
 const router = express.Router();
 
@@ -120,58 +121,73 @@ async function generateOrderNumber() {
 }
 
 // POST /api/orders — создать заказ
-router.post('/', auth, adminOnly, async (req, res) => {
+router.post('/', auth, async (req, res) => {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
 
     const { client_id, principal_id, order_date, status, items, comment,
-            invoice_path, invoice_number, payment_date, tracking_number } = req.body;
+            invoice_number, payment_date, tracking_number } = req.body;
+    const invoice_path = req.body.invoice_path ? normalizeUploadPath(req.body.invoice_path) : null;
+    if (req.body.invoice_path && !invoice_path) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Недопустимый путь к счёту' });
+    }
 
-    if (!client_id || !principal_id || !items || items.length === 0) {
+    if (!client_id || !principal_id || !Array.isArray(items) || items.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Клиент, принципал и позиции обязательны' });
     }
 
-    // Получить % комиссии принципала
-    const principalResult = await client.query('SELECT agent_commission_pct FROM principals WHERE id = $1', [principal_id]);
+    const principalResult = await client.query(
+      'SELECT agent_commission_pct FROM principals WHERE id = $1',
+      [principal_id]
+    );
     if (principalResult.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Принципал не найден' });
     }
-    const commPct = parseFloat(principalResult.rows[0].agent_commission_pct);
+    const commPct = parseFloat(principalResult.rows[0].agent_commission_pct) || 0;
 
-    // Рассчитать суммы
-    let subtotal = 0;
-    for (const item of items) {
-      subtotal += (parseFloat(item.unit_price) || 0) * (parseFloat(item.quantity) || 0);
+    // Все цены и наценки считает сервер; наценка уровня берётся из БД
+    let calculation;
+    try {
+      calculation = await calculateItems(client_id, items, client);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      return res.status(err.status || 400).json({ error: err.message });
     }
-    // Комиссия уже заложена в цене — рассчитываем из суммы
-    const commissionAmount = subtotal * commPct / 100;
-    const total = subtotal;
 
+    const vatSettings = await getVatSettings(client);
+    const vat = calculateVat(calculation.subtotal, vatSettings);
+    const commissionAmount = Math.round(calculation.subtotal * commPct) / 100;
+    const total = calculation.subtotal;
     const orderNumber = await generateOrderNumber();
 
     const orderResult = await client.query(
-      `INSERT INTO orders (order_number, client_id, principal_id, order_date, status, subtotal, commission_pct, commission_amount, total, comment,
-       invoice_path, invoice_number, payment_date, tracking_number, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
-      [orderNumber, client_id, principal_id, order_date || new Date(), status || 'new', subtotal, commPct, commissionAmount, total, comment || null,
-       invoice_path || null, invoice_number || null, payment_date || null, tracking_number || null, req.user.id]
+      `INSERT INTO orders (order_number, client_id, principal_id, order_date, status, subtotal, commission_pct, commission_amount, total,
+       level_markup_pct, vat_rate, vat_amount, comment, invoice_path, invoice_number, payment_date, tracking_number, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
+      [orderNumber, client_id, principal_id, order_date || new Date(), status || 'new',
+       calculation.subtotal, commPct, commissionAmount, total, calculation.level.markupPct,
+       vat.rate, vat.amount, comment || null, invoice_path || null, invoice_number || null,
+       payment_date || null, tracking_number || null, req.user.id]
     );
     const order = orderResult.rows[0];
 
-    // Добавить позиции
-    for (const item of items) {
-      const lineTotal = (parseFloat(item.unit_price) || 0) * (parseFloat(item.quantity) || 0);
+    for (const item of calculation.items) {
       await client.query(
-        `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, line_total, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [order.id, item.product_id || null, item.product_name, item.unit_price || 0, item.quantity || 1, lineTotal, item.metadata ? JSON.stringify(item.metadata) : null]
+        `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, line_total,
+         base_price, markup_pct, markup_rub, level_markup_pct, is_drawing, drawing_id, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        [order.id, item.product_id, item.product_name, item.unit_price, item.quantity, item.line_total,
+         item.base_price, item.markup_pct, item.markup_rub, item.level_markup_pct,
+         item.is_drawing, item.drawing_id, item.metadata ? JSON.stringify(item.metadata) : null]
       );
     }
 
     await client.query('COMMIT');
 
-    // Вернуть полный заказ
     const fullOrder = await db.query(
       `SELECT o.*, c.name as client_name, p.name as principal_name
        FROM orders o
@@ -192,68 +208,106 @@ router.post('/', auth, adminOnly, async (req, res) => {
 });
 
 // PUT /api/orders/:id — обновить заказ
-router.put('/:id', auth, adminOnly, async (req, res) => {
+router.put('/:id', auth, async (req, res) => {
   const pgClient = await db.pool.connect();
   try {
     await pgClient.query('BEGIN');
 
     const { client_id, principal_id, order_date, status, items, comment,
-            invoice_path, invoice_number, payment_date, tracking_number } = req.body;
+            invoice_number, payment_date, tracking_number } = req.body;
+    // Путь к счёту принимаем только из /uploads; иначе сохраняем прежнее значение
+    const invoice_path = req.body.invoice_path
+      ? normalizeUploadPath(req.body.invoice_path)
+      : undefined;
+    if (req.body.invoice_path && !invoice_path) {
+      await pgClient.query('ROLLBACK');
+      return res.status(400).json({ error: 'Недопустимый путь к счёту' });
+    }
 
     if (status && !items) {
-      // Только обновление статуса
       const result = await pgClient.query(
         `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
         [status, req.params.id]
       );
       if (result.rows.length === 0) {
+        await pgClient.query('ROLLBACK');
         return res.status(404).json({ error: 'Заказ не найден' });
       }
       await pgClient.query('COMMIT');
       return res.json(result.rows[0]);
     }
 
-    if (!client_id || !principal_id || !items || items.length === 0) {
+    if (!client_id || !principal_id || !Array.isArray(items) || items.length === 0) {
+      await pgClient.query('ROLLBACK');
       return res.status(400).json({ error: 'Клиент, принципал и позиции обязательны' });
     }
 
-    // Получить % комиссии
-    const principalResult = await pgClient.query('SELECT agent_commission_pct FROM principals WHERE id = $1', [principal_id]);
-    const commPct = parseFloat(principalResult.rows[0].agent_commission_pct);
-
-    let subtotal = 0;
-    for (const item of items) {
-      subtotal += (parseFloat(item.unit_price) || 0) * (parseFloat(item.quantity) || 0);
-    }
-    // Комиссия уже заложена в цене — рассчитываем из суммы
-    const commissionAmount = subtotal * commPct / 100;
-    const total = subtotal;
-
-    const orderResult = await pgClient.query(
-      `UPDATE orders SET client_id = $1, principal_id = $2, order_date = $3, status = $4,
-       subtotal = $5, commission_pct = $6, commission_amount = $7, total = $8, comment = $9,
-       invoice_path = $10, invoice_number = $11, payment_date = $12, tracking_number = $13,
-       updated_at = NOW()
-       WHERE id = $14 RETURNING *`,
-      [client_id, principal_id, order_date, status || 'new', subtotal, commPct, commissionAmount, total, comment || null,
-       invoice_path !== undefined ? (invoice_path || null) : null,
-       invoice_number || null, payment_date || null, tracking_number || null,
-       req.params.id]
-    );
-
-    if (orderResult.rows.length === 0) {
+    const existing = await pgClient.query('SELECT id, invoice_path, order_date FROM orders WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) {
+      await pgClient.query('ROLLBACK');
       return res.status(404).json({ error: 'Заказ не найден' });
     }
 
-    // Удалить старые позиции и добавить новые
+    const principalResult = await pgClient.query(
+      'SELECT agent_commission_pct FROM principals WHERE id = $1',
+      [principal_id]
+    );
+    if (principalResult.rows.length === 0) {
+      await pgClient.query('ROLLBACK');
+      return res.status(400).json({ error: 'Принципал не найден' });
+    }
+    const commPct = parseFloat(principalResult.rows[0].agent_commission_pct) || 0;
+
+    let calculation;
+    try {
+      calculation = await calculateItems(client_id, items, pgClient);
+    } catch (err) {
+      await pgClient.query('ROLLBACK');
+      return res.status(err.status || 400).json({ error: err.message });
+    }
+
+    const vatSettings = await getVatSettings(pgClient);
+    const vat = calculateVat(calculation.subtotal, vatSettings);
+    const commissionAmount = Math.round(calculation.subtotal * commPct) / 100;
+    const total = calculation.subtotal;
+    const nextInvoicePath = invoice_path !== undefined ? invoice_path : existing.rows[0].invoice_path;
+
+    const orderResult = await pgClient.query(
+      `UPDATE orders SET client_id = $1, principal_id = $2, order_date = $3, status = $4,
+       subtotal = $5, commission_pct = $6, commission_amount = $7, total = $8,
+       level_markup_pct = $9, vat_rate = $10, vat_amount = $11, comment = $12,
+       invoice_path = $13, invoice_number = $14, payment_date = $15, tracking_number = $16,
+       updated_at = NOW()
+       WHERE id = $17 RETURNING *`,
+      [client_id, principal_id, order_date || existing.rows[0].order_date, status || 'new',
+       calculation.subtotal, commPct, commissionAmount, total,
+       calculation.level.markupPct, vat.rate, vat.amount, comment || null,
+       nextInvoicePath, invoice_number || null, payment_date || null, tracking_number || null,
+       req.params.id]
+    );
+
+    // Сохраняем metadata старых позиций (состав чертежа), если клиент её не прислал
+    const oldItems = await pgClient.query(
+      'SELECT product_id, product_name, drawing_id, metadata FROM order_items WHERE order_id = $1',
+      [req.params.id]
+    );
+    const oldMetadata = new Map();
+    for (const row of oldItems.rows) {
+      oldMetadata.set(`${row.product_id || ''}|${row.drawing_id || ''}|${row.product_name}`, row.metadata);
+    }
+
     await pgClient.query('DELETE FROM order_items WHERE order_id = $1', [req.params.id]);
 
-    for (const item of items) {
-      const lineTotal = (parseFloat(item.unit_price) || 0) * (parseFloat(item.quantity) || 0);
+    for (const item of calculation.items) {
+      const key = `${item.product_id || ''}|${item.drawing_id || ''}|${item.product_name}`;
+      const metadata = item.metadata || oldMetadata.get(key) || null;
       await pgClient.query(
-        `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, line_total, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [req.params.id, item.product_id || null, item.product_name, item.unit_price || 0, item.quantity || 1, lineTotal, item.metadata ? JSON.stringify(item.metadata) : null]
+        `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, line_total,
+         base_price, markup_pct, markup_rub, level_markup_pct, is_drawing, drawing_id, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        [req.params.id, item.product_id, item.product_name, item.unit_price, item.quantity, item.line_total,
+         item.base_price, item.markup_pct, item.markup_rub, item.level_markup_pct,
+         item.is_drawing, item.drawing_id, metadata ? JSON.stringify(metadata) : null]
       );
     }
 
@@ -269,7 +323,7 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
 });
 
 // DELETE /api/orders/:id
-router.delete('/:id', auth, adminOnly, async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
   try {
     const result = await db.query('DELETE FROM orders WHERE id = $1 RETURNING id', [req.params.id]);
     if (result.rows.length === 0) {
@@ -283,9 +337,13 @@ router.delete('/:id', auth, adminOnly, async (req, res) => {
 });
 
 // PATCH /api/orders/:id/invoice — обновить данные счёта/оплаты/трека
-router.patch('/:id/invoice', auth, adminOnly, async (req, res) => {
+router.patch('/:id/invoice', auth, async (req, res) => {
   try {
-    const { invoice_path, invoice_number, payment_date, tracking_number } = req.body;
+    const { invoice_number, payment_date, tracking_number } = req.body;
+    const invoice_path = req.body.invoice_path ? normalizeUploadPath(req.body.invoice_path) : null;
+    if (req.body.invoice_path && !invoice_path) {
+      return res.status(400).json({ error: 'Недопустимый путь к счёту' });
+    }
     const result = await db.query(
       `UPDATE orders SET
        invoice_path = COALESCE($1, invoice_path),
