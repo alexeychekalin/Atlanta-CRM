@@ -4,6 +4,8 @@ const ClientProfilePage = {
   client: null,
   stats: null,
   workStatuses: [],
+  // Состояние блока «Реквизиты» запоминаем между открытиями карточки
+  REQUISITES_KEY: 'atlanta_crm_requisites_open',
 
   eventTypes: {
     call: { icon: '📞', label: 'Звонок', color: '#3b82f6' },
@@ -76,6 +78,7 @@ const ClientProfilePage = {
           <div class="profile-contacts" style="margin-top:6px">
             ${c.phone ? `<span class="profile-contact-item"><a href="tel:${esc(c.phone)}" style="color:inherit;text-decoration:none">📞 ${esc(c.phone)}</a></span>` : ''}
             ${c.email ? `<span class="profile-contact-item"><a href="mailto:${esc(c.email)}" style="color:inherit;text-decoration:none">✉️ ${esc(c.email)}</a></span>` : ''}
+            ${this.siteHref(c.site) ? `<span class="profile-contact-item"><a href="${this.siteHref(c.site)}" target="_blank" rel="noopener" style="color:var(--accent-teal);text-decoration:none;font-weight:500" title="Сайт клиента">🌐 ${esc(c.site)}</a></span>` : ''}
             ${c.address ? `<span class="profile-contact-item">📍 ${esc(c.address)}</span>` : ''}
             ${c.telegram ? `<span class="profile-contact-item"><a href="https://t.me/${esc(String(c.telegram).replace('@','').replace(/[^A-Za-z0-9_]/g,''))}" target="_blank" rel="noopener" style="color:#29b6f6;text-decoration:none;font-weight:500" title="Telegram">✈️ ${esc(c.telegram)}</a></span>` : ''}
             ${c.max_messenger ? `<span class="profile-contact-item">${safeUrl(c.max_messenger) ? `<a href="${safeUrl(c.max_messenger)}" target="_blank" rel="noopener" style="color:#7c4dff;text-decoration:none;font-weight:500" title="MAX">💬 MAX</a>` : ''}</span>` : ''}
@@ -92,8 +95,13 @@ const ClientProfilePage = {
           ` : ''}
           ${(c.inn || c.kpp || c.legal_address || c.bank_details || c.ogrnip || c.ogrn || c.bank_account) ? `
             <div style="margin-top:10px;padding:10px 14px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border)">
-              <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;font-weight:600">🏛️ Реквизиты ${c.client_type === 'ip' ? '<span style="color:#f59e0b">(ИП)</span>' : '<span style="color:#3b82f6">(ООО)</span>'}</div>
-              <div class="profile-contacts" style="margin-top:2px">
+              <div onclick="ClientProfilePage.toggleRequisites()" style="display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer;user-select:none" title="Показать или скрыть реквизиты">
+                <div style="font-size:0.78rem;color:var(--text-muted);font-weight:600">
+                  🏛️ Реквизиты ${c.client_type === 'ip' ? '<span style="color:#f59e0b">(ИП)</span>' : '<span style="color:#3b82f6">(ООО)</span>'}${c.inn ? `<span style="color:var(--text-secondary);font-weight:500"> · ИНН ${esc(c.inn)}</span>` : ''}
+                </div>
+                <span id="requisites-toggle-label" style="font-size:0.78rem;color:var(--accent-teal)">Развернуть ▾</span>
+              </div>
+              <div id="client-requisites-body" class="profile-contacts" style="display:none;margin-top:8px">
                 ${c.inn ? `<span class="profile-contact-item">ИНН ${esc(c.inn)}${c.kpp ? ' / КПП ' + esc(c.kpp) : ''}</span>` : ''}
                 ${c.ogrn ? `<span class="profile-contact-item">ОГРН ${esc(c.ogrn)}</span>` : ''}
                 ${c.ogrnip ? `<span class="profile-contact-item">ОГРНИП ${esc(c.ogrnip)}</span>` : ''}
@@ -146,6 +154,7 @@ const ClientProfilePage = {
         <button class="tab-btn" data-tab="calculations" onclick="ClientProfilePage.switchTab('calculations')">Расчёты</button>
         <button class="tab-btn" data-tab="timeline" onclick="ClientProfilePage.switchTab('timeline')">Таймлайн</button>
         <button class="tab-btn" data-tab="documents" onclick="ClientProfilePage.switchTab('documents')">Документы</button>
+        ${this.filesTabButton()}
       </div>
 
       <div id="profile-tab-content"></div>
@@ -153,6 +162,9 @@ const ClientProfilePage = {
       <!-- Скрытый input для загрузки аватара -->
       <input type="file" id="avatar-upload-input" accept=".jpg,.jpeg,.png,.webp" style="display:none">
     `;
+
+    // Реквизиты по умолчанию свёрнуты — состояние помним в localStorage
+    this.applyRequisitesState();
 
     // Привязка загрузки аватара
     document.getElementById('avatar-upload-input').addEventListener('change', async (e) => {
@@ -168,6 +180,52 @@ const ClientProfilePage = {
     });
 
     this.switchTab('orders');
+  },
+
+  // === Админская вкладка «Файлы» ===
+  // Видна только роли admin и прижата к правому краю полосы вкладок.
+  filesTabButton() {
+    if (!API.isAdmin()) return '';
+    return '<button class="tab-btn tab-btn-admin" data-tab="files" onclick="ClientProfilePage.switchTab(\'files\')" title="Доступно только администратору">📁 Файлы</button>';
+  },
+
+  // === Реквизиты: свёрнутый блок ===
+  requisitesOpen() {
+    try {
+      return localStorage.getItem(this.REQUISITES_KEY) === '1';
+    } catch {
+      return false;
+    }
+  },
+
+  applyRequisitesState() {
+    this.toggleRequisites(this.requisitesOpen());
+  },
+
+  toggleRequisites(force) {
+    const body = document.getElementById('client-requisites-body');
+    const label = document.getElementById('requisites-toggle-label');
+    if (!body) return;
+    const open = force === undefined ? body.style.display === 'none' : !!force;
+    body.style.display = open ? '' : 'none';
+    if (label) label.textContent = open ? 'Свернуть ▴' : 'Развернуть ▾';
+    try {
+      localStorage.setItem(this.REQUISITES_KEY, open ? '1' : '0');
+    } catch {
+      /* приватный режим — просто не запоминаем */
+    }
+  },
+
+  // === Сайт клиента ===
+  // Принимает «example.ru», «www.example.ru», «https://example.ru».
+  siteHref(site) {
+    const raw = String(site || '').trim();
+    if (!raw) return '';
+    // Любая схема, кроме http(s), запрещена: javascript:, data:, file: и т.п.
+    const scheme = raw.match(/^([a-z][a-z0-9+.-]*):/i);
+    if (scheme && !/^https?$/i.test(scheme[1])) return '';
+    const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw.replace(/^\/+/, '')}`;
+    return safeUrl(withScheme);
   },
 
   // === Загрузка аватара ===
@@ -228,6 +286,7 @@ const ClientProfilePage = {
       case 'calculations': this.loadCalculations(container); break;
       case 'timeline': this.loadTimeline(container); break;
       case 'documents': this.loadDocuments(container); break;
+      case 'files': this.loadClientFiles(container); break;
     }
   },
 
@@ -547,6 +606,7 @@ const ClientProfilePage = {
                     <td class="text-right">
                       <div class="table-actions" style="justify-content:flex-end">
                         ${d.file_path ? `<a href="${esc(d.file_path)}" target="_blank" rel="noopener" class="btn btn-icon btn-sm" title="Открыть файл" onclick="event.stopPropagation()">📎</a>` : ''}
+                        ${canEdit ? `<button class="btn btn-icon btn-sm" onclick="DrawingsPage.renameDrawing(${d.id})" title="Переименовать">✏️</button>` : ''}
                         ${hasCalc ? `<button class="btn btn-icon btn-sm" onclick="App.navigateTo('calculator?drawing=${d.id}&client=${ClientProfilePage.clientId}')" title="Открыть в калькуляторе">🧮</button>` : ''}
                         ${!hasCalc ? `<button class="btn btn-secondary btn-sm" onclick="App.navigateTo('calculator?drawing=${d.id}&client=${ClientProfilePage.clientId}')">📊 Рассчитать</button>` : ''}
                         ${canDelete ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteDrawing(${d.id})" title="В архив">📥</button>` : ''}
@@ -952,6 +1012,175 @@ const ClientProfilePage = {
     } catch (err) { container.innerHTML = `<div class="empty-state"><div class="empty-state-text">${err.message}</div></div>`; }
   },
 
+  // =================== ФАЙЛЫ (ТОЛЬКО АДМИН) ===================
+  // Произвольные вложения в карточку клиента: документы, таблицы, архивы, чертежи.
+  // Таблица client_files и API /clients/:id/files доступны только роли admin.
+  async loadClientFiles(container) {
+    if (!API.isAdmin()) {
+      container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🔒</div><div class="empty-state-text">Раздел доступен только администратору</div></div>`;
+      return;
+    }
+    try {
+      const res = await API.get(`/clients/${this.clientId}/files`);
+      const files = res.data || [];
+      const totalSize = files.reduce((sum, f) => sum + (Number(f.file_size) || 0), 0);
+
+      container.innerHTML = `
+        <div class="toolbar" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+          <div style="font-size:0.85rem;color:var(--text-secondary)">
+            📁 Файлы клиента <span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary)">только для администратора</span>
+            ${files.length ? `<span style="color:var(--text-muted)"> · ${files.length} шт. · ${this._formatSize(totalSize)}</span>` : ''}
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="ClientProfilePage.uploadClientFile()">📎 Загрузить файл</button>
+        </div>
+        ${files.length === 0 ? Table.emptyState('Файлов пока нет — загрузите документ, таблицу, архив или чертёж') : `
+          <div class="file-grid">
+            ${files.map(f => `
+              <div class="file-card">
+                <div class="file-icon">${this.getFileIcon(f.file_type)}</div>
+                <div class="file-info">
+                  <div class="file-name">${esc(f.name)}</div>
+                  ${f.comment ? `<div class="file-desc">${esc(f.comment)}</div>` : ''}
+                  <div class="file-meta">
+                    ${new Date(f.created_at).toLocaleDateString('ru-RU')}
+                    ${f.file_size ? ` · ${this._formatSize(f.file_size)}` : ''}
+                    ${f.uploaded_by_name ? ` · ${esc(f.uploaded_by_name)}` : ''}
+                  </div>
+                </div>
+                <div class="file-actions">
+                  <a href="${esc(f.file_path)}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">Открыть</a>
+                  <button class="btn btn-icon btn-sm" title="Переименовать" onclick="ClientProfilePage.renameClientFile(${f.id})">✏️</button>
+                  <button class="btn btn-icon btn-sm btn-danger" title="Удалить" onclick="ClientProfilePage.deleteClientFile(${f.id})">✕</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `}
+      `;
+    } catch (err) {
+      container.innerHTML = `<div class="empty-state"><div class="empty-state-text">${esc(err.message)}</div></div>`;
+    }
+  },
+
+  _formatSize(bytes) {
+    const value = Number(bytes) || 0;
+    if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} МБ`;
+    if (value >= 1024) return `${Math.round(value / 1024)} КБ`;
+    return `${value} Б`;
+  },
+
+  uploadClientFile() {
+    Modal.open({
+      title: 'Загрузить файл в карточку клиента',
+      body: `
+        <div class="form-group">
+          <label>Файл *</label>
+          <input type="file" class="form-control" id="cf-file"
+                 accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.tif,.tiff,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.zip,.rar,.7z,.txt,.csv,.md,.dwg,.dxf">
+          <div class="form-hint" style="margin-top:4px">Документы, таблицы, изображения, архивы и чертежи до 50 МБ. HTML, SVG и исполняемые файлы не принимаются.</div>
+        </div>
+        <div class="form-group">
+          <label>Название *</label>
+          <input type="text" class="form-control" id="cf-name" placeholder="Подставится из имени файла">
+        </div>
+        <div class="form-group">
+          <label>Комментарий</label>
+          <textarea class="form-control" id="cf-comment" rows="2" placeholder="Что это за файл, версия, примечания"></textarea>
+        </div>
+      `,
+      footer: `
+        <button class="btn btn-secondary" onclick="Modal.close()">Отмена</button>
+        <button class="btn btn-primary" id="cf-submit" onclick="ClientProfilePage.saveClientFileUpload()">Загрузить</button>
+      `,
+    });
+
+    const input = document.getElementById('cf-file');
+    if (input) {
+      input.addEventListener('change', () => {
+        const nameInput = document.getElementById('cf-name');
+        if (input.files[0] && nameInput && !nameInput.value.trim()) {
+          nameInput.value = input.files[0].name.replace(/\.[^.]+$/, '');
+        }
+      });
+    }
+  },
+
+  async saveClientFileUpload() {
+    const input = document.getElementById('cf-file');
+    const file = input && input.files ? input.files[0] : null;
+    const name = document.getElementById('cf-name').value.trim() || (file ? file.name : '');
+    const comment = document.getElementById('cf-comment').value.trim();
+    if (!file) { Toast.error('Выберите файл'); return; }
+    if (!name) { Toast.error('Укажите название'); return; }
+
+    const button = document.getElementById('cf-submit');
+    if (button) { button.disabled = true; button.textContent = 'Загрузка...'; }
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const uploaded = await API.upload('/upload/client-file', formData);
+      await API.post(`/clients/${this.clientId}/files`, {
+        name,
+        comment,
+        file_path: uploaded.path,
+        file_type: uploaded.file_type || (uploaded.path.split('.').pop() || ''),
+        file_size: uploaded.size,
+      });
+      Toast.success('Файл загружен');
+      Modal.close();
+      this.switchTab('files');
+    } catch (err) {
+      Toast.error(err.message);
+      if (button) { button.disabled = false; button.textContent = 'Загрузить'; }
+    }
+  },
+
+  async renameClientFile(fileId) {
+    try {
+      const res = await API.get(`/clients/${this.clientId}/files`);
+      const file = (res.data || []).find(f => String(f.id) === String(fileId));
+      if (!file) { Toast.error('Файл не найден'); return; }
+      Modal.open({
+        title: 'Переименовать файл',
+        body: `
+          <div class="form-group">
+            <label>Название *</label>
+            <input type="text" class="form-control" id="cf-rename-name" value="${esc(file.name)}">
+          </div>
+          <div class="form-group">
+            <label>Комментарий</label>
+            <textarea class="form-control" id="cf-rename-comment" rows="2">${esc(file.comment || '')}</textarea>
+          </div>
+        `,
+        footer: `
+          <button class="btn btn-secondary" onclick="ClientProfilePage.switchTab('files')">Отмена</button>
+          <button class="btn btn-primary" onclick="ClientProfilePage.saveClientFileRename(${file.id})">Сохранить</button>
+        `,
+      });
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  async saveClientFileRename(fileId) {
+    const name = document.getElementById('cf-rename-name').value.trim();
+    const comment = document.getElementById('cf-rename-comment').value.trim();
+    if (!name) { Toast.error('Укажите название'); return; }
+    try {
+      await API.request('PATCH', `/clients/${this.clientId}/files/${fileId}`, { name, comment });
+      Toast.success('Файл обновлён');
+      Modal.close();
+      this.switchTab('files');
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  async deleteClientFile(fileId) {
+    if (!await ConfirmDialog.delete('Удалить файл? Действие необратимо.')) return;
+    try {
+      await API.del(`/clients/${this.clientId}/files/${fileId}`);
+      Toast.success('Файл удалён');
+      this.switchTab('files');
+    } catch (err) { Toast.error(err.message); }
+  },
+
   // =================== МОДАЛКИ ===================
 
   // Редактирование клиента
@@ -984,6 +1213,7 @@ const ClientProfilePage = {
           <div class="form-group"><label>✈️ Telegram</label><input type="text" class="form-control" id="prof-telegram" value="${c.telegram || ''}" placeholder="@username или username"></div>
           <div class="form-group"><label>💬 MAX</label><input type="text" class="form-control" id="prof-max-messenger" value="${c.max_messenger || ''}" placeholder="https://max.ru/u/..."></div>
         </div>
+        <div class="form-group"><label>🌐 Сайт</label><input type="text" class="form-control" id="prof-site" value="${esc(c.site || '')}" placeholder="example.ru или https://example.ru"></div>
         <div class="form-group"><label>Адрес</label><input type="text" class="form-control" id="prof-address" value="${c.address || ''}"></div>
         <div class="form-group">
           <label>Статус</label>
@@ -1072,6 +1302,7 @@ const ClientProfilePage = {
       bank_details: document.getElementById('prof-bank-details').value.trim(),
       telegram: document.getElementById('prof-telegram').value.trim(),
       max_messenger: document.getElementById('prof-max-messenger').value.trim(),
+      site: document.getElementById('prof-site').value.trim(),
       client_type: document.getElementById('prof-client-type').value,
       ogrn: document.getElementById('prof-ogrn').value.trim(),
       postal_address: document.getElementById('prof-postal-address').value.trim(),

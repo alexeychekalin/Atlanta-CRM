@@ -1523,6 +1523,13 @@ textarea.form-control {
   padding-bottom: 0;
 }
 
+/* Админская вкладка прижата к правому краю полосы вкладок */
+.tab-btn-admin {
+  margin-left: auto;
+  color: var(--accent-teal);
+  font-weight: 600;
+}
+
 .tab-btn {
   background: none;
   border: none;

@@ -93,6 +93,32 @@ function hasValidSignature(filePath, ext) {
     case '.tif':
     case '.tiff':
       return hex.startsWith('49492a00') || hex.startsWith('4d4d002a');
+    // ZIP-контейнеры: docx/xlsx/pptx/odt/ods и обычные архивы
+    case '.zip':
+    case '.docx':
+    case '.xlsx':
+    case '.pptx':
+    case '.odt':
+    case '.ods':
+      return hex.startsWith('504b0304') || hex.startsWith('504b0506') || hex.startsWith('504b0708');
+    // Старый формат Office (OLE2): doc/xls/ppt
+    case '.doc':
+    case '.xls':
+    case '.ppt':
+      return hex.startsWith('d0cf11e0a1b11ae1');
+    case '.rar':
+      return hex.startsWith('52617221');
+    case '.7z':
+      return hex.startsWith('377abcaf271c');
+    // Все версии DWG начинаются с «AC10»
+    case '.dwg':
+      return buffer.toString('ascii', 0, 4) === 'AC10';
+    // Текстовые форматы: сигнатуры нет, файлы отдаются как text/plain
+    case '.txt':
+    case '.csv':
+    case '.md':
+    case '.dxf':
+      return true;
     default:
       return false;
   }

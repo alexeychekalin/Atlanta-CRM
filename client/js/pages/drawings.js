@@ -436,6 +436,7 @@ const DrawingsPage = {
                   <td class="text-right" onclick="event.stopPropagation()">
                     <div class="table-actions" style="justify-content:flex-end">
                       <button class="btn btn-icon btn-sm" onclick="DrawingsPage.openDrawingModal(${d.id})" title="Просмотр">👁️</button>
+                      <button class="btn btn-icon btn-sm" onclick="event.stopPropagation();DrawingsPage.renameDrawing(${d.id})" title="Переименовать">✏️</button>
                       ${d.archived_at ? '' : `<button class="btn btn-icon btn-sm" onclick="event.stopPropagation();DrawingsPage.openInCalculator(${d.id}, ${d.client_id || 'null'})" title="Открыть в калькуляторе">🧮</button>`}
                       ${canDelete ? (d.archived_at
                         ? `<button class="btn btn-icon btn-sm" onclick="DrawingsPage.restoreDrawing(${d.id})" title="Вернуть из архива">♻️</button>`
@@ -596,6 +597,7 @@ const DrawingsPage = {
                   <td class="text-right" onclick="event.stopPropagation()">
                     <div class="table-actions" style="justify-content:flex-end">
                       <button class="btn btn-icon btn-sm" onclick="DrawingsPage.openDrawingModal(${d.id})" title="Просмотр">👁️</button>
+                      <button class="btn btn-icon btn-sm" onclick="event.stopPropagation();DrawingsPage.renameDrawing(${d.id})" title="Переименовать">✏️</button>
                       ${d.archived_at ? '' : `<button class="btn btn-icon btn-sm" onclick="event.stopPropagation();DrawingsPage.openInCalculator(${d.id}, ${groupClient ? groupClient.client_id : 'null'})" title="В калькулятор">🧮</button>`}
                       ${API.can('drawings', 'delete') ? (d.archived_at
                         ? `<button class="btn btn-icon btn-sm" onclick="DrawingsPage.restoreDrawing(${d.id})" title="Вернуть из архива">♻️</button>`
@@ -609,6 +611,59 @@ const DrawingsPage = {
         </table>
       </div>
     `;
+  },
+
+  // =================== ПЕРЕИМЕНОВАНИЕ ===================
+  // Название можно поправить: оно попадает в каталог, карточку клиента,
+  // калькулятор и журнал расчётов, но файл и состав не меняются.
+  async renameDrawing(drawingId) {
+    let drawing = (this.allDrawings || []).find(d => String(d.id) === String(drawingId));
+    if (!drawing) {
+      try {
+        drawing = await API.get(`/drawings/${drawingId}`);
+      } catch (err) {
+        Toast.error(err.message);
+        return;
+      }
+    }
+
+    Modal.open({
+      title: 'Название чертежа',
+      body: `
+        <div class="form-group">
+          <label>Название *</label>
+          <input type="text" class="form-control" id="drawing-rename-input" maxlength="255" value="${esc(drawing.name)}">
+          <div class="form-hint" style="margin-top:4px">Изменится только название — файл, состав и цены останутся прежними.</div>
+        </div>
+      `,
+      footer: `
+        <button class="btn btn-secondary" onclick="Modal.close()">Отмена</button>
+        <button class="btn btn-primary" onclick="DrawingsPage.saveDrawingName(${drawingId})">Сохранить</button>
+      `,
+    });
+
+    setTimeout(() => {
+      const input = document.getElementById('drawing-rename-input');
+      if (input) { input.focus(); input.select(); }
+    }, 50);
+  },
+
+  async saveDrawingName(drawingId) {
+    const input = document.getElementById('drawing-rename-input');
+    const name = input ? input.value.trim() : '';
+    if (!name) { Toast.error('Укажите название чертежа'); return; }
+
+    try {
+      const updated = await API.request('PATCH', `/drawings/${drawingId}/name`, { name });
+      (this.allDrawings || []).forEach(d => {
+        if (String(d.id) === String(drawingId)) d.name = updated.name || name;
+      });
+      Toast.success('Название обновлено');
+      Modal.close();
+      if (typeof this.loadData === 'function') await this.loadData();
+    } catch (err) {
+      Toast.error(err.message);
+    }
   },
 
   // =================== МОДАЛКА КАРТОЧКИ ЧЕРТЕЖА ===================
@@ -716,6 +771,7 @@ const DrawingsPage = {
               <div style="display:flex;align-items:center;gap:10px">
                 <span style="font-size:1.5rem">📐</span>
                 <h3 style="margin:0;font-size:1.25rem;font-weight:700;color:var(--text-primary)">${esc(drawing.name)}</h3>
+                ${canEditDrawings ? `<button class="btn btn-icon btn-sm" title="Переименовать чертёж" onclick="DrawingsPage.renameDrawing(${drawing.id})">✏️</button>` : ''}
               </div>
               <div style="margin-top:8px;display:flex;gap:14px;flex-wrap:wrap;font-size:0.85rem;color:var(--text-secondary)">
                 <span>👤 Клиент: 

@@ -89,6 +89,8 @@ CREATE TABLE IF NOT EXISTS clients (
   director VARCHAR(255),
   telegram VARCHAR(100),
   max_messenger VARCHAR(500),
+  -- Сайт клиента: ссылка в карточке и в списках
+  site VARCHAR(500),
   created_at TIMESTAMP DEFAULT now()
 );
 
@@ -342,6 +344,20 @@ CREATE TABLE IF NOT EXISTS client_documents (
   created_at TIMESTAMP DEFAULT now()
 );
 
+-- Файлы клиента, загружаемые администратором (раздел «Файлы» в карточке клиента).
+-- Отдельно от client_documents: расширенный список форматов и доступ только админу.
+CREATE TABLE IF NOT EXISTS client_files (
+  id SERIAL PRIMARY KEY,
+  client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  file_path VARCHAR(500) NOT NULL,
+  file_type VARCHAR(20),
+  file_size INT,
+  comment TEXT,
+  uploaded_by INT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP DEFAULT now()
+);
+
 -- Контакты сотрудников клиента (адресная книга)
 CREATE TABLE IF NOT EXISTS client_contacts (
   id SERIAL PRIMARY KEY,
@@ -469,6 +485,7 @@ CREATE INDEX IF NOT EXISTS idx_drawing_calculations_client ON drawing_calculatio
 CREATE INDEX IF NOT EXISTS idx_drawing_calculations_drawing ON drawing_calculations(drawing_id);
 CREATE INDEX IF NOT EXISTS idx_drawing_components_component ON drawing_components(component_id);
 CREATE INDEX IF NOT EXISTS idx_drawing_approvals_client ON drawing_approvals(client_id);
+CREATE INDEX IF NOT EXISTS idx_client_files_client ON client_files(client_id);
 CREATE INDEX IF NOT EXISTS idx_drawing_approvals_status ON drawing_approvals(status);
 CREATE INDEX IF NOT EXISTS idx_drawing_approval_versions_approval ON drawing_approval_versions(approval_id);
 CREATE INDEX IF NOT EXISTS idx_drawing_approval_comments_approval ON drawing_approval_comments(approval_id);
@@ -483,16 +500,23 @@ VALUES ('admin', '$2a$10$wr.oIZCvbDUhaHnS.ZBg6uOTJKKWbQ6sKtStEmT4EB2blefDO1d9m',
 ON CONFLICT (username) DO NOTHING;
 
 -- Статусы клиентов по умолчанию
-INSERT INTO client_work_statuses (name, color, sort_order) VALUES
-  ('Новый', '#3b82f6', 1),
-  ('Отправлен тестовый чертёж', '#8b5cf6', 2),
-  ('Переговоры', '#f59e0b', 3),
-  ('Согласование', '#06b6d4', 4),
-  ('Покупки', '#22c55e', 5),
-  ('Постоянный клиент', '#14b8a6', 6),
-  ('Приостановлен', '#6b7280', 7),
-  ('Отказ', '#ef4444', 8)
-ON CONFLICT DO NOTHING;
+-- Словари заполняются только отсутствующими записями: повторный db:init/deploy
+-- не должен задваивать статусы, категории и типы техники.
+INSERT INTO client_work_statuses (name, color, sort_order)
+SELECT v.name, v.color, v.sort_order
+  FROM (VALUES
+    ('Новый', '#3b82f6', 1),
+    ('Отправлен тестовый чертёж', '#8b5cf6', 2),
+    ('Переговоры', '#f59e0b', 3),
+    ('Согласование', '#06b6d4', 4),
+    ('Покупки', '#22c55e', 5),
+    ('Постоянный клиент', '#14b8a6', 6),
+    ('Приостановлен', '#6b7280', 7),
+    ('Отказ', '#ef4444', 8)
+  ) AS v(name, color, sort_order)
+ WHERE NOT EXISTS (
+   SELECT 1 FROM client_work_statuses s WHERE lower(s.name) = lower(v.name)
+ );
 
 -- Уровни ценообразования
 INSERT INTO client_pricing_levels (name, code, markup_pct, sort_order, is_default) VALUES
@@ -503,16 +527,26 @@ INSERT INTO client_pricing_levels (name, code, markup_pct, sort_order, is_defaul
 ON CONFLICT (code) DO NOTHING;
 
 -- Категории компонентов
-INSERT INTO component_categories (name, sort_order) VALUES
-  ('Блок коммутации', 1),
-  ('Габаритный фонарь боковой', 2),
-  ('Габаритный фонарь задний', 3),
-  ('Фонарь освещения номерного знака', 4)
-ON CONFLICT DO NOTHING;
+INSERT INTO component_categories (name, sort_order)
+SELECT v.name, v.sort_order
+  FROM (VALUES
+    ('Блок коммутации', 1),
+    ('Габаритный фонарь боковой', 2),
+    ('Габаритный фонарь задний', 3),
+    ('Фонарь освещения номерного знака', 4)
+  ) AS v(name, sort_order)
+ WHERE NOT EXISTS (
+   SELECT 1 FROM component_categories c WHERE lower(c.name) = lower(v.name)
+ );
 
 -- Типы техники
-INSERT INTO equipment_types (name, icon, sort_order) VALUES
-  ('Полуприцепы', '🚛', 1),
-  ('Легковые прицепы', '🚗', 2),
-  ('Сельхозтехника', '🚜', 3)
-ON CONFLICT DO NOTHING;
+INSERT INTO equipment_types (name, icon, sort_order)
+SELECT v.name, v.icon, v.sort_order
+  FROM (VALUES
+    ('Полуприцепы', '🚛', 1),
+    ('Легковые прицепы', '🚗', 2),
+    ('Сельхозтехника', '🚜', 3)
+  ) AS v(name, icon, sort_order)
+ WHERE NOT EXISTS (
+   SELECT 1 FROM equipment_types t WHERE lower(t.name) = lower(v.name)
+ );

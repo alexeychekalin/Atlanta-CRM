@@ -593,6 +593,25 @@ router.post('/', auth, async (req, res) => {
 });
 
 // PUT /api/drawings/:id — обновить чертёж (в т.ч. переиспользовать шаблон)
+// PATCH /api/drawings/:id/name — переименование без изменения состава, владельца и цен
+router.patch('/:id/name', auth, async (req, res) => {
+  const id = normalizeId(req.params.id);
+  if (!id) return res.status(404).json({ error: 'Чертёж не найден' });
+
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Укажите название чертежа' });
+  if (name.length > 255) return res.status(400).json({ error: 'Название длиннее 255 символов' });
+
+  try {
+    const result = await db.query(
+      'UPDATE drawings SET name = $1 WHERE id = $2 RETURNING *', [name, id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Чертёж не найден' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.put('/:id', auth, async (req, res) => {
   const id = normalizeId(req.params.id);
   if (!id) return res.status(404).json({ error: 'Чертёж не найден' });

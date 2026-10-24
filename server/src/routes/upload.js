@@ -5,6 +5,7 @@ const fs = require('fs');
 const auth = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/access');
 const { hasValidSignature } = require('../utils/files');
+const { adminOnly } = require('../middleware/role');
 
 const router = express.Router();
 
@@ -61,6 +62,15 @@ const compDocFilter = extensionFilter(
   'Допустимые форматы: PDF, JPG, PNG'
 );
 
+// Админские файлы клиента: документы, таблицы, архивы, чертежи.
+// HTML/SVG/JS и исполняемые файлы не принимаем — они исполняются в браузере.
+const clientFileFilter = extensionFilter(
+  ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.tif', '.tiff',
+    '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods',
+    '.zip', '.rar', '.7z', '.txt', '.csv', '.md', '.dwg', '.dxf'],
+  'Недопустимый формат файла. Разрешены документы, таблицы, изображения, архивы и чертежи'
+);
+
 const uploadImage = multer({
   storage: buildStorage(imagesDir, 'comp'),
   fileFilter: imageFilter,
@@ -91,6 +101,16 @@ const uploadCompDoc = multer({
   storage: buildStorage(compDocsDir, 'doc'),
   fileFilter: compDocFilter,
   limits: { fileSize: 20 * 1024 * 1024 },
+});
+
+// --- Файлы клиента (только администратор) ---
+const clientFilesDir = path.join(uploadsDir, 'files');
+if (!fs.existsSync(clientFilesDir)) fs.mkdirSync(clientFilesDir, { recursive: true });
+
+const uploadClientFile = multer({
+  storage: buildStorage(clientFilesDir, 'file'),
+  fileFilter: clientFileFilter,
+  limits: { fileSize: 50 * 1024 * 1024 },
 });
 
 /**
@@ -154,6 +174,13 @@ router.post('/component-doc', auth, canEditComponents, uploadCompDoc.single('fil
   if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
   const ext = path.extname(req.file.originalname).toLowerCase().replace('.', '');
   return fileResponse(req, res, 'documents', { file_type: ext });
+});
+
+// POST /api/upload/client-file — произвольные файлы в карточку клиента (только админ)
+router.post('/client-file', auth, adminOnly, uploadClientFile.single('file'), verifyUploadedFile, (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+  const ext = path.extname(req.file.originalname).toLowerCase().replace('.', '');
+  return fileResponse(req, res, 'files', { file_type: ext });
 });
 
 // Middleware обработки ошибок multer

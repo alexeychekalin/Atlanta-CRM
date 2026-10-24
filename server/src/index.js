@@ -15,7 +15,7 @@ app.disable('x-powered-by');
 
 // Инициализация директорий для загрузок
 const uploadsBaseDir = path.join(__dirname, '../uploads');
-['images', 'drawings', 'avatars', 'documents'].forEach(subDir => {
+['images', 'drawings', 'avatars', 'documents', 'files'].forEach(subDir => {
   const p = path.join(uploadsBaseDir, subDir);
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 });
@@ -143,6 +143,8 @@ app.use('/api/clients/:id/timeline', requirePermission('clients'), require('./ro
 app.use('/api/clients/:clientId/contacts', requirePermission('clients'), require('./routes/client-contacts'));
 app.use('/api/clients/:id/documents', requirePermission('clients'), require('./routes/client-documents'));
 app.use('/api/clients/:clientId/approvals', requirePermission('clients'), require('./routes/drawing-approvals'));
+// Файлы администратора в карточке клиента: маршрут сам требует роль admin
+app.use('/api/clients/:clientId/files', requireAuth, require('./routes/client-files'));
 app.use('/api/client-statuses', requirePermission('clients'), require('./routes/client-statuses'));
 app.use('/api/clients', requirePermission('clients'), require('./routes/clients'));
 

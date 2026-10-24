@@ -77,7 +77,7 @@ router.post('/', auth, async (req, res) => {
   try {
     const { name, phone, email, address, notes, avatar_path, status_id, pricing_level_id,
             delivery_address, delivery_contact_name, delivery_contact_phone,
-            inn, kpp, legal_address, bank_details, ogrnip, telegram, max_messenger,
+            inn, kpp, legal_address, bank_details, ogrnip, telegram, max_messenger, site,
             client_type, ogrn, postal_address, bank_account, bank_name, bik, corr_account, director } = req.body;
     if (!name) {
       return res.status(400).json({ error: 'Название клиента обязательно' });
@@ -86,14 +86,14 @@ router.post('/', auth, async (req, res) => {
     const result = await db.query(
       `INSERT INTO clients (name, phone, email, address, notes, avatar_path, status_id, pricing_level_id,
        delivery_address, delivery_contact_name, delivery_contact_phone,
-       inn, kpp, legal_address, bank_details, ogrnip, telegram, max_messenger,
+       inn, kpp, legal_address, bank_details, ogrnip, telegram, max_messenger, site,
        client_type, ogrn, postal_address, bank_account, bank_name, bik, corr_account, director)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27) RETURNING *`,
       [name, phone || null, email || null, address || null, notes || null,
        avatar_path || null, status_id || null, pricing_level_id || null,
        delivery_address || null, delivery_contact_name || null, delivery_contact_phone || null,
        inn || null, kpp || null, legal_address || null, bank_details || null, ogrnip || null,
-       telegram || null, max_messenger || null,
+       telegram || null, max_messenger || null, site || null,
        client_type || 'ooo', ogrn || null, postal_address || null, bank_account || null,
        bank_name || null, bik || null, corr_account || null, director || null]
     );
@@ -109,7 +109,7 @@ router.put('/:id', auth, async (req, res) => {
   try {
     const { name, phone, email, address, notes, avatar_path, status_id, pricing_level_id,
             delivery_address, delivery_contact_name, delivery_contact_phone,
-            inn, kpp, legal_address, bank_details, ogrnip, telegram, max_messenger,
+            inn, kpp, legal_address, bank_details, ogrnip, telegram, max_messenger, site,
             client_type, ogrn, postal_address, bank_account, bank_name, bik, corr_account, director } = req.body;
     if (!name) {
       return res.status(400).json({ error: 'Название клиента обязательно' });
@@ -120,15 +120,15 @@ router.put('/:id', auth, async (req, res) => {
        avatar_path = $6, status_id = $7, pricing_level_id = $8,
        delivery_address = $9, delivery_contact_name = $10, delivery_contact_phone = $11,
        inn = $12, kpp = $13, legal_address = $14, bank_details = $15, ogrnip = $16,
-       telegram = $17, max_messenger = $18,
-       client_type = $19, ogrn = $20, postal_address = $21, bank_account = $22,
-       bank_name = $23, bik = $24, corr_account = $25, director = $26
-       WHERE id = $27 RETURNING *`,
+       telegram = $17, max_messenger = $18, site = $19,
+       client_type = $20, ogrn = $21, postal_address = $22, bank_account = $23,
+       bank_name = $24, bik = $25, corr_account = $26, director = $27
+       WHERE id = $28 RETURNING *`,
       [name, phone || null, email || null, address || null, notes || null, 
        avatar_path !== undefined ? avatar_path : null, status_id || null, pricing_level_id || null,
        delivery_address || null, delivery_contact_name || null, delivery_contact_phone || null,
        inn || null, kpp || null, legal_address || null, bank_details || null, ogrnip || null,
-       telegram || null, max_messenger || null,
+       telegram || null, max_messenger || null, site || null,
        client_type || 'ooo', ogrn || null, postal_address || null, bank_account || null,
        bank_name || null, bik || null, corr_account || null, director || null,
        req.params.id]
