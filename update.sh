@@ -49,6 +49,11 @@ fi
 if [ -f "$APP_DIR/server/src/db/migrate_roles.js" ]; then
   node src/db/migrate_roles.js >/dev/null 2>&1 && log "Роли обновлены" || warn "Миграция ролей не выполнена"
 fi
+
+# Догрузить клиентов из предзаполнения (существующие не дублируются)
+if [ -f "$APP_DIR/server/src/db/preseed.js" ]; then
+  node src/db/preseed.js >/dev/null 2>&1 && log "Предзаполнение применено" || warn "Предзаполнение: ошибка или данные уже загружены"
+fi
 cd "$APP_DIR"
 
 # 4. Запустить сервис

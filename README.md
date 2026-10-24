@@ -189,6 +189,23 @@ npm start         # прод-запуск без --watch
 
 Откройте `http://localhost:3000`.
 
+### Предзаполнение системы клиентами
+
+Скрипт `npm run db:preseed` (на PGlite — `npm run demo:preseed`) создаёт клиентов из карточек предприятий, чтобы CRM запускалась уже с заполненной базой:
+
+```
+server/src/db/preseed/
+├── clients.json                данные клиентов, статус и уровень цен, список вложений
+└── files/                      исходные карточки (PDF) — коммитятся в репозиторий
+```
+
+- Клиент ищется **по ИНН** (без ИНН — по названию), поэтому повторный запуск при деплое или обновлении ничего не дублирует и не перезаписывает правки, сделанные в интерфейсе.
+- PDF из `files/` копируется в `server/uploads/files/` под стабильным именем (хэш содержимого) и появляется в админской вкладке «📁 Файлы» карточки клиента; повторный запуск не создаёт копий.
+- `db:init`, `deploy.sh`, `update.sh` и `demo:init` вызывают предзаполнение автоматически.
+- Пустой `clients.json` — нормальное состояние: скрипт просто завершится без изменений.
+
+Чтобы добавить клиента: положите карточку в `preseed/files/`, добавьте запись в `clients.json` (обязательны `name` и `inn`; `status` и `pricing_level` — названия из справочников, если нужны) и выполните `npm run db:preseed`.
+
 ### Вариант 3. Демо без PostgreSQL (PGlite)
 
 Подходит, чтобы посмотреть систему без установки СУБД: PostgreSQL собирается в WASM, данные лежат в `.pglite` в корне проекта (каталог в `.gitignore`).
@@ -266,7 +283,8 @@ curl -s -b /tmp/cj.txt http://localhost:3000/api/drawings | head -c 400
 ├── server/
 │   ├── src/
 │   │   ├── index.js                 # Express: middleware, монтирование маршрутов
-│   │   ├── db/                      # schema.sql, migration_*.sql, migrate.js, seed.js
+│   │   ├── db/                      # schema.sql, migration_*.sql, migrate.js, seed.js, preseed.js
+│   │   │   └── preseed/             # предзаполнение: clients.json + карточки предприятий
 │   │   ├── middleware/              # auth, access (JWT + права), role
 │   │   ├── routes/                  # REST-маршруты по разделам
 │   │   ├── services/
@@ -274,7 +292,7 @@ curl -s -b /tmp/cj.txt http://localhost:3000/api/drawings | head -c 400
 │   │   │   ├── drawings.js          # цена чертежа для клиента (единая формула)
 │   │   │   └── drawings-sql.js      # SQL-фрагменты сумм по составу
 │   │   └── utils/files.js           # безопасные пути и сигнатуры файлов
-│   ├── dev/                         # PGlite-адаптер, демо-сид, запуск демо
+│   ├── dev/                         # PGlite-адаптер, демо-сид, запуск демо, preseed
 │   ├── test/                        # node:test (цены, чертежи, рендер страниц, файлы)
 │   └── uploads/                     # images, drawings, avatars, documents (в .gitignore)
 ├── docs/ANALYSIS.md                 # аудит, реестр проблем и статусы
@@ -317,8 +335,9 @@ system_settings                          настройки НДС
 
 ```bash
 cd server
-npm run db:init       # схема + миграции + роли + пользователи (первый запуск)
+npm run db:init       # схема + миграции + роли + пользователи + предзаполнение клиентами
 npm run db:migrate    # только новые миграции
+npm run db:preseed    # только предзаполнение клиентами (идемпотентно)
 npm run db:schema     # schema.sql через psql (чистая установка вручную)
 ```
 
@@ -396,7 +415,7 @@ curl -s -b /tmp/cj.txt -X POST http://localhost:3000/api/drawings \
 
 ```bash
 cd server        # важно: скрипты запускаются из server/
-npm test         # node:test — 48 тестов
+npm test         # node:test — 53 теста
 npm run lint     # ESLint + проверка синтаксиса клиентского JS
 ```
 
@@ -411,6 +430,7 @@ npm run lint     # ESLint + проверка синтаксиса клиентс
 | `test/client-render.test.js` | группировка по клиентам, отсутствие пользовательских строк в `onclick` (XSS), цены связей в карточке |
 | `test/client-profile.test.js` | админская вкладка «Файлы», свёрнутые реквизиты, безопасная ссылка на сайт, размеры файлов |
 | `test/migrations.test.js` | идемпотентность словарных вставок, миграция дедупликации, новые поля схемы |
+| `test/preseed.test.js` | валидность `preseed/clients.json`, уникальность ИНН, наличие PDF-карточек, стабильные имена файлов |
 | `test/files.test.js` | безопасные пути, zip-slip, магические байты (включая docx/xlsx/rar/7z/dwg) |
 | `test/routing.test.js` | парсинг и сборка hash-маршрутов |
 

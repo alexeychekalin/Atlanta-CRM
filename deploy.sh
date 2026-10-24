@@ -165,6 +165,9 @@ node src/db/seed.js 2>/dev/null || warn "Seed уже был применён и�
 
 # Миграция ролей (добавляет guest и др.)
 node src/db/migrate_roles.js 2>/dev/null || warn "Миграция ролей: ошибка или уже применена"
+
+# Предзаполнение: клиенты из карточек предприятий (src/db/preseed)
+node src/db/preseed.js 2>/dev/null || warn "Предзаполнение: ошибка или данные уже загружены"
 cd "$APP_DIR"
 log "Данные загружены"
 

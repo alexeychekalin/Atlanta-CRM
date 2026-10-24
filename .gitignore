@@ -29,6 +29,10 @@ Thumbs.db
 *.zip
 *.tar.gz
 *.log
+
+# Данные предзаполнения (карточки предприятий и вложения) живут в репозитории,
+# чтобы деплой поднимал систему с уже заполненными клиентами.
+!server/src/db/preseed/files/*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
