@@ -75,9 +75,14 @@ CREATE TABLE IF NOT EXISTS component_modification_images (
 CREATE INDEX IF NOT EXISTS idx_component_modification_images_mod ON component_modification_images(modification_id);
 
 -- Начальные категории
-INSERT INTO component_categories (name, sort_order) VALUES
+INSERT INTO component_categories (name, sort_order)
+SELECT v.name, v.sort_order
+  FROM (VALUES
     ('Блок коммутации', 1),
     ('Габаритный фонарь боковой', 2),
     ('Габаритный фонарь задний', 3),
     ('Фонарь освещения номерного знака', 4)
-ON CONFLICT DO NOTHING;
+  ) AS v(name, sort_order)
+ WHERE NOT EXISTS (
+   SELECT 1 FROM component_categories c WHERE lower(c.name) = lower(v.name)
+ );

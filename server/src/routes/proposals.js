@@ -1,7 +1,8 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
-const adminOnly = require('../middleware/role');
+const { calculateItems, getVatSettings, calculateVat } = require('../services/pricing');
+const { normalizeUploadPath } = require('../utils/files');
 const PDFDocument = require('pdfkit');
 const path = require('path');
 const fs = require('fs');
@@ -92,33 +93,45 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // =================== POST /api/proposals ===================
-router.post('/', auth, adminOnly, async (req, res) => {
+router.post('/', auth, async (req, res) => {
   const pgClient = await db.pool.connect();
   try {
     await pgClient.query('BEGIN');
     const { client_id, principal_id, valid_until, status, items, comment } = req.body;
 
-    if (!client_id || !items || items.length === 0) {
+    if (!client_id || !Array.isArray(items) || items.length === 0) {
+      await pgClient.query('ROLLBACK');
       return res.status(400).json({ error: 'Клиент и позиции обязательны' });
     }
+
+    let calculation;
+    try {
+      calculation = await calculateItems(client_id, items, pgClient);
+    } catch (err) {
+      await pgClient.query('ROLLBACK');
+      return res.status(err.status || 400).json({ error: err.message });
+    }
+    const vat = calculateVat(calculation.subtotal, await getVatSettings(pgClient));
 
     const proposalNumber = await generateProposalNumber();
 
     const proposalResult = await pgClient.query(
-      `INSERT INTO proposals (proposal_number, client_id, principal_id, valid_until, status, comment, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [proposalNumber, client_id, principal_id || null, valid_until || null, status || 'draft', comment || null, req.user.id]
+      `INSERT INTO proposals (proposal_number, client_id, principal_id, valid_until, status, comment,
+       subtotal, vat_rate, vat_amount, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [proposalNumber, client_id, principal_id || null, valid_until || null, status || 'draft', comment || null,
+       calculation.subtotal, vat.rate, vat.amount, req.user.id]
     );
     const proposal = proposalResult.rows[0];
 
-    for (const item of items) {
-      const lineTotal = (parseFloat(item.unit_price) || 0) * (parseInt(item.quantity) || 1);
+    for (const item of calculation.items) {
       await pgClient.query(
-        `INSERT INTO proposal_items (proposal_id, product_id, product_name, description, unit_price, quantity, line_total, is_drawing, drawing_id, image_path)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [proposal.id, item.product_id || null, item.product_name, item.description || null,
-         item.unit_price || 0, item.quantity || 1, lineTotal, item.is_drawing || false,
-         item.drawing_id || null, item.image_path || null]
+        `INSERT INTO proposal_items (proposal_id, product_id, product_name, description, unit_price, quantity,
+         line_total, is_drawing, drawing_id, image_path, base_price, markup_pct, markup_rub, level_markup_pct)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        [proposal.id, item.product_id, item.product_name, item.description || null,
+         item.unit_price, item.quantity, item.line_total, item.is_drawing,
+         item.drawing_id, item.image_path ? normalizeUploadPath(item.image_path) : null, item.base_price, item.markup_pct, item.markup_rub, item.level_markup_pct]
       );
     }
 
@@ -134,36 +147,50 @@ router.post('/', auth, adminOnly, async (req, res) => {
 });
 
 // =================== PUT /api/proposals/:id ===================
-router.put('/:id', auth, adminOnly, async (req, res) => {
+router.put('/:id', auth, async (req, res) => {
   const pgClient = await db.pool.connect();
   try {
     await pgClient.query('BEGIN');
     const { client_id, principal_id, valid_until, status, items, comment } = req.body;
 
-    const proposalResult = await pgClient.query(
-      `UPDATE proposals SET client_id = $1, principal_id = $2, valid_until = $3, status = $4,
-       comment = $5, updated_at = NOW() WHERE id = $6 RETURNING *`,
-      [client_id, principal_id || null, valid_until || null, status || 'draft', comment || null, req.params.id]
-    );
+    if (!client_id || !Array.isArray(items) || items.length === 0) {
+      await pgClient.query('ROLLBACK');
+      return res.status(400).json({ error: 'Клиент и позиции обязательны' });
+    }
 
-    if (proposalResult.rows.length === 0) {
+    const existing = await pgClient.query('SELECT id FROM proposals WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) {
       await pgClient.query('ROLLBACK');
       return res.status(404).json({ error: 'КП не найдено' });
     }
 
-    // Пересоздаём позиции
+    let calculation;
+    try {
+      calculation = await calculateItems(client_id, items, pgClient);
+    } catch (err) {
+      await pgClient.query('ROLLBACK');
+      return res.status(err.status || 400).json({ error: err.message });
+    }
+    const vat = calculateVat(calculation.subtotal, await getVatSettings(pgClient));
+
+    const proposalResult = await pgClient.query(
+      `UPDATE proposals SET client_id = $1, principal_id = $2, valid_until = $3, status = $4,
+       comment = $5, subtotal = $6, vat_rate = $7, vat_amount = $8, updated_at = NOW()
+       WHERE id = $9 RETURNING *`,
+      [client_id, principal_id || null, valid_until || null, status || 'draft', comment || null,
+       calculation.subtotal, vat.rate, vat.amount, req.params.id]
+    );
+
     await pgClient.query('DELETE FROM proposal_items WHERE proposal_id = $1', [req.params.id]);
-    if (items && items.length > 0) {
-      for (const item of items) {
-        const lineTotal = (parseFloat(item.unit_price) || 0) * (parseInt(item.quantity) || 1);
-        await pgClient.query(
-          `INSERT INTO proposal_items (proposal_id, product_id, product_name, description, unit_price, quantity, line_total, is_drawing, drawing_id, image_path)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-          [req.params.id, item.product_id || null, item.product_name, item.description || null,
-           item.unit_price || 0, item.quantity || 1, lineTotal, item.is_drawing || false,
-           item.drawing_id || null, item.image_path || null]
-        );
-      }
+    for (const item of calculation.items) {
+      await pgClient.query(
+        `INSERT INTO proposal_items (proposal_id, product_id, product_name, description, unit_price, quantity,
+         line_total, is_drawing, drawing_id, image_path, base_price, markup_pct, markup_rub, level_markup_pct)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        [req.params.id, item.product_id, item.product_name, item.description || null,
+         item.unit_price, item.quantity, item.line_total, item.is_drawing,
+         item.drawing_id, item.image_path ? normalizeUploadPath(item.image_path) : null, item.base_price, item.markup_pct, item.markup_rub, item.level_markup_pct]
+      );
     }
 
     await pgClient.query('COMMIT');
@@ -178,7 +205,7 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
 });
 
 // =================== DELETE /api/proposals/:id ===================
-router.delete('/:id', auth, adminOnly, async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
   try {
     const result = await db.query('DELETE FROM proposals WHERE id = $1 RETURNING id', [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'КП не найдено' });
@@ -190,7 +217,7 @@ router.delete('/:id', auth, adminOnly, async (req, res) => {
 });
 
 // =================== POST /api/proposals/:id/convert — перевод в заказ ===================
-router.post('/:id/convert', auth, adminOnly, async (req, res) => {
+router.post('/:id/convert', auth, async (req, res) => {
   const pgClient = await db.pool.connect();
   try {
     await pgClient.query('BEGIN');
@@ -230,9 +257,11 @@ router.post('/:id/convert', auth, adminOnly, async (req, res) => {
     // Создаём заказ
     const orderResult = await pgClient.query(
       `INSERT INTO orders (order_number, client_id, principal_id, order_date, status, subtotal,
-       commission_pct, commission_amount, total, comment, created_by)
-       VALUES ($1, $2, $3, NOW(), 'new', $4, $5, $6, $7, $8, $9) RETURNING *`,
+       commission_pct, commission_amount, total, level_markup_pct, vat_rate, vat_amount,
+       comment, created_by)
+       VALUES ($1, $2, $3, NOW(), 'new', $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
       [orderNum, proposal.client_id, proposal.principal_id, subtotal, commPct, commissionAmount, subtotal,
+       parseFloat(items[0]?.level_markup_pct) || 0, proposal.vat_rate, proposal.vat_amount,
        `Создан из КП ${proposal.proposal_number}`, req.user.id]
     );
     const order = orderResult.rows[0];
@@ -296,9 +325,13 @@ router.post('/:id/convert', auth, adminOnly, async (req, res) => {
       }
 
       await pgClient.query(
-        `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, line_total, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, line_total,
+         base_price, markup_pct, markup_rub, level_markup_pct, is_drawing, drawing_id, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [order.id, item.product_id, item.product_name, item.unit_price, item.quantity, item.line_total,
+         item.base_price !== null && item.base_price !== undefined ? item.base_price : item.unit_price,
+         item.markup_pct || 0, item.markup_rub || 0, item.level_markup_pct || 0,
+         item.is_drawing || false, item.drawing_id || null,
          metadata ? JSON.stringify(metadata) : null]
       );
     }
@@ -344,21 +377,30 @@ router.get('/:id/pdf', auth, async (req, res) => {
        WHERE pi.proposal_id = $1 ORDER BY pi.id`, [req.params.id]
     );
     const items = itemsRes.rows;
-    const totalWithoutVAT = items.reduce((s, i) => s + parseFloat(i.line_total), 0);
 
-    // НДС — из системных настроек в БД
-    let vatRate = 22;
-    try {
-      const vatRes = await db.query("SELECT value FROM system_settings WHERE key = 'vat'");
-      if (vatRes.rows.length > 0) {
-        vatRate = parseFloat(vatRes.rows[0].value.rate) || 22;
+    // Цены в системе указаны БЕЗ НДС: НДС начисляется сверху от суммы позиций.
+    const itemsTotal = items.reduce((s, i) => s + parseFloat(i.line_total), 0);
+    const storedSubtotal = proposal.subtotal !== null && proposal.subtotal !== undefined
+      ? parseFloat(proposal.subtotal) : 0;
+    const totalWithoutVAT = storedSubtotal > 0 ? storedSubtotal : itemsTotal;
+
+    let vatRate = proposal.vat_rate !== null && proposal.vat_rate !== undefined
+      ? parseFloat(proposal.vat_rate)
+      : null;
+
+    if (vatRate === null) {
+      try {
+        const vatRes = await db.query("SELECT value FROM system_settings WHERE key = 'vat'");
+        vatRate = vatRes.rows.length > 0 ? (parseFloat(vatRes.rows[0].value.rate) || 0) : 22;
+      } catch {
+        vatRate = parseFloat(req.query.vat_rate) || 22;
       }
-    } catch (e) {
-      // fallback: из query-параметра или 22% по умолчанию
-      vatRate = parseFloat(req.query.vat_rate) || 22;
     }
-    const vatAmount = totalWithoutVAT * vatRate / 100;
-    const totalWithVAT = totalWithoutVAT + vatAmount;
+
+    const vatAmount = proposal.vat_amount !== null && proposal.vat_amount !== undefined
+      ? parseFloat(proposal.vat_amount)
+      : calculateVat(totalWithoutVAT, { rate: vatRate }).amount;
+    const totalWithVAT = Math.round((totalWithoutVAT + vatAmount) * 100) / 100;
 
     // Создаём PDF
     const doc = new PDFDocument({ size: 'A4', margin: 40, info: {
@@ -433,7 +475,7 @@ router.get('/:id/pdf', auth, async (req, res) => {
     const fmtMoney = (v) => parseFloat(v).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     const drawTableHeader = (rowY) => {
-      const headerCols = ['№', 'Артикул', 'Наименование', 'Кол-во', 'Цена, ₽', `с НДС, ₽`, `Сумма с НДС, ₽`];
+      const headerCols = ['№', 'Артикул', 'Наименование', 'Кол-во', 'Цена, ₽', 'с НДС, ₽', 'Сумма с НДС, ₽'];
       let x = 40;
       doc.rect(x, rowY, pageWidth, 22).fill('#4a90a4');
       doc.font(fontBold).fontSize(7).fillColor('#fff');
@@ -452,6 +494,7 @@ router.get('/:id/pdf', auth, async (req, res) => {
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const article = item.article || (item.is_drawing ? '—' : '—');
+      // В позиции хранится цена без НДС
       const unitPrice = parseFloat(item.unit_price);
       const unitPriceVAT = unitPrice * (1 + vatRate / 100);
       const lineTotalVAT = parseFloat(item.line_total) * (1 + vatRate / 100);

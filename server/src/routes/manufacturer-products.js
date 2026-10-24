@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
-const adminOnly = require('../middleware/role');
+const { normalizeUploadPath } = require('../utils/files');
 
 const router = express.Router();
 
@@ -80,15 +80,20 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // POST /api/manufacturer-products
-router.post('/', auth, adminOnly, async (req, res) => {
+router.post('/', auth, async (req, res) => {
   try {
     const { manufacturer_id, equipment_type_id, name, model, description, image_path, drawing_id, sort_order } = req.body;
     if (!manufacturer_id || !name) return res.status(400).json({ error: 'Укажите производителя и название' });
 
+    const normalizedImage = image_path ? normalizeUploadPath(image_path) : null;
+    if (image_path && !normalizedImage) {
+      return res.status(400).json({ error: 'Недопустимый путь к изображению' });
+    }
+
     const result = await db.query(
       `INSERT INTO manufacturer_products (manufacturer_id, equipment_type_id, name, model, description, image_path, drawing_id, sort_order)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [manufacturer_id, equipment_type_id || null, name, model || null, description || null, image_path || null, drawing_id || null, sort_order || 0]
+      [manufacturer_id, equipment_type_id || null, name, model || null, description || null, normalizedImage, drawing_id || null, sort_order || 0]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -97,9 +102,18 @@ router.post('/', auth, adminOnly, async (req, res) => {
 });
 
 // PUT /api/manufacturer-products/:id
-router.put('/:id', auth, adminOnly, async (req, res) => {
+router.put('/:id', auth, async (req, res) => {
   try {
     const { manufacturer_id, equipment_type_id, name, model, description, image_path, drawing_id, sort_order, is_active } = req.body;
+
+    let normalizedImage = image_path;
+    if (image_path !== undefined && image_path !== null) {
+      normalizedImage = normalizeUploadPath(image_path);
+      if (!normalizedImage) {
+        return res.status(400).json({ error: 'Недопустимый путь к изображению' });
+      }
+    }
+
     const result = await db.query(
       `UPDATE manufacturer_products SET
         manufacturer_id = COALESCE($1, manufacturer_id),
@@ -122,7 +136,7 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
 });
 
 // DELETE /api/manufacturer-products/:id
-router.delete('/:id', auth, adminOnly, async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
   try {
     await db.query('DELETE FROM manufacturer_products WHERE id = $1', [req.params.id]);
     res.json({ success: true });
@@ -134,7 +148,7 @@ router.delete('/:id', auth, adminOnly, async (req, res) => {
 // === Управление компонентами продукции ===
 
 // POST /api/manufacturer-products/:id/components — добавить компонент
-router.post('/:id/components', auth, adminOnly, async (req, res) => {
+router.post('/:id/components', auth, async (req, res) => {
   try {
     const { component_id, modification_id, quantity, notes } = req.body;
     if (!component_id) return res.status(400).json({ error: 'Укажите компонент' });
@@ -153,7 +167,7 @@ router.post('/:id/components', auth, adminOnly, async (req, res) => {
 });
 
 // PUT /api/manufacturer-products/:id/components/:compId — обновить кол-во
-router.put('/:id/components/:compId', auth, adminOnly, async (req, res) => {
+router.put('/:id/components/:compId', auth, async (req, res) => {
   try {
     const { quantity, notes } = req.body;
     const result = await db.query(
@@ -169,7 +183,7 @@ router.put('/:id/components/:compId', auth, adminOnly, async (req, res) => {
 });
 
 // DELETE /api/manufacturer-products/:id/components/:compId — удалить компонент
-router.delete('/:id/components/:compId', auth, adminOnly, async (req, res) => {
+router.delete('/:id/components/:compId', auth, async (req, res) => {
   try {
     await db.query(
       'DELETE FROM manufacturer_product_components WHERE id = $1 AND product_id = $2',

@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
   full_name VARCHAR(255) NOT NULL,
   role VARCHAR(100) NOT NULL DEFAULT 'viewer',
   role_id INT REFERENCES roles(id) ON DELETE SET NULL,
+  token_version INT NOT NULL DEFAULT 0,
   created_at TIMESTAMP DEFAULT now()
 );
 
@@ -88,6 +89,8 @@ CREATE TABLE IF NOT EXISTS clients (
   director VARCHAR(255),
   telegram VARCHAR(100),
   max_messenger VARCHAR(500),
+  -- Сайт клиента: ссылка в карточке и в списках
+  site VARCHAR(500),
   created_at TIMESTAMP DEFAULT now()
 );
 
@@ -114,6 +117,9 @@ CREATE TABLE IF NOT EXISTS orders (
   commission_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
   commission_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
   total NUMERIC(14,2) NOT NULL DEFAULT 0,
+  level_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  vat_rate NUMERIC(5,2),
+  vat_amount NUMERIC(14,2),
   comment TEXT,
   invoice_path VARCHAR(500),
   invoice_number VARCHAR(100),
@@ -133,6 +139,12 @@ CREATE TABLE IF NOT EXISTS order_items (
   unit_price NUMERIC(14,2) NOT NULL DEFAULT 0,
   quantity NUMERIC(10,2) NOT NULL DEFAULT 1,
   line_total NUMERIC(14,2) NOT NULL DEFAULT 0,
+  base_price NUMERIC(14,2),
+  markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  markup_rub NUMERIC(14,2) NOT NULL DEFAULT 0,
+  level_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  is_drawing BOOLEAN NOT NULL DEFAULT false,
+  drawing_id INT,
   metadata JSONB
 );
 
@@ -193,15 +205,56 @@ CREATE TABLE IF NOT EXISTS component_documents (
   created_at TIMESTAMP DEFAULT now()
 );
 
--- Чертежи (шаблоны расчётов)
+-- Чертежи (BOM + файл). Удаление — только в архив (archived_at).
 CREATE TABLE IF NOT EXISTS drawings (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   file_path VARCHAR(500),
   file_type VARCHAR(20),
   description TEXT,
+  -- Клиент-владелец: API не даёт создать чертёж без него, PUT владельца не меняет.
+  -- NULL допускается только у исторических записей (миграция заполняет их из связей).
   client_id INT REFERENCES clients(id) ON DELETE SET NULL,
+  -- Устарело: фикс-цена хранится на связи drawing_clients.fixed_price.
+  -- Колонка оставлена для чтения старых данных, новые значения сюда не пишутся.
   fixed_price NUMERIC(14,2),
+  level_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  global_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  global_markup_rub NUMERIC(14,2) NOT NULL DEFAULT 0,
+  approval_id INT,
+  file_hash VARCHAR(64),
+  archived_at TIMESTAMP,
+  created_by INT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP DEFAULT now()
+);
+
+-- Привязка чертежа к клиентам: один BOM — много клиентов.
+-- markup_pct/markup_rub — ручная наценка поверх уровня цен клиента.
+CREATE TABLE IF NOT EXISTS drawing_clients (
+  id SERIAL PRIMARY KEY,
+  drawing_id INT NOT NULL REFERENCES drawings(id) ON DELETE CASCADE,
+  client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  markup_pct NUMERIC(5,2),
+  markup_rub NUMERIC(14,2) NOT NULL DEFAULT 0,
+  fixed_price NUMERIC(14,2),
+  created_at TIMESTAMP DEFAULT now(),
+  UNIQUE (drawing_id, client_id)
+);
+
+-- Журнал расчётов (снимок цен на момент расчёта)
+CREATE TABLE IF NOT EXISTS drawing_calculations (
+  id SERIAL PRIMARY KEY,
+  drawing_id INT REFERENCES drawings(id) ON DELETE SET NULL,
+  client_id INT REFERENCES clients(id) ON DELETE SET NULL,
+  principal_id INT REFERENCES principals(id) ON DELETE SET NULL,
+  drawing_name VARCHAR(255) NOT NULL DEFAULT '',
+  subtotal NUMERIC(14,2) NOT NULL DEFAULT 0,
+  level_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  global_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  global_markup_rub NUMERIC(14,2) NOT NULL DEFAULT 0,
+  fixed_price NUMERIC(14,2),
+  total NUMERIC(14,2) NOT NULL DEFAULT 0,
+  lines JSONB,
   created_by INT REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMP DEFAULT now()
 );
@@ -261,6 +314,12 @@ CREATE TABLE IF NOT EXISTS drawing_approval_comments (
   created_at TIMESTAMP DEFAULT now()
 );
 
+-- Связь чертежа с заданием согласования (таблица drawings создана выше,
+-- drawing_approvals — только что). Один согласованный файл = один чертёж.
+ALTER TABLE drawings DROP CONSTRAINT IF EXISTS drawings_approval_id_fkey;
+ALTER TABLE drawings ADD CONSTRAINT drawings_approval_id_fkey
+  FOREIGN KEY (approval_id) REFERENCES drawing_approvals(id) ON DELETE SET NULL;
+
 -- Хронология клиента
 CREATE TABLE IF NOT EXISTS client_timeline (
   id SERIAL PRIMARY KEY,
@@ -281,6 +340,20 @@ CREATE TABLE IF NOT EXISTS client_documents (
   file_path VARCHAR(500) NOT NULL,
   file_type VARCHAR(20),
   description TEXT,
+  uploaded_by INT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP DEFAULT now()
+);
+
+-- Файлы клиента, загружаемые администратором (раздел «Файлы» в карточке клиента).
+-- Отдельно от client_documents: расширенный список форматов и доступ только админу.
+CREATE TABLE IF NOT EXISTS client_files (
+  id SERIAL PRIMARY KEY,
+  client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  file_path VARCHAR(500) NOT NULL,
+  file_type VARCHAR(20),
+  file_size INT,
+  comment TEXT,
   uploaded_by INT REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMP DEFAULT now()
 );
@@ -308,7 +381,10 @@ CREATE TABLE IF NOT EXISTS proposals (
   status VARCHAR(20) DEFAULT 'draft',
   valid_until DATE,
   comment TEXT,
-  order_id INT REFERENCES orders(id),
+  order_id INT REFERENCES orders(id) ON DELETE SET NULL,
+  subtotal NUMERIC(14,2) NOT NULL DEFAULT 0,
+  vat_rate NUMERIC(5,2),
+  vat_amount NUMERIC(14,2),
   created_by INT REFERENCES users(id),
   created_at TIMESTAMP DEFAULT now(),
   updated_at TIMESTAMP DEFAULT now()
@@ -326,7 +402,11 @@ CREATE TABLE IF NOT EXISTS proposal_items (
   line_total NUMERIC(12,2) NOT NULL DEFAULT 0,
   is_drawing BOOLEAN DEFAULT false,
   drawing_id INT,
-  image_path VARCHAR(500)
+  image_path VARCHAR(500),
+  base_price NUMERIC(14,2),
+  markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  markup_rub NUMERIC(14,2) NOT NULL DEFAULT 0,
+  level_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0
 );
 
 -- Типы техники (настраиваемый справочник)
@@ -397,8 +477,15 @@ CREATE INDEX IF NOT EXISTS idx_component_modifications_component ON component_mo
 CREATE INDEX IF NOT EXISTS idx_component_modification_images_mod ON component_modification_images(modification_id);
 CREATE INDEX IF NOT EXISTS idx_component_documents_component ON component_documents(component_id);
 CREATE INDEX IF NOT EXISTS idx_drawing_components_drawing ON drawing_components(drawing_id);
+CREATE INDEX IF NOT EXISTS idx_drawings_archived ON drawings(archived_at);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_drawings_approval ON drawings(approval_id) WHERE approval_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_drawings_file_hash ON drawings(file_hash) WHERE file_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_drawing_clients_client ON drawing_clients(client_id);
+CREATE INDEX IF NOT EXISTS idx_drawing_calculations_client ON drawing_calculations(client_id);
+CREATE INDEX IF NOT EXISTS idx_drawing_calculations_drawing ON drawing_calculations(drawing_id);
 CREATE INDEX IF NOT EXISTS idx_drawing_components_component ON drawing_components(component_id);
 CREATE INDEX IF NOT EXISTS idx_drawing_approvals_client ON drawing_approvals(client_id);
+CREATE INDEX IF NOT EXISTS idx_client_files_client ON client_files(client_id);
 CREATE INDEX IF NOT EXISTS idx_drawing_approvals_status ON drawing_approvals(status);
 CREATE INDEX IF NOT EXISTS idx_drawing_approval_versions_approval ON drawing_approval_versions(approval_id);
 CREATE INDEX IF NOT EXISTS idx_drawing_approval_comments_approval ON drawing_approval_comments(approval_id);
@@ -409,20 +496,27 @@ CREATE INDEX IF NOT EXISTS idx_drawing_approval_comments_approval ON drawing_app
 
 -- Админ (пароль: admin123)
 INSERT INTO users (username, password_hash, full_name, role)
-VALUES ('admin', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Администратор', 'admin')
+VALUES ('admin', '$2a$10$wr.oIZCvbDUhaHnS.ZBg6uOTJKKWbQ6sKtStEmT4EB2blefDO1d9m', 'Администратор', 'admin')
 ON CONFLICT (username) DO NOTHING;
 
 -- Статусы клиентов по умолчанию
-INSERT INTO client_work_statuses (name, color, sort_order) VALUES
-  ('Новый', '#3b82f6', 1),
-  ('Отправлен тестовый чертёж', '#8b5cf6', 2),
-  ('Переговоры', '#f59e0b', 3),
-  ('Согласование', '#06b6d4', 4),
-  ('Покупки', '#22c55e', 5),
-  ('Постоянный клиент', '#14b8a6', 6),
-  ('Приостановлен', '#6b7280', 7),
-  ('Отказ', '#ef4444', 8)
-ON CONFLICT DO NOTHING;
+-- Словари заполняются только отсутствующими записями: повторный db:init/deploy
+-- не должен задваивать статусы, категории и типы техники.
+INSERT INTO client_work_statuses (name, color, sort_order)
+SELECT v.name, v.color, v.sort_order
+  FROM (VALUES
+    ('Новый', '#3b82f6', 1),
+    ('Отправлен тестовый чертёж', '#8b5cf6', 2),
+    ('Переговоры', '#f59e0b', 3),
+    ('Согласование', '#06b6d4', 4),
+    ('Покупки', '#22c55e', 5),
+    ('Постоянный клиент', '#14b8a6', 6),
+    ('Приостановлен', '#6b7280', 7),
+    ('Отказ', '#ef4444', 8)
+  ) AS v(name, color, sort_order)
+ WHERE NOT EXISTS (
+   SELECT 1 FROM client_work_statuses s WHERE lower(s.name) = lower(v.name)
+ );
 
 -- Уровни ценообразования
 INSERT INTO client_pricing_levels (name, code, markup_pct, sort_order, is_default) VALUES
@@ -433,16 +527,26 @@ INSERT INTO client_pricing_levels (name, code, markup_pct, sort_order, is_defaul
 ON CONFLICT (code) DO NOTHING;
 
 -- Категории компонентов
-INSERT INTO component_categories (name, sort_order) VALUES
-  ('Блок коммутации', 1),
-  ('Габаритный фонарь боковой', 2),
-  ('Габаритный фонарь задний', 3),
-  ('Фонарь освещения номерного знака', 4)
-ON CONFLICT DO NOTHING;
+INSERT INTO component_categories (name, sort_order)
+SELECT v.name, v.sort_order
+  FROM (VALUES
+    ('Блок коммутации', 1),
+    ('Габаритный фонарь боковой', 2),
+    ('Габаритный фонарь задний', 3),
+    ('Фонарь освещения номерного знака', 4)
+  ) AS v(name, sort_order)
+ WHERE NOT EXISTS (
+   SELECT 1 FROM component_categories c WHERE lower(c.name) = lower(v.name)
+ );
 
 -- Типы техники
-INSERT INTO equipment_types (name, icon, sort_order) VALUES
-  ('Полуприцепы', '🚛', 1),
-  ('Легковые прицепы', '🚗', 2),
-  ('Сельхозтехника', '🚜', 3)
-ON CONFLICT DO NOTHING;
+INSERT INTO equipment_types (name, icon, sort_order)
+SELECT v.name, v.icon, v.sort_order
+  FROM (VALUES
+    ('Полуприцепы', '🚛', 1),
+    ('Легковые прицепы', '🚗', 2),
+    ('Сельхозтехника', '🚜', 3)
+  ) AS v(name, icon, sort_order)
+ WHERE NOT EXISTS (
+   SELECT 1 FROM equipment_types t WHERE lower(t.name) = lower(v.name)
+ );

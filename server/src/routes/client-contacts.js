@@ -1,7 +1,6 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
-const adminOnly = require('../middleware/role');
 
 const router = express.Router({ mergeParams: true });
 
@@ -20,7 +19,7 @@ router.get('/', auth, async (req, res) => {
 });
 
 // POST /api/clients/:clientId/contacts — добавить контакт
-router.post('/', auth, adminOnly, async (req, res) => {
+router.post('/', auth, async (req, res) => {
   try {
     const { full_name, position, email, phone, notes, telegram, max_messenger } = req.body;
     if (!full_name) {
@@ -40,7 +39,7 @@ router.post('/', auth, adminOnly, async (req, res) => {
 });
 
 // PUT /api/clients/:clientId/contacts/:id — обновить контакт
-router.put('/:id', auth, adminOnly, async (req, res) => {
+router.put('/:id', auth, async (req, res) => {
   try {
     const { full_name, position, email, phone, notes, telegram, max_messenger } = req.body;
     if (!full_name) {
@@ -64,7 +63,7 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
 });
 
 // DELETE /api/clients/:clientId/contacts/:id — удалить контакт
-router.delete('/:id', auth, adminOnly, async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
   try {
     const result = await db.query(
       'DELETE FROM client_contacts WHERE id = $1 AND client_id = $2 RETURNING id',

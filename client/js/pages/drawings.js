@@ -4,6 +4,7 @@ const DrawingsPage = {
   groupByClient: false,
   selectedClientId: '',
   searchQuery: '',
+  showArchived: false,
   allDrawings: [],
   clients: [],
   searchTimeout: null,
@@ -34,6 +35,8 @@ const DrawingsPage = {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
         </div>
+        <button class="btn btn-secondary" onclick="DrawingsPage.openJournal()">🧾 Журнал расчётов</button>
+        <button class="btn btn-icon ${this.showArchived ? 'btn-primary' : 'btn-secondary'}" id="btn-archive-toggle" title="Показать архив" onclick="DrawingsPage.toggleArchive()">📦</button>
         <button class="btn btn-primary" onclick="App.navigateTo('calculator')">+ Рассчитать чертёж</button>
       </div>
 
@@ -192,8 +195,8 @@ const DrawingsPage = {
   async loadData() {
     try {
       const [drawRes, clientRes] = await Promise.all([
-        API.get('/drawings'),
-        API.get('/clients'),
+        API.get(`/drawings?archived=${this.showArchived ? '1' : '0'}`),
+        API.get('/clients?limit=1000'),
       ]);
 
       this.allDrawings = drawRes.data || [];
@@ -212,21 +215,22 @@ const DrawingsPage = {
     if (!select) return;
 
     select.innerHTML = '<option value="">Все клиенты</option><option value="none">Без клиента</option>' +
-      this.clients.map(c => `<option value="${c.id}" ${this.selectedClientId == c.id ? 'selected' : ''}>${c.name}</option>`).join('');
+      this.clients.map(c => `<option value="${c.id}" ${this.selectedClientId == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
   },
 
   updateClientChips() {
     const chipsEl = document.getElementById('drawings-client-chips');
     if (!chipsEl) return;
 
-    // Считаем количество чертежей по клиентам
+    // Считаем количество чертежей по клиентам (общий BOM — у всех привязанных)
     const clientCounts = {};
     let noClientCount = 0;
     this.allDrawings.forEach(d => {
-      if (d.client_id) {
-        clientCounts[d.client_id] = (clientCounts[d.client_id] || 0) + 1;
-      } else {
+      const ids = [...new Set([...(d.client_ids || []), ...(d.client_id ? [d.client_id] : [])])];
+      if (ids.length === 0) {
         noClientCount++;
+      } else {
+        ids.forEach(id => { clientCounts[id] = (clientCounts[id] || 0) + 1; });
       }
     });
 
@@ -253,7 +257,7 @@ const DrawingsPage = {
         const isSelected = String(this.selectedClientId) === String(c.id);
         html += `
           <button class="btn btn-sm" style="border-radius:20px;padding:4px 12px;font-size:0.78rem;${isSelected ? activeStyle : inactiveStyle}" onclick="DrawingsPage.selectClientChip('${c.id}')">
-            ${c.name} (${count})
+            ${esc(c.name)} (${count})
           </button>
         `;
       }
@@ -287,11 +291,13 @@ const DrawingsPage = {
   getFilteredDrawings() {
     const q = (this.searchQuery || '').toLowerCase().trim();
     return this.allDrawings.filter(d => {
-      // Фильтр по клиенту
+      // Фильтр по клиенту: учитываем и владельца, и привязки (общий BOM)
+      const linkedIds = [...new Set([...(d.client_ids || []), ...(d.client_id ? [d.client_id] : [])])]
+        .map(String);
       if (this.selectedClientId === 'none') {
-        if (d.client_id) return false;
+        if (linkedIds.length > 0) return false;
       } else if (this.selectedClientId) {
-        if (String(d.client_id) !== String(this.selectedClientId)) return false;
+        if (!linkedIds.includes(String(this.selectedClientId))) return false;
       }
 
       // Поиск
@@ -339,11 +345,12 @@ const DrawingsPage = {
     `;
   },
 
-  _renderCardHtml(d) {
-    const clientName = d.client_name || 'Без клиента';
+  _renderCardHtml(d, clientNameOverride, clientPrice) {
+    const clientName = clientNameOverride || d.client_name || 'Без клиента';
     const compCount = d.components_count || 0;
-    const baseCost = parseFloat(d.base_cost) || 0;
-    const totalCost = parseFloat(d.total_cost || d.base_cost) || 0;
+    const totalCost = clientPrice !== undefined && clientPrice !== null
+      ? clientPrice
+      : parseFloat(d.total_cost || d.base_cost) || 0;
     const dateStr = d.created_at ? new Date(d.created_at).toLocaleDateString('ru-RU') : '—';
     const authorStr = d.author_name || '—';
 
@@ -352,14 +359,14 @@ const DrawingsPage = {
         <div class="drawing-card-header">
           <div class="drawing-card-icon">📐</div>
           <div style="flex:1;min-width:0">
-            <div class="drawing-card-title">${d.name}</div>
+            <div class="drawing-card-title">${esc(d.name)}</div>
             <div class="drawing-card-client">
-              👤 ${clientName}
+              👤 ${esc(clientName)}${d.archived_at ? ' · 📦 архив' : ''}
             </div>
           </div>
         </div>
         <div class="drawing-card-body">
-          ${d.description ? `<div class="drawing-card-desc">${d.description}</div>` : '<div style="font-size:0.8rem;color:var(--text-muted);font-style:italic;">Без описания</div>'}
+          ${d.description ? `<div class="drawing-card-desc">${esc(d.description)}</div>` : '<div style="font-size:0.8rem;color:var(--text-muted);font-style:italic;">Без описания</div>'}
           
           <div class="drawing-card-stats">
             <div class="drawing-stat-item">
@@ -373,7 +380,7 @@ const DrawingsPage = {
           </div>
         </div>
         <div class="drawing-card-footer">
-          <span>${authorStr} · ${dateStr}</span>
+          <span>${esc(authorStr)} · ${esc(dateStr)}</span>
           <span style="color:var(--accent-teal);font-weight:600">Подробнее →</span>
         </div>
       </div>
@@ -400,20 +407,23 @@ const DrawingsPage = {
             ${drawings.map(d => {
               const baseCost = parseFloat(d.base_cost) || 0;
               const totalCost = parseFloat(d.total_cost || d.base_cost) || 0;
+              const clientId = d.client_id;
+              const clientName = d.client_name;
               const dateStr = d.created_at ? new Date(d.created_at).toLocaleDateString('ru-RU') : '—';
               return `
                 <tr style="cursor:pointer" onclick="DrawingsPage.openDrawingModal(${d.id})">
                   <td>
                     <div style="font-weight:600;display:flex;align-items:center;gap:8px">
                       <span style="font-size:1.1rem">📐</span>
-                      <span>${d.name}</span>
+                      <span>${esc(d.name)}</span>
+                      ${d.archived_at ? '<span class="badge" style="background:var(--bg-tertiary);color:var(--text-muted);font-size:0.7rem">📦 архив</span>' : ''}
                     </div>
-                    ${d.description ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-left:24px">${d.description}</div>` : ''}
+                    ${d.description ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-left:24px">${esc(d.description)}</div>` : ''}
                   </td>
                   <td>
-                    ${d.client_id ? `
-                      <a href="#" class="client-link" onclick="event.stopPropagation();App.navigateTo('client-profile', ${d.client_id})">
-                        👤 ${d.client_name || 'Клиент'}
+                    ${clientId ? `
+                      <a href="#" class="client-link" onclick="event.stopPropagation();App.navigateTo('client-profile', ${clientId})">
+                        👤 ${esc(clientName || 'Клиент')}
                       </a>
                     ` : '<span class="text-muted">—</span>'}
                   </td>
@@ -426,10 +436,11 @@ const DrawingsPage = {
                   <td class="text-right" onclick="event.stopPropagation()">
                     <div class="table-actions" style="justify-content:flex-end">
                       <button class="btn btn-icon btn-sm" onclick="DrawingsPage.openDrawingModal(${d.id})" title="Просмотр">👁️</button>
-                      <button class="btn btn-icon btn-sm" onclick="App.navigateTo('calculator', ${d.id})" title="Открыть в калькуляторе">🧮</button>
-                      ${canDelete ? `
-                        <button class="btn btn-icon btn-sm btn-danger" onclick="DrawingsPage.deleteDrawing(${d.id})" title="Удалить">✕</button>
-                      ` : ''}
+                      <button class="btn btn-icon btn-sm" onclick="event.stopPropagation();DrawingsPage.renameDrawing(${d.id})" title="Переименовать">✏️</button>
+                      ${d.archived_at ? '' : `<button class="btn btn-icon btn-sm" onclick="event.stopPropagation();DrawingsPage.openInCalculator(${d.id}, ${d.client_id || 'null'})" title="Открыть в калькуляторе">🧮</button>`}
+                      ${canDelete ? (d.archived_at
+                        ? `<button class="btn btn-icon btn-sm" onclick="DrawingsPage.restoreDrawing(${d.id})" title="Вернуть из архива">♻️</button>`
+                        : `<button class="btn btn-icon btn-sm btn-danger" onclick="DrawingsPage.deleteDrawing(${d.id})" title="В архив">📥</button>`) : ''}
                     </div>
                   </td>
                 </tr>
@@ -441,27 +452,49 @@ const DrawingsPage = {
     `;
   },
 
+  // Цена чертежа для конкретного клиента (у одного BOM цены разные)
+  priceForClient(drawing, clientId) {
+    const entry = (drawing.client_prices || [])
+      .find(p => String(p.client_id) === String(clientId));
+    if (entry && entry.price) return parseFloat(entry.price.total) || 0;
+    return parseFloat(drawing.total_cost || drawing.base_cost) || 0;
+  },
+
   renderGrouped(drawings, container) {
-    // Группируем чертежи по клиентам
+    // Группируем по клиентам: общий BOM попадает в каждую группу, где есть связь
     const groups = {};
     const noClientDrawings = [];
+    const clientById = {};
+    (this.clients || []).forEach(c => { clientById[c.id] = c; });
 
     drawings.forEach(d => {
-      if (d.client_id) {
-        if (!groups[d.client_id]) {
-          groups[d.client_id] = {
-            client_id: d.client_id,
-            client_name: d.client_name || 'Клиент',
-            client_phone: d.client_phone || '',
+      const linkedIds = [...new Set([
+        ...(d.client_ids || []),
+        ...(d.client_id ? [d.client_id] : []),
+      ])].map(Number);
+
+      if (linkedIds.length === 0) {
+        noClientDrawings.push(d);
+        return;
+      }
+
+      linkedIds.forEach(clientId => {
+        if (!groups[clientId]) {
+          const client = clientById[clientId];
+          groups[clientId] = {
+            client_id: clientId,
+            client_name: (client && client.name) || (d.client_id === clientId ? d.client_name : null) || `Клиент #${clientId}`,
+            client_phone: (client && client.phone) || (d.client_id === clientId ? d.client_phone : '') || '',
             drawings: [],
             totalSum: 0,
+            sharedCount: 0,
           };
         }
-        groups[d.client_id].drawings.push(d);
-        groups[d.client_id].totalSum += parseFloat(d.total_cost || d.base_cost) || 0;
-      } else {
-        noClientDrawings.push(d);
-      }
+        groups[clientId].drawings.push(d);
+        // Сумма группы — по цене именно этого клиента
+        groups[clientId].totalSum += this.priceForClient(d, clientId);
+        if (linkedIds.length > 1) groups[clientId].sharedCount += 1;
+      });
     });
 
     let html = '';
@@ -484,16 +517,16 @@ const DrawingsPage = {
             </div>
             <div style="display:flex;gap:16px;align-items:center">
               <span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary);font-size:0.8rem">
-                ${g.drawings.length} чертеж(ей)
+                ${g.drawings.length} чертеж(ей)${g.sharedCount > 0 ? ` · ${g.sharedCount} общих` : ''}
               </span>
               <span style="font-size:0.95rem;font-weight:700;color:var(--accent-teal)">
                 Итого: ${Table.formatMoney(g.totalSum)}
               </span>
             </div>
           </div>
-          ${this.viewMode === 'grid' 
-            ? `<div class="drawing-grid">${g.drawings.map(d => this._renderCardHtml(d)).join('')}</div>`
-            : this._renderSimpleTable(g.drawings)
+          ${this.viewMode === 'grid'
+            ? `<div class="drawing-grid">${g.drawings.map(d => this._renderCardHtml(d, g.client_name, this.priceForClient(d, g.client_id))).join('')}</div>`
+            : this._renderSimpleTable(g.drawings, g)
           }
         </div>
       `;
@@ -533,7 +566,7 @@ const DrawingsPage = {
     container.innerHTML = html;
   },
 
-  _renderSimpleTable(drawings) {
+  _renderSimpleTable(drawings, groupClient) {
     const isAdmin = API.isAdmin();
     return `
       <div class="table-wrapper">
@@ -551,10 +584,12 @@ const DrawingsPage = {
           <tbody>
             ${drawings.map(d => {
               const baseCost = parseFloat(d.base_cost) || 0;
-              const totalCost = parseFloat(d.total_cost || d.base_cost) || 0;
+              const totalCost = groupClient
+                ? this.priceForClient(d, groupClient.client_id)
+                : parseFloat(d.total_cost || d.base_cost) || 0;
               return `
                 <tr style="cursor:pointer" onclick="DrawingsPage.openDrawingModal(${d.id})">
-                  <td><strong>${d.name}</strong></td>
+                  <td><strong>${esc(d.name)}</strong></td>
                   <td class="text-center">${d.components_count || 0}</td>
                   <td class="text-right">${Table.formatMoney(baseCost)}</td>
                   <td class="text-right"><strong style="color:var(--accent-teal)">${Table.formatMoney(totalCost)}</strong></td>
@@ -562,8 +597,11 @@ const DrawingsPage = {
                   <td class="text-right" onclick="event.stopPropagation()">
                     <div class="table-actions" style="justify-content:flex-end">
                       <button class="btn btn-icon btn-sm" onclick="DrawingsPage.openDrawingModal(${d.id})" title="Просмотр">👁️</button>
-                      <button class="btn btn-icon btn-sm" onclick="App.navigateTo('calculator', ${d.id})" title="В калькулятор">🧮</button>
-                      ${API.can('drawings', 'delete') ? `<button class="btn btn-icon btn-sm btn-danger" onclick="DrawingsPage.deleteDrawing(${d.id})" title="Удалить">✕</button>` : ''}
+                      <button class="btn btn-icon btn-sm" onclick="event.stopPropagation();DrawingsPage.renameDrawing(${d.id})" title="Переименовать">✏️</button>
+                      ${d.archived_at ? '' : `<button class="btn btn-icon btn-sm" onclick="event.stopPropagation();DrawingsPage.openInCalculator(${d.id}, ${groupClient ? groupClient.client_id : 'null'})" title="В калькулятор">🧮</button>`}
+                      ${API.can('drawings', 'delete') ? (d.archived_at
+                        ? `<button class="btn btn-icon btn-sm" onclick="DrawingsPage.restoreDrawing(${d.id})" title="Вернуть из архива">♻️</button>`
+                        : `<button class="btn btn-icon btn-sm btn-danger" onclick="DrawingsPage.deleteDrawing(${d.id})" title="В архив">📥</button>`) : ''}
                     </div>
                   </td>
                 </tr>
@@ -573,6 +611,59 @@ const DrawingsPage = {
         </table>
       </div>
     `;
+  },
+
+  // =================== ПЕРЕИМЕНОВАНИЕ ===================
+  // Название можно поправить: оно попадает в каталог, карточку клиента,
+  // калькулятор и журнал расчётов, но файл и состав не меняются.
+  async renameDrawing(drawingId) {
+    let drawing = (this.allDrawings || []).find(d => String(d.id) === String(drawingId));
+    if (!drawing) {
+      try {
+        drawing = await API.get(`/drawings/${drawingId}`);
+      } catch (err) {
+        Toast.error(err.message);
+        return;
+      }
+    }
+
+    Modal.open({
+      title: 'Название чертежа',
+      body: `
+        <div class="form-group">
+          <label>Название *</label>
+          <input type="text" class="form-control" id="drawing-rename-input" maxlength="255" value="${esc(drawing.name)}">
+          <div class="form-hint" style="margin-top:4px">Изменится только название — файл, состав и цены останутся прежними.</div>
+        </div>
+      `,
+      footer: `
+        <button class="btn btn-secondary" onclick="Modal.close()">Отмена</button>
+        <button class="btn btn-primary" onclick="DrawingsPage.saveDrawingName(${drawingId})">Сохранить</button>
+      `,
+    });
+
+    setTimeout(() => {
+      const input = document.getElementById('drawing-rename-input');
+      if (input) { input.focus(); input.select(); }
+    }, 50);
+  },
+
+  async saveDrawingName(drawingId) {
+    const input = document.getElementById('drawing-rename-input');
+    const name = input ? input.value.trim() : '';
+    if (!name) { Toast.error('Укажите название чертежа'); return; }
+
+    try {
+      const updated = await API.request('PATCH', `/drawings/${drawingId}/name`, { name });
+      (this.allDrawings || []).forEach(d => {
+        if (String(d.id) === String(drawingId)) d.name = updated.name || name;
+      });
+      Toast.success('Название обновлено');
+      Modal.close();
+      if (typeof this.loadData === 'function') await this.loadData();
+    } catch (err) {
+      Toast.error(err.message);
+    }
   },
 
   // =================== МОДАЛКА КАРТОЧКИ ЧЕРТЕЖА ===================
@@ -603,8 +694,74 @@ const DrawingsPage = {
         subtotalWithMarkups += lineTotal;
       });
 
+      // Итог считает сервер (цена владельца); резерв — сумма по составу
+      const priceTotal = drawing.price ? parseFloat(drawing.price.total) : subtotalWithMarkups;
+
       const dateStr = drawing.created_at ? new Date(drawing.created_at).toLocaleString('ru-RU') : '—';
       const clientName = drawing.client_name || 'Не привязан';
+
+      // Цены по клиентам: у каждого может быть своя фикс-цена или наценка
+      const linkedClients = drawing.clients || [];
+      const canEditDrawings = API.can('drawings', 'edit');
+      const priceRows = linkedClients.map(c => {
+        const p = c.price || {};
+        const isFixed = p.fixedPrice !== null && p.fixedPrice !== undefined;
+        const markupPct = parseFloat(c.markup_pct);
+        const markupRub = parseFloat(c.markup_rub) || 0;
+        const details = [
+          isFixed ? 'фикс.' : null,
+          Number.isFinite(markupPct) ? `${markupPct > 0 ? '+' : ''}${markupPct}%` : null,
+          markupRub ? `${markupRub > 0 ? '+' : ''}${Table.formatMoneyRaw(markupRub)}` : null,
+        ].filter(Boolean).join(' · ') || 'уровень цен';
+        return `
+          <tr>
+            <td>
+              <a href="#" class="client-link" onclick="event.preventDefault();Modal.close();App.navigateTo('client-profile', ${c.client_id})">${esc(c.client_name)}</a>
+              <div style="font-size:0.72rem;color:var(--text-muted)">${esc(c.pricing_level_name) || 'уровень не задан'}</div>
+            </td>
+            <td class="text-muted" style="font-size:0.8rem">${details}</td>
+            <td class="text-right" style="font-weight:600;color:var(--accent-teal)">${Table.formatMoney(p.total)}</td>
+            <td class="text-right" onclick="event.stopPropagation()">
+              ${API.can('calculator', 'view') ? `<button class="btn btn-icon btn-sm" title="Открыть в калькуляторе для этого клиента" onclick="DrawingsPage.openInCalculator(${drawing.id}, ${c.client_id})">🧮</button>` : ''}
+              ${canEditDrawings ? `<button class="btn btn-icon btn-sm" title="Наценка и фикс-цена для клиента" onclick="DrawingsPage.openClientPriceModal(${drawing.id}, ${c.client_id})">✏️</button>` : ''}
+              ${canEditDrawings ? `<button class="btn btn-icon btn-sm" title="Отвязать клиента" onclick="DrawingsPage.unlinkClient(${drawing.id}, ${c.client_id})">✖</button>` : ''}
+            </td>
+          </tr>`;
+      }).join('');
+
+      const availableClients = (this.clients || []).filter(cl =>
+        !linkedClients.some(lc => String(lc.client_id) === String(cl.id)));
+
+      const priceSection = `
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+            <h4 style="margin:0;font-size:0.95rem;font-weight:700;color:var(--text-primary)">
+              Цены по клиентам (${linkedClients.length})
+            </h4>
+            ${canEditDrawings && availableClients.length > 0 ? `
+              <div style="display:flex;gap:6px;align-items:center">
+                <select class="form-control" id="drawing-link-client" style="width:auto;padding:5px 10px;font-size:0.82rem">
+                  <option value="">Привязать клиента...</option>
+                  ${availableClients.map(cl => `<option value="${cl.id}">${esc(cl.name)}</option>`).join('')}
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="DrawingsPage.linkClient(${drawing.id})">＋</button>
+              </div>
+            ` : ''}
+          </div>
+          ${linkedClients.length === 0 ? `
+            <div style="padding:14px;text-align:center;color:var(--text-muted);background:var(--bg-tertiary);border-radius:10px;font-size:0.85rem">
+              Чертёж не привязан к клиентам — цена считается по уровню, зафиксированному в чертеже
+            </div>
+          ` : `
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead><tr><th>Клиент</th><th>Наценка / фикс.</th><th class="text-right">Цена</th><th class="text-right"></th></tr></thead>
+                <tbody>${priceRows}</tbody>
+              </table>
+            </div>
+          `}
+        </div>
+      `;
 
       const bodyHtml = `
         <div style="display:flex;flex-direction:column;gap:18px">
@@ -613,33 +770,42 @@ const DrawingsPage = {
             <div>
               <div style="display:flex;align-items:center;gap:10px">
                 <span style="font-size:1.5rem">📐</span>
-                <h3 style="margin:0;font-size:1.25rem;font-weight:700;color:var(--text-primary)">${drawing.name}</h3>
+                <h3 style="margin:0;font-size:1.25rem;font-weight:700;color:var(--text-primary)">${esc(drawing.name)}</h3>
+                ${canEditDrawings ? `<button class="btn btn-icon btn-sm" title="Переименовать чертёж" onclick="DrawingsPage.renameDrawing(${drawing.id})">✏️</button>` : ''}
               </div>
               <div style="margin-top:8px;display:flex;gap:14px;flex-wrap:wrap;font-size:0.85rem;color:var(--text-secondary)">
                 <span>👤 Клиент: 
                   ${drawing.client_id ? `
                     <a href="#" class="client-link" style="font-weight:600" onclick="Modal.close();App.navigateTo('client-profile', ${drawing.client_id})">
-                      ${clientName}
+                      ${esc(clientName)}
                     </a>
                   ` : '<span class="text-muted">Без клиента</span>'}
                 </span>
-                <span>👨‍💼 Автор: <strong>${drawing.author_name || '—'}</strong></span>
+                ${(drawing.clients || []).length > 0 ? `
+                  <span>👥 Привязан: ${drawing.clients.map(c => `<a href="#" class="client-link" onclick="Modal.close();App.navigateTo('client-profile', ${c.client_id})">${esc(c.client_name)}</a>${parseFloat(c.markup_pct) ? ` (+${parseFloat(c.markup_pct)}%)` : ''}`).join(', ')}</span>
+                ` : ''}
+                ${drawing.approval_id ? `<span>📋 Из согласования #${drawing.approval_id} · ${esc(drawing.approval_status) || ''}</span>` : ''}
+                <span>👨‍💼 Автор: <strong>${esc(drawing.author_name) || '—'}</strong></span>
                 <span>📅 Создан: <strong>${dateStr}</strong></span>
               </div>
-              ${drawing.description ? `<p style="margin-top:8px;font-size:0.85rem;color:var(--text-secondary);line-height:1.4">${drawing.description}</p>` : ''}
+              ${drawing.description ? `<p style="margin-top:8px;font-size:0.85rem;color:var(--text-secondary);line-height:1.4">${esc(drawing.description)}</p>` : ''}
             </div>
 
             <!-- Итоговый блок стоимости -->
             <div style="text-align:right;background:var(--bg-card);padding:12px 18px;border-radius:10px;border:1px solid var(--border)">
-              <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Итоговая стоимость</div>
+              <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">
+                ${linkedClients.length > 0 ? 'Цена владельца' : 'Итоговая стоимость'}
+              </div>
               <div style="font-size:1.35rem;font-weight:800;color:var(--accent-teal);margin-top:2px">
-                ${Table.formatMoney(subtotalWithMarkups)}
+                ${Table.formatMoney(priceTotal)}
               </div>
               <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px">
                 Базовая: ${Table.formatMoney(subtotalBase)}
               </div>
             </div>
           </div>
+
+          ${priceSection}
 
           <!-- Таблица состава компонентов (BOM) -->
           <div>
@@ -689,9 +855,9 @@ const DrawingsPage = {
                       return `
                         <tr>
                           <td style="color:var(--text-muted)">${idx + 1}</td>
-                          <td><span class="font-mono" style="color:var(--accent-teal);font-size:0.8rem">${c.modification_code ? c.article + '.' + c.modification_code : (c.article || '—')}</span></td>
-                          <td><strong>${c.component_name}</strong>${c.modification_name ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:1px">${c.modification_name}</div>` : ''}</td>
-                          <td><span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary)">${c.category_name || '—'}</span></td>
+                          <td><span class="font-mono" style="color:var(--accent-teal);font-size:0.8rem">${esc(c.modification_code ? c.article + '.' + c.modification_code : (c.article || '—'))}</span></td>
+                          <td><strong>${esc(c.component_name)}</strong>${c.modification_name ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:1px">${esc(c.modification_name)}</div>` : ''}</td>
+                          <td><span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary)">${esc(c.category_name) || '—'}</span></td>
                           <td class="text-right">${Table.formatMoney(c.modification_price !== null && c.modification_price !== undefined ? c.modification_price : c.price)}</td>
                           <td class="text-center">${c.quantity}</td>
                           <td class="text-center" style="font-size:0.8rem;color:${markupPct < 0 || markupRub < 0 ? '#ef4444' : markupPct > 0 || markupRub > 0 ? '#22c55e' : 'var(--text-muted)'}">
@@ -712,21 +878,21 @@ const DrawingsPage = {
       const footerHtml = `
         <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
           <div>
-            ${API.can('drawings', 'delete') ? `
-              <button class="btn btn-danger btn-sm" onclick="DrawingsPage.deleteDrawing(${drawing.id})">Удалить чертёж</button>
-            ` : ''}
+            ${API.can('drawings', 'delete') ? (drawing.archived_at
+              ? `<button class="btn btn-secondary btn-sm" onclick="DrawingsPage.restoreDrawing(${drawing.id})">♻️ Вернуть из архива</button>`
+              : `<button class="btn btn-danger btn-sm" onclick="DrawingsPage.deleteDrawing(${drawing.id})">📥 В архив</button>`) : ''}
           </div>
           <div style="display:flex;gap:8px">
             <button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>
-            <button class="btn btn-primary" onclick="Modal.close();App.navigateTo('calculator', ${drawing.id})">
+            ${drawing.archived_at ? '' : `<button class="btn btn-primary" onclick="DrawingsPage.openInCalculator(${drawing.id}, ${drawing.client_id || 'null'})">
               🧮 Открыть в калькуляторе
-            </button>
+            </button>`}
           </div>
         </div>
       `;
 
       Modal.open({
-        title: `Карточка чертежа: ${drawing.name}`,
+        title: `Карточка чертежа: ${esc(drawing.name)}`,
         body: bodyHtml,
         footer: footerHtml,
         wide: true,
@@ -737,16 +903,168 @@ const DrawingsPage = {
     }
   },
 
+  // =================== ЦЕНЫ ПО КЛИЕНТАМ ===================
+
+  async openClientPriceModal(drawingId, clientId) {
+    try {
+      const drawing = await API.get(`/drawings/${drawingId}`);
+      const link = (drawing.clients || []).find(c => String(c.client_id) === String(clientId));
+      if (!link) { Toast.error('Клиент не привязан к чертежу'); return; }
+      const price = link.price || {};
+
+      Modal.open({
+        title: `Цена для: ${link.client_name}`,
+        body: `
+          <div class="form-row">
+            <div class="form-group">
+              <label>Наценка, %</label>
+              <input type="number" step="0.1" class="form-control" id="cp-markup-pct"
+                     value="${link.markup_pct !== null && link.markup_pct !== undefined ? parseFloat(link.markup_pct) : ''}"
+                     placeholder="по уровню цен клиента">
+            </div>
+            <div class="form-group">
+              <label>Наценка, ₽</label>
+              <input type="number" step="1" class="form-control" id="cp-markup-rub" value="${parseFloat(link.markup_rub) || 0}">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Фиксированная цена, ₽</label>
+            <input type="number" step="0.01" class="form-control" id="cp-fixed-price"
+                   value="${price.fixedPrice !== null && price.fixedPrice !== undefined ? price.fixedPrice : ''}"
+                   placeholder="пусто — считать по составу">
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-top:4px">
+              Действует только для этого клиента. Пустое поле — расчёт по BOM с его уровнем цен.
+            </div>
+          </div>
+          <div style="padding:10px 14px;background:var(--bg-main);border-radius:8px;font-size:0.85rem;display:flex;justify-content:space-between">
+            <span>Текущая цена</span>
+            <strong style="color:var(--accent-teal)">${Table.formatMoney(price.total)}</strong>
+          </div>
+        `,
+        footer: `
+          <button class="btn btn-secondary" onclick="DrawingsPage.openDrawingModal(${drawingId})">Отмена</button>
+          <button class="btn btn-primary" onclick="DrawingsPage.saveClientPrice(${drawingId}, ${clientId})">Сохранить</button>
+        `,
+      });
+    } catch (err) {
+      Toast.error(err.message);
+    }
+  },
+
+  async saveClientPrice(drawingId, clientId) {
+    const markupPctValue = document.getElementById('cp-markup-pct').value.trim();
+    const fixedValue = document.getElementById('cp-fixed-price').value.trim();
+    try {
+      await API.put(`/drawings/${drawingId}/clients/${clientId}`, {
+        markup_pct: markupPctValue === '' ? null : parseFloat(markupPctValue),
+        markup_rub: parseFloat(document.getElementById('cp-markup-rub').value) || 0,
+        fixed_price: fixedValue === '' ? null : parseFloat(fixedValue),
+      });
+      Toast.success('Цена для клиента сохранена');
+      await this.openDrawingModal(drawingId);
+    } catch (err) {
+      Toast.error(err.message);
+    }
+  },
+
+  async linkClient(drawingId) {
+    const select = document.getElementById('drawing-link-client');
+    const clientId = select && select.value;
+    if (!clientId) { Toast.error('Выберите клиента'); return; }
+    try {
+      await API.post(`/drawings/${drawingId}/clients`, { client_id: Number(clientId) });
+      Toast.success('Клиент привязан');
+      await this.openDrawingModal(drawingId);
+      await this.loadData();
+    } catch (err) {
+      Toast.error(err.message);
+    }
+  },
+
+  async unlinkClient(drawingId, clientId) {
+    // Имя берём из состояния, а не из inline-обработчика: пользовательские
+    // строки в onclick ломают разметку и открывают XSS.
+    const client = (this.clients || []).find(c => String(c.id) === String(clientId));
+    const clientName = client ? client.name : `Клиент #${clientId}`;
+    if (!await ConfirmDialog.delete(`Отвязать чертёж от клиента «${clientName}»? Сам чертёж останется.`)) return;
+    try {
+      await API.del(`/drawings/${drawingId}/clients/${clientId}`);
+      Toast.success('Клиент отвязан');
+      await this.openDrawingModal(drawingId);
+      await this.loadData();
+    } catch (err) {
+      Toast.error(err.message);
+    }
+  },
+
+  openInCalculator(drawingId, clientId) {
+    Modal.close();
+    const query = `drawing=${drawingId}${clientId ? `&client=${clientId}` : ''}`;
+    App.navigateTo(`calculator?${query}`);
+  },
+
   async deleteDrawing(id) {
-    if (!await ConfirmDialog.delete('Вы уверены, что хотите удалить этот чертёж?')) return;
+    if (!await ConfirmDialog.delete('Отправить чертёж в архив? Он сохранится, и его можно будет вернуть.')) return;
 
     try {
       await API.del(`/drawings/${id}`);
-      Toast.success('Чертёж успешно удалён');
+      Toast.success('Чертёж в архиве');
       Modal.close();
       await this.loadData();
     } catch (err) {
-      Toast.error('Ошибка при удалении: ' + err.message);
+      Toast.error('Ошибка при архивации: ' + err.message);
+    }
+  },
+
+  async restoreDrawing(id) {
+    try {
+      await API.post(`/drawings/${id}/restore`, {});
+      Toast.success('Чертёж восстановлен из архива');
+      Modal.close();
+      await this.loadData();
+    } catch (err) {
+      Toast.error('Ошибка восстановления: ' + err.message);
+    }
+  },
+
+  toggleArchive() {
+    this.showArchived = !this.showArchived;
+    const btn = document.getElementById('btn-archive-toggle');
+    if (btn) btn.className = `btn btn-icon ${this.showArchived ? 'btn-primary' : 'btn-secondary'}`;
+    this.loadData();
+  },
+
+  async openJournal() {
+    try {
+      const res = await API.get('/drawings/calculations?limit=200');
+      const rows = res.data || [];
+      Modal.open({
+        title: '🧾 Журнал расчётов',
+        wide: true,
+        body: rows.length === 0
+          ? Table.emptyState('Расчётов пока нет')
+          : `
+            <div class="table-wrapper" style="max-height:60vh;overflow-y:auto">
+              <table class="data-table">
+                <thead><tr><th>Дата</th><th>Чертёж</th><th>Клиент</th><th class="text-right">BOM</th><th class="text-right">Уровень</th><th class="text-right">Итого</th><th>Автор</th></tr></thead>
+                <tbody>
+                  ${rows.map(r => `
+                    <tr>
+                      <td class="text-muted" style="font-size:0.83rem">${new Date(r.created_at).toLocaleString('ru-RU')}</td>
+                      <td><strong>${esc(r.drawing_name)}</strong>${r.drawing_archived_at ? ' <span class="badge" style="background:var(--bg-tertiary);color:var(--text-muted)">архив</span>' : ''}</td>
+                      <td>${esc(r.client_name) || '—'}</td>
+                      <td class="text-right">${Table.formatMoney(r.subtotal)}</td>
+                      <td class="text-right">${parseFloat(r.level_markup_pct) > 0 ? '+' : ''}${parseFloat(r.level_markup_pct) || 0}%</td>
+                      <td class="text-right" style="font-weight:600;color:var(--accent-teal)">${Table.formatMoney(r.total)}</td>
+                      <td class="text-muted" style="font-size:0.83rem">${esc(r.author_name) || '—'}</td>
+                    </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>`,
+        footer: '<button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>',
+      });
+    } catch (err) {
+      Toast.error(err.message);
     }
   },
 };

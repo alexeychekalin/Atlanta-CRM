@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const db = require('../db');
 const auth = require('../middleware/auth');
 const adminOnly = require('../middleware/role');
+const { invalidateAccessCache } = require('../middleware/access');
 
 const router = express.Router();
 
@@ -71,8 +72,8 @@ router.post('/', auth, adminOnly, async (req, res) => {
     if (!username || !username.trim()) {
       return res.status(400).json({ error: 'Укажите логин' });
     }
-    if (!password || password.length < 4) {
-      return res.status(400).json({ error: 'Пароль должен содержать минимум 4 символа' });
+    if (!password || password.length < 8) {
+      return res.status(400).json({ error: 'Пароль должен содержать минимум 8 символов' });
     }
     if (!full_name || !full_name.trim()) {
       return res.status(400).json({ error: 'Укажите ФИО пользователя' });
@@ -107,6 +108,7 @@ router.post('/', auth, adminOnly, async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
+    invalidateAccessCache();
     const result = await db.query(`
       INSERT INTO users (username, password_hash, full_name, role, role_id)
       VALUES ($1, $2, $3, $4, $5)
@@ -160,16 +162,22 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
 
     const updatedName = full_name !== undefined ? full_name.trim() : currentUser.full_name;
 
-    if (password && password.trim().length >= 4) {
+    if (password && password.trim().length > 0 && password.trim().length < 8) {
+      return res.status(400).json({ error: 'Пароль должен содержать минимум 8 символов' });
+    }
+
+    if (password && password.trim().length >= 8) {
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash(password.trim(), salt);
 
       const result = await db.query(`
         UPDATE users
-        SET full_name = $1, role = $2, role_id = $3, password_hash = $4
+        SET full_name = $1, role = $2, role_id = $3, password_hash = $4,
+            token_version = token_version + 1
         WHERE id = $5
         RETURNING id, username, full_name, role, role_id, created_at
       `, [updatedName, assignedRoleName, assignedRoleId, passwordHash, req.params.id]);
+      invalidateAccessCache(parseInt(req.params.id));
       return res.json(result.rows[0]);
     } else {
       const result = await db.query(`
@@ -178,6 +186,7 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
         WHERE id = $4
         RETURNING id, username, full_name, role, role_id, created_at
       `, [updatedName, assignedRoleName, assignedRoleId, req.params.id]);
+      invalidateAccessCache(parseInt(req.params.id));
       return res.json(result.rows[0]);
     }
   } catch (err) {

@@ -108,15 +108,8 @@ log "Применяю схему БД..."
 sudo -u postgres psql -d $DB_NAME -f "$APP_DIR/server/src/db/schema.sql" 2>&1 | tail -5
 log "Схема применена"
 
-# Применить миграции
-log "Применяю миграции..."
-for migration in "$APP_DIR"/server/src/db/migration_*.sql; do
-  if [ -f "$migration" ]; then
-    sudo -u postgres psql -d $DB_NAME -f "$migration" 2>&1 | tail -2
-    log "  $(basename $migration)"
-  fi
-done
-log "Все миграции применены"
+# Миграции применяются после установки зависимостей (npm run db:migrate)
+log "Схема применена"
 
 # Выдать права на все таблицы и последовательности
 sudo -u postgres psql -d $DB_NAME -c "GRANT USAGE ON SCHEMA public TO $DB_USER;"
@@ -152,6 +145,8 @@ DATABASE_URL=postgresql://$DB_USER:$DB_PASS@localhost:5432/$DB_NAME
 JWT_SECRET=$JWT_SECRET
 PORT=$PORT
 NODE_ENV=production
+TRUST_PROXY=true
+COOKIE_SECURE=false
 EOF
 log ".env создан"
 
@@ -159,13 +154,20 @@ log ".env создан"
 mkdir -p "$APP_DIR/server/uploads"/{images,drawings,avatars,documents}
 log "Директории uploads созданы"
 
+# Применить миграции (реестр schema_migrations)
+log "Применяю миграции..."
+cd "$APP_DIR/server"
+node src/db/migrate.js || err "Ошибка миграции БД"
+
 # Заполнить тестовые данные
 log "Заполняю тестовые данные (seed)..."
-cd "$APP_DIR/server"
 node src/db/seed.js 2>/dev/null || warn "Seed уже был применён или произошла ошибка"
 
 # Миграция ролей (добавляет guest и др.)
 node src/db/migrate_roles.js 2>/dev/null || warn "Миграция ролей: ошибка или уже применена"
+
+# Предзаполнение: клиенты из карточек предприятий (src/db/preseed)
+node src/db/preseed.js 2>/dev/null || warn "Предзаполнение: ошибка или данные уже загружены"
 cd "$APP_DIR"
 log "Данные загружены"
 

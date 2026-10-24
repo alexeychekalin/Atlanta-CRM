@@ -3,6 +3,9 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const auth = require('../middleware/auth');
+const { requireAnyPermission } = require('../middleware/access');
+const { hasValidSignature } = require('../utils/files');
+const { adminOnly } = require('../middleware/role');
 
 const router = express.Router();
 
@@ -20,165 +23,164 @@ const uploadsDir = path.join(__dirname, '../../uploads');
 const imagesDir = path.join(uploadsDir, 'images');
 const drawingsDir = path.join(uploadsDir, 'drawings');
 
-// Создаём папки если нет
 [uploadsDir, imagesDir, drawingsDir].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
-// Конфигурация multer для изображений компонентов
-const imageStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, imagesDir),
-  filename: (req, file, cb) => {
+function buildStorage(directory, prefix) {
+  return multer.diskStorage({
+    destination: (req, file, cb) => cb(null, directory),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      const name = `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext}`;
+      cb(null, name);
+    },
+  });
+}
+
+function extensionFilter(allowed, message) {
+  return (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    const name = `comp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext}`;
-    cb(null, name);
-  },
-});
+    if (allowed.includes(ext)) cb(null, true);
+    else cb(new Error(message));
+  };
+}
 
-// Конфигурация multer для чертежей
-const drawingStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, drawingsDir),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const name = `drw_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext}`;
-    cb(null, name);
-  },
-});
+// SVG исключён: он исполняет скрипты при открытии файла напрямую
+const imageFilter = extensionFilter(
+  ['.jpg', '.jpeg', '.png', '.webp', '.gif'],
+  'Допустимые форматы: JPG, PNG, WebP, GIF'
+);
 
-const imageFilter = (req, file, cb) => {
-  const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg'];
-  const ext = path.extname(file.originalname).toLowerCase();
-  if (allowed.includes(ext)) {
-    cb(null, true);
-  } else {
-    cb(new Error('Допустимые форматы: JPG, PNG, WebP, GIF, SVG'));
-  }
-};
+const drawingFilter = extensionFilter(
+  ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.tiff', '.tif'],
+  'Допустимые форматы: PDF, JPG, PNG, WebP, TIFF'
+);
 
-const drawingFilter = (req, file, cb) => {
-  const allowed = ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.tiff', '.tif'];
-  const ext = path.extname(file.originalname).toLowerCase();
-  if (allowed.includes(ext)) {
-    cb(null, true);
-  } else {
-    cb(new Error('Допустимые форматы: PDF, JPG, PNG, WebP, TIFF'));
-  }
-};
+const compDocFilter = extensionFilter(
+  ['.pdf', '.jpg', '.jpeg', '.png'],
+  'Допустимые форматы: PDF, JPG, PNG'
+);
+
+// Админские файлы клиента: документы, таблицы, архивы, чертежи.
+// HTML/SVG/JS и исполняемые файлы не принимаем — они исполняются в браузере.
+const clientFileFilter = extensionFilter(
+  ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.tif', '.tiff',
+    '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods',
+    '.zip', '.rar', '.7z', '.txt', '.csv', '.md', '.dwg', '.dxf'],
+  'Недопустимый формат файла. Разрешены документы, таблицы, изображения, архивы и чертежи'
+);
 
 const uploadImage = multer({
-  storage: imageStorage,
+  storage: buildStorage(imagesDir, 'comp'),
   fileFilter: imageFilter,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 10 * 1024 * 1024 },
 });
 
 const uploadDrawing = multer({
-  storage: drawingStorage,
+  storage: buildStorage(drawingsDir, 'drw'),
   fileFilter: drawingFilter,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
-});
-
-// POST /api/upload/image
-router.post('/image', auth, uploadImage.single('file'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'Файл не загружен' });
-  }
-  res.json({
-    path: `/uploads/images/${req.file.filename}`,
-    filename: req.file.filename,
-    originalname: decodeFilename(req.file.originalname),
-    size: req.file.size,
-  });
+  limits: { fileSize: 50 * 1024 * 1024 },
 });
 
 // --- Аватар клиента ---
 const avatarsDir = path.join(uploadsDir, 'avatars');
 if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
 
-const avatarStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, avatarsDir),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const name = `avatar_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext}`;
-    cb(null, name);
-  },
-});
-
 const uploadAvatar = multer({
-  storage: avatarStorage,
+  storage: buildStorage(avatarsDir, 'avatar'),
   fileFilter: imageFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-});
-
-// POST /api/upload/avatar
-router.post('/avatar', auth, uploadAvatar.single('file'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'Файл не загружен' });
-  }
-  res.json({
-    path: `/uploads/avatars/${req.file.filename}`,
-    filename: req.file.filename,
-    originalname: decodeFilename(req.file.originalname),
-    size: req.file.size,
-  });
-});
-
-// POST /api/upload/drawing
-router.post('/drawing', auth, uploadDrawing.single('file'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'Файл не загружен' });
-  }
-  const ext = path.extname(req.file.originalname).toLowerCase().replace('.', '');
-  res.json({
-    path: `/uploads/drawings/${req.file.filename}`,
-    filename: req.file.filename,
-    originalname: decodeFilename(req.file.originalname),
-    file_type: ext,
-    size: req.file.size,
-  });
+  limits: { fileSize: 5 * 1024 * 1024 },
 });
 
 // --- Документы компонентов (сертификаты, инфо) ---
 const compDocsDir = path.join(uploadsDir, 'documents');
 if (!fs.existsSync(compDocsDir)) fs.mkdirSync(compDocsDir, { recursive: true });
 
-const compDocStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, compDocsDir),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const name = `doc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext}`;
-    cb(null, name);
-  },
-});
-
-const compDocFilter = (req, file, cb) => {
-  const allowed = ['.pdf', '.jpg', '.jpeg', '.png'];
-  const ext = path.extname(file.originalname).toLowerCase();
-  if (allowed.includes(ext)) {
-    cb(null, true);
-  } else {
-    cb(new Error('Допустимые форматы: PDF, JPG, PNG'));
-  }
-};
-
 const uploadCompDoc = multer({
-  storage: compDocStorage,
+  storage: buildStorage(compDocsDir, 'doc'),
   fileFilter: compDocFilter,
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+  limits: { fileSize: 20 * 1024 * 1024 },
 });
 
-// POST /api/upload/component-doc
-router.post('/component-doc', auth, uploadCompDoc.single('file'), (req, res) => {
+// --- Файлы клиента (только администратор) ---
+const clientFilesDir = path.join(uploadsDir, 'files');
+if (!fs.existsSync(clientFilesDir)) fs.mkdirSync(clientFilesDir, { recursive: true });
+
+const uploadClientFile = multer({
+  storage: buildStorage(clientFilesDir, 'file'),
+  fileFilter: clientFileFilter,
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
+
+/**
+ * Проверяет содержимое загруженного файла по сигнатуре и удаляет его при несовпадении.
+ */
+function verifyUploadedFile(req, res, next) {
+  if (!req.file) return next();
+  const ext = path.extname(req.file.originalname).toLowerCase();
+  if (!hasValidSignature(req.file.path, ext)) {
+    try {
+      fs.unlinkSync(req.file.path);
+    } catch {
+      /* ignore */
+    }
+    return res.status(400).json({ error: 'Содержимое файла не соответствует его расширению' });
+  }
+  return next();
+}
+
+const canEditComponents = requireAnyPermission([['components', 'edit']]);
+const canEditClients = requireAnyPermission([['clients', 'edit']]);
+const canUploadDrawing = requireAnyPermission([
+  ['calculator', 'edit'],
+  ['clients', 'edit'],
+  ['orders', 'edit'],
+  ['drawings', 'edit'],
+]);
+
+function fileResponse(req, res, subdir, extra = {}) {
   if (!req.file) {
     return res.status(400).json({ error: 'Файл не загружен' });
   }
-  const ext = path.extname(req.file.originalname).toLowerCase().replace('.', '');
-  res.json({
-    path: `/uploads/documents/${req.file.filename}`,
+  return res.json({
+    path: `/uploads/${subdir}/${req.file.filename}`,
     filename: req.file.filename,
     originalname: decodeFilename(req.file.originalname),
-    file_type: ext,
     size: req.file.size,
+    ...extra,
   });
+}
+
+// POST /api/upload/image — фото компонентов и модификаций
+router.post('/image', auth, canEditComponents, uploadImage.single('file'), verifyUploadedFile, (req, res) => {
+  return fileResponse(req, res, 'images');
+});
+
+// POST /api/upload/avatar — аватар клиента
+router.post('/avatar', auth, canEditClients, uploadAvatar.single('file'), verifyUploadedFile, (req, res) => {
+  return fileResponse(req, res, 'avatars');
+});
+
+// POST /api/upload/drawing — чертежи, версии согласований, счета
+router.post('/drawing', auth, canUploadDrawing, uploadDrawing.single('file'), verifyUploadedFile, (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+  const ext = path.extname(req.file.originalname).toLowerCase().replace('.', '');
+  return fileResponse(req, res, 'drawings', { file_type: ext });
+});
+
+// POST /api/upload/component-doc — сертификаты и информационные документы
+router.post('/component-doc', auth, canEditComponents, uploadCompDoc.single('file'), verifyUploadedFile, (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+  const ext = path.extname(req.file.originalname).toLowerCase().replace('.', '');
+  return fileResponse(req, res, 'documents', { file_type: ext });
+});
+
+// POST /api/upload/client-file — произвольные файлы в карточку клиента (только админ)
+router.post('/client-file', auth, adminOnly, uploadClientFile.single('file'), verifyUploadedFile, (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+  const ext = path.extname(req.file.originalname).toLowerCase().replace('.', '');
+  return fileResponse(req, res, 'files', { file_type: ext });
 });
 
 // Middleware обработки ошибок multer

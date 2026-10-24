@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
-const adminOnly = require('../middleware/role');
+const { hasPermission } = require('../middleware/role');
 
 const router = express.Router();
 
@@ -18,7 +18,7 @@ router.get('/', auth, async (req, res) => {
 });
 
 // POST /api/client-statuses — создать статус
-router.post('/', auth, adminOnly, async (req, res) => {
+router.post('/', auth, hasPermission('settings', 'edit'), async (req, res) => {
   try {
     const { name, color, sort_order } = req.body;
     if (!name) return res.status(400).json({ error: 'Укажите название статуса' });
@@ -35,7 +35,7 @@ router.post('/', auth, adminOnly, async (req, res) => {
 });
 
 // PUT /api/client-statuses/:id — обновить статус
-router.put('/:id', auth, adminOnly, async (req, res) => {
+router.put('/:id', auth, hasPermission('settings', 'edit'), async (req, res) => {
   try {
     const { name, color, sort_order, is_active } = req.body;
     const result = await db.query(
@@ -53,7 +53,7 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
 });
 
 // DELETE /api/client-statuses/:id
-router.delete('/:id', auth, adminOnly, async (req, res) => {
+router.delete('/:id', auth, hasPermission('settings', 'edit'), async (req, res) => {
   try {
     await db.query('DELETE FROM client_work_statuses WHERE id = $1', [req.params.id]);
     res.json({ success: true });

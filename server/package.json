@@ -6,8 +6,16 @@
   "scripts": {
     "start": "NODE_ENV=production node src/index.js",
     "dev": "node --watch src/index.js",
-    "db:init": "node src/db/seed.js",
-    "db:schema": "psql $DATABASE_URL -f src/db/schema.sql"
+    "db:init": "node src/db/seed.js && node src/db/migrate.js && node src/db/migrate_roles.js && node src/db/preseed.js",
+    "db:migrate": "node src/db/migrate.js",
+    "db:schema": "psql $DATABASE_URL -f src/db/schema.sql",
+    "demo:init": "node dev/run.js dev/demo-reset.js && node dev/run.js src/db/migrate.js && node dev/run.js src/db/migrate_roles.js && node dev/run.js dev/demo-seed.js && node dev/preseed.js",
+    "demo": "node dev/start-demo.js",
+    "test": "node --test test/*.test.js",
+    "lint": "eslint src dev test eslint.config.js && node scripts/check-client-syntax.js",
+    "demo:migrate": "node dev/run.js src/db/migrate.js",
+    "db:preseed": "node src/db/preseed.js",
+    "demo:preseed": "node dev/preseed.js"
   },
   "dependencies": {
     "archiver": "^5.3.2",
@@ -16,10 +24,17 @@
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",
     "express": "^4.21.0",
+    "express-rate-limit": "^8.7.1",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.2.0",
     "pdfkit": "^0.15.0",
     "pdfkit-table": "^0.1.99",
     "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5"
   }
 }

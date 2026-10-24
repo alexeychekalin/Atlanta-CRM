@@ -36,7 +36,7 @@ const OrdersPage = {
           </select>
           <select class="filter-select" id="orders-client-filter">
             <option value="">Все клиенты</option>
-            ${this.clients.map(c => `<option value="${c.id}" ${this.filters.client_id == c.id ? 'selected' : ''}>${c.name}</option>`).join('')}
+            ${this.clients.map(c => `<option value="${c.id}" ${this.filters.client_id == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
           </select>
           <select class="filter-select" id="orders-group-filter">
             <option value="">Без группировки</option>
@@ -128,10 +128,10 @@ const OrdersPage = {
           <tbody>
             ${orders.map(o => `
               <tr style="cursor:pointer" onclick="OrdersPage.viewOrder(${o.id})" title="Нажмите для просмотра заказа">
-                <td class="font-mono">${o.order_number}${o.invoice_number || o.invoice_path ? ' <span title="Счёт" style="font-size:0.75rem">📄</span>' : ''}${o.tracking_number ? ' <span title="Трек" style="font-size:0.75rem">🚚</span>' : ''}</td>
+                <td class="font-mono">${esc(o.order_number)}${o.invoice_number || o.invoice_path ? ' <span title="Счёт" style="font-size:0.75rem">📄</span>' : ''}${o.tracking_number ? ' <span title="Трек" style="font-size:0.75rem">🚚</span>' : ''}</td>
                 <td>${Table.formatDate(o.order_date)}</td>
-                <td><a href="#" onclick="event.stopPropagation();App.navigateTo('client-profile',${o.client_id});return false" class="client-link">${o.client_name || '—'}</a></td>
-                <td>${o.principal_name || '—'}</td>
+                <td><a href="#" onclick="event.stopPropagation();App.navigateTo('client-profile',${o.client_id});return false" class="client-link">${esc(o.client_name) || '—'}</a></td>
+                <td>${esc(o.principal_name) || '—'}</td>
                 <td>${Table.statusBadge(o.status)}</td>
                 <td class="text-right" style="font-weight:600">${Table.formatMoney(o.total)}</td>
                 <td class="text-right" style="color:var(--text-secondary);font-size:0.85rem">${Table.formatMoney(o.commission_amount)}</td>
@@ -175,7 +175,7 @@ const OrdersPage = {
       <div class="card mb-2">
         <div class="flex items-center justify-between mb-1">
           <div>
-            <a href="#" onclick="App.navigateTo('client-profile',${group.client_id});return false" class="client-link" style="font-size:1.1rem"><strong>${group.name}</strong></a>
+            <a href="#" onclick="App.navigateTo('client-profile',${group.client_id});return false" class="client-link" style="font-size:1.1rem"><strong>${esc(group.name)}</strong></a>
             <span style="color:var(--text-muted);font-size:0.85rem;margin-left:8px">${group.orders.length} заказ(ов)</span>
           </div>
           <div style="text-align:right">
@@ -198,7 +198,7 @@ const OrdersPage = {
             <tbody>
               ${group.orders.map(o => `
                 <tr style="cursor:pointer" onclick="OrdersPage.viewOrder(${o.id})" title="Нажмите для просмотра заказа">
-                  <td class="font-mono">${o.order_number}</td>
+                  <td class="font-mono">${esc(o.order_number)}</td>
                   <td>${Table.formatDate(o.order_date)}</td>
                   <td>${Table.statusBadge(o.status)}</td>
                   <td class="text-right" style="font-weight:600">${Table.formatMoney(o.total)}</td>
@@ -230,10 +230,10 @@ const OrdersPage = {
       // Блок счёта/оплаты/трека
       const invoiceInfo = (order.invoice_number || order.invoice_path || order.payment_date || order.tracking_number) ? `
         <div class="grid-2 mb-2" style="margin-top:12px">
-          ${order.invoice_number ? `<div><strong>📄 Счёт:</strong> ${order.invoice_number} ${order.invoice_path ? `<a href="${order.invoice_path}" target="_blank" style="color:var(--accent-teal);font-size:0.85rem">Открыть ↗</a>` : ''}</div>` : ''}
-          ${!order.invoice_number && order.invoice_path ? `<div><strong>📄 Файл счёта:</strong> <a href="${order.invoice_path}" target="_blank" style="color:var(--accent-teal)">Открыть ↗</a></div>` : ''}
+          ${order.invoice_number ? `<div><strong>📄 Счёт:</strong> ${esc(order.invoice_number)} ${order.invoice_path ? `<a href="${esc(order.invoice_path)}" target="_blank" rel="noopener" style="color:var(--accent-teal);font-size:0.85rem">Открыть ↗</a>` : ''}</div>` : ''}
+          ${!order.invoice_number && order.invoice_path ? `<div><strong>📄 Файл счёта:</strong> <a href="${esc(order.invoice_path)}" target="_blank" rel="noopener" style="color:var(--accent-teal)">Открыть ↗</a></div>` : ''}
           ${order.payment_date ? `<div><strong>💳 Оплата:</strong> <span style="color:var(--accent-green,#22c55e);font-weight:600">${Table.formatDate(order.payment_date)}</span></div>` : ''}
-          ${order.tracking_number ? `<div><strong>🚚 Трек:</strong> <span style="font-family:var(--font-mono,monospace)">${order.tracking_number}</span></div>` : ''}
+          ${order.tracking_number ? `<div><strong>🚚 Трек:</strong> <span style="font-family:var(--font-mono,monospace)">${esc(order.tracking_number)}</span></div>` : ''}
         </div>
       ` : '';
 
@@ -242,13 +242,13 @@ const OrdersPage = {
         wide: true,
         body: `
           <div class="grid-2 mb-2">
-            <div><strong>Клиент:</strong> ${order.client_name || '—'}</div>
-            <div><strong>Принципал:</strong> ${order.principal_name || '—'}</div>
+            <div><strong>Клиент:</strong> ${esc(order.client_name) || '—'}</div>
+            <div><strong>Принципал:</strong> ${esc(order.principal_name) || '—'}</div>
             <div><strong>Дата:</strong> ${Table.formatDate(order.order_date)}</div>
             <div><strong>Статус:</strong> ${Table.statusBadge(order.status)}</div>
           </div>
           ${invoiceInfo}
-          ${order.comment ? `<div class="mb-2"><strong>Комментарий:</strong> ${order.comment}</div>` : ''}
+          ${order.comment ? `<div class="mb-2"><strong>Комментарий:</strong> ${esc(order.comment)}</div>` : ''}
           <h4 class="mb-1" style="color:var(--text-secondary)">Позиции заказа</h4>
           <div class="table-wrapper">
             <table class="data-table">
@@ -256,8 +256,8 @@ const OrdersPage = {
               <tbody>
                 ${(order.items || []).map(item => `
                   <tr>
-                    <td><span class="font-mono" style="color:var(--accent-teal);font-size:0.82rem">${item.article || '—'}</span></td>
-                    <td title="${(item.product_name || '').replace(/"/g, '&quot;')}"><span style="display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle">${item.product_name}${item.metadata?.type === 'calculator_drawing' ? ' 📐' : (item.is_drawing ? ' 📎' : '')}</span></td>
+                    <td><span class="font-mono" style="color:var(--accent-teal);font-size:0.82rem">${esc(item.article) || '—'}</span></td>
+                    <td title="${esc(item.product_name)}"><span style="display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle">${esc(item.product_name)}${item.metadata?.type === 'calculator_drawing' ? ' 📐' : (item.is_drawing ? ' 📎' : '')}</span></td>
                     <td class="text-right">${Table.formatMoney(item.unit_price)}</td>
                     <td class="text-right">${item.quantity}</td>
                     <td class="text-right">${Table.formatMoney(item.line_total)}</td>
@@ -315,7 +315,7 @@ const OrdersPage = {
               <label>Клиент *</label>
               <select class="form-control" id="order-client" required>
                 <option value="">Выберите клиента</option>
-                ${this.clients.map(c => `<option value="${c.id}" data-markup="${c.pricing_markup_pct || 0}" data-level="${c.pricing_level_name || ''}" ${isEdit && order.client_id == c.id ? 'selected' : ''}>${c.name}</option>`).join('')}
+                ${this.clients.map(c => `<option value="${c.id}" data-markup="${c.pricing_markup_pct || 0}" data-level="${esc(c.pricing_level_name)}" ${isEdit && order.client_id == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
               </select>
               <div id="order-client-level" style="margin-top:4px;font-size:0.78rem"></div>
             </div>
@@ -323,7 +323,7 @@ const OrdersPage = {
               <label>Принципал *</label>
               <select class="form-control" id="order-principal" required>
                 <option value="">Выберите принципала</option>
-                ${this.principals.map(p => `<option value="${p.id}" data-comm="${p.agent_commission_pct}" ${p.id == defaultPrincipalId ? 'selected' : ''}>${p.name} (${p.agent_commission_pct}%)</option>`).join('')}
+                ${this.principals.map(p => `<option value="${p.id}" data-comm="${p.agent_commission_pct}" ${p.id == defaultPrincipalId ? 'selected' : ''}>${esc(p.name)} (${p.agent_commission_pct}%)</option>`).join('')}
               </select>
             </div>
           </div>
@@ -345,7 +345,7 @@ const OrdersPage = {
           </div>
           <div class="form-group">
             <label>Комментарий</label>
-            <textarea class="form-control" id="order-comment" rows="2">${isEdit ? (order.comment || '') : ''}</textarea>
+            <textarea class="form-control" id="order-comment" rows="2">${isEdit ? esc(order.comment) : ''}</textarea>
           </div>
 
           <div style="margin-top:12px;padding:14px;background:var(--bg-main);border-radius:10px;border:1px solid var(--border)">
@@ -353,7 +353,7 @@ const OrdersPage = {
             <div class="form-row">
               <div class="form-group">
                 <label>Номер счёта</label>
-                <input type="text" class="form-control" id="order-invoice-number" value="${isEdit ? (order.invoice_number || '') : ''}" placeholder="СЧ-001">
+                <input type="text" class="form-control" id="order-invoice-number" value="${isEdit ? esc(order.invoice_number) : ''}" placeholder="СЧ-001">
               </div>
               <div class="form-group">
                 <label>Дата оплаты</label>
@@ -472,8 +472,8 @@ const OrdersPage = {
                    onclick="OrdersPage.addDrawingItem(${d.id})">
                 <div style="width:48px;height:48px;background:var(--bg-main);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:1.2rem">📎</div>
                 <div style="flex:1;min-width:0">
-                  <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.title || d.name || 'Чертёж #' + d.id}</div>
-                  <div style="font-size:0.8rem;color:var(--text-muted)">${d.client_name || ''} · <strong>${Table.formatMoneyRaw(d.total_cost || 0)}</strong></div>
+                  <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(d.title || d.name) || 'Чертёж #' + d.id}</div>
+                  <div style="font-size:0.8rem;color:var(--text-muted)">${esc(d.client_name)} · <strong>${Table.formatMoneyRaw(d.total_cost || 0)}</strong></div>
                 </div>
               </div>
             `).join('')}
@@ -517,7 +517,8 @@ const OrdersPage = {
     const displayName = item.product_name || (isDrawing ? 'Чертёж' : 'Позиция');
     const icon = isDrawing ? '📎' : (isCustom ? '✏️' : '📦');
     const article = item.article || '';
-    const price = item.unit_price || 0;
+    // В inputs показываем базовую цену: наценки применяет сервер при сохранении
+    const price = item.base_price !== null && item.base_price !== undefined ? item.base_price : (item.unit_price || 0);
     const qty = item.quantity || 1;
     const sw = 'display:flex;align-items:stretch;border-radius:6px;border:1px solid var(--border);overflow:hidden;height:32px';
     const sb = 'width:26px;border:none;background:var(--bg-tertiary);color:var(--text-secondary);cursor:pointer;font-size:0.95rem;font-weight:700;display:flex;align-items:center;justify-content:center;transition:all 0.15s;flex-shrink:0';
@@ -528,15 +529,15 @@ const OrdersPage = {
       <div data-item-row="${idx}" style="margin-bottom:6px;padding:8px 12px;background:var(--bg-main);border-radius:10px;border:1px solid var(--border);transition:border-color 0.15s" onmouseenter="this.style.borderColor='var(--accent-teal)'" onmouseleave="this.style.borderColor='var(--border)'">
         <div style="display:flex;align-items:center;gap:10px">
           <span style="font-size:1rem;flex-shrink:0">${icon}</span>
-          ${isCustom ? `<input type="text" class="form-control item-name" value="${displayName}" placeholder="Название позиции" style="flex:1;font-weight:600;font-size:0.82rem;min-width:80px;padding:4px 8px">` :
+          ${isCustom ? `<input type="text" class="form-control item-name" value="${esc(displayName)}" placeholder="Название позиции" style="flex:1;font-weight:600;font-size:0.82rem;min-width:80px;padding:4px 8px">` :
             `<div style="flex:1;min-width:80px;overflow:hidden">
               <div style="display:flex;align-items:baseline;gap:6px">
-                ${article ? `<span class="font-mono" style="font-weight:700;font-size:0.82rem;color:var(--accent-teal);white-space:nowrap">${article}</span>` : ''}
-                <span style="font-size:0.78rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${displayName.replace(/"/g, '&quot;')}">${displayName}</span>
-                ${item.product_id && item.doc_count > 0 ? `<a href="/api/components/${item.product_id}/documents/download-all?token=${API.getToken()}" title="Скачать документы (${item.doc_count})" style="text-decoration:none;cursor:pointer;flex-shrink:0">📎<sup style="font-size:0.6rem;color:var(--accent-teal)">${item.doc_count}</sup></a>` : ''}
+                ${article ? `<span class="font-mono" style="font-weight:700;font-size:0.82rem;color:var(--accent-teal);white-space:nowrap">${esc(article)}</span>` : ''}
+                <span style="font-size:0.78rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(displayName)}">${esc(displayName)}</span>
+                ${item.product_id && item.doc_count > 0 ? `<a href="/api/components/${item.product_id}/documents/download-all" title="Скачать документы (${item.doc_count})" style="text-decoration:none;cursor:pointer;flex-shrink:0">📎<sup style="font-size:0.6rem;color:var(--accent-teal)">${item.doc_count}</sup></a>` : ''}
               </div>
             </div>
-            <input type="hidden" class="item-name" value="${displayName}">`}
+            <input type="hidden" class="item-name" value="${esc(displayName)}">`}
           <div style="flex-shrink:0;width:140px">
             <div style="font-size:0.6rem;color:var(--text-muted);margin-bottom:2px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Цена ₽</div>
             <div style="${sw}">
@@ -569,6 +570,8 @@ const OrdersPage = {
         </div>
         <input type="hidden" class="item-product" value="${item.product_id || (isDrawing ? 'drawing_' + (item.drawing_id || '') : '')}">
         <input type="hidden" class="item-is-drawing" value="${isDrawing ? '1' : ''}">
+        <input type="hidden" class="item-drawing-id" value="${item.drawing_id || ''}">
+        <input type="hidden" class="item-metadata" value="${item.metadata ? String(JSON.stringify(item.metadata)).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : ''}">
       </div>
     `;
   },
@@ -598,10 +601,10 @@ const OrdersPage = {
                 const modCount = parseInt(c.modifications_count) || 0;
                 return `
                   <tr style="cursor:pointer" onclick="OrdersPage._addCatalogComponent(${c.id})">
-                    <td>${c.image_path ? `<img src="${c.image_path}" style="width:32px;height:32px;object-fit:cover;border-radius:4px">` : '📦'}</td>
-                    <td class="font-mono" style="color:var(--accent-teal)">${c.article}</td>
-                    <td>${c.name}${modCount > 0 ? `<span style="margin-left:6px;padding:1px 6px;border-radius:8px;font-size:0.65rem;font-weight:600;background:var(--accent-teal);color:#fff">${modCount} мод.</span>` : ''}</td>
-                    <td><span class="badge badge-in_progress" style="font-size:0.7rem">${c.category_name || '—'}</span></td>
+                    <td>${c.image_path ? `<img src="${esc(c.image_path)}" style="width:32px;height:32px;object-fit:cover;border-radius:4px">` : '📦'}</td>
+                    <td class="font-mono" style="color:var(--accent-teal)">${esc(c.article)}</td>
+                    <td>${esc(c.name)}${modCount > 0 ? `<span style="margin-left:6px;padding:1px 6px;border-radius:8px;font-size:0.65rem;font-weight:600;background:var(--accent-teal);color:#fff">${modCount} мод.</span>` : ''}</td>
+                    <td><span class="badge badge-in_progress" style="font-size:0.7rem">${esc(c.category_name) || '—'}</span></td>
                     <td class="text-right">${Table.formatMoney(c.price)}</td>
                     <td class="text-right"><button class="btn btn-primary btn-sm" onclick="event.stopPropagation();OrdersPage._addCatalogComponent(${c.id})">+</button></td>
                   </tr>`;
@@ -625,7 +628,7 @@ const OrdersPage = {
           <input type="text" class="form-control" id="order-cat-search" placeholder="Поиск по артикулу или названию..." style="flex:1">
           <select class="form-control" id="order-cat-filter" style="width:180px">
             <option value="">Все категории</option>
-            ${categories.map(cat => `<option value="${cat}">${cat}</option>`).join('')}
+            ${categories.map(cat => `<option value="${esc(cat)}">${esc(cat)}</option>`).join('')}
           </select>
         </div>
         <div id="order-cat-list" style="flex:1;overflow-y:auto">${renderList()}</div>
@@ -669,7 +672,7 @@ const OrdersPage = {
     const content = overlay.querySelector('div');
     content.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <h3 style="margin:0;color:var(--text-primary)">Модификации: ${comp.article}</h3>
+        <h3 style="margin:0;color:var(--text-primary)">Модификации: ${esc(comp.article)}</h3>
         <button onclick="document.getElementById('order-catalog-overlay').remove()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-muted);padding:4px 8px">✕</button>
       </div>
       <div style="margin-bottom:12px;font-size:0.85rem;color:var(--text-muted)">Выберите модификацию или базовый компонент</div>
@@ -679,7 +682,7 @@ const OrdersPage = {
              onmouseenter="this.style.borderColor='var(--accent-teal)'" onmouseleave="this.style.borderColor='var(--border)'">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <div>
-              <div class="font-mono" style="font-weight:700">${comp.article}</div>
+              <div class="font-mono" style="font-weight:700">${esc(comp.article)}</div>
               <div style="font-size:0.85rem;color:var(--text-secondary)">Базовый компонент</div>
             </div>
             <div style="font-weight:600">${Table.formatMoney(comp.price)}</div>
@@ -694,8 +697,8 @@ const OrdersPage = {
                  onmouseenter="this.style.borderColor='var(--accent-teal)'" onmouseleave="this.style.borderColor='var(--border)'">
               <div style="display:flex;justify-content:space-between;align-items:center">
                 <div style="flex:1">
-                  <span class="font-mono" style="font-weight:700;color:var(--accent-teal)">${fullArticle}</span>
-                  ${m.name ? `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:2px">${m.name}</div>` : ''}
+                  <span class="font-mono" style="font-weight:700;color:var(--accent-teal)">${esc(fullArticle)}</span>
+                  ${m.name ? `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:2px">${esc(m.name)}</div>` : ''}
                 </div>
                 <div style="font-weight:600;margin-left:12px">${Table.formatMoney(price)}</div>
               </div>
@@ -791,10 +794,11 @@ const OrdersPage = {
       const basePrice = parseFloat(row.querySelector('.item-price')?.value) || 0;
       const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
       const manualMarkupPct = parseFloat(row.querySelector('.item-markup-pct')?.value) || 0;
-      // Цена с наценкой уровня
-      const priceWithLevel = basePrice * (1 + levelMarkupPct / 100);
-      // + ручная наценка сверху
-      const effectivePrice = priceWithLevel * (1 + manualMarkupPct / 100);
+      const isDrawingRow = row.querySelector('.item-is-drawing')?.value === '1' ||
+        (row.querySelector('.item-product')?.value || '').startsWith('drawing_');
+      // Чертёж — цена уже итоговая, наценки к ней не применяются
+      const priceWithLevel = isDrawingRow ? basePrice : basePrice * (1 + levelMarkupPct / 100);
+      const effectivePrice = isDrawingRow ? basePrice : priceWithLevel * (1 + manualMarkupPct / 100);
       const lineTotal = effectivePrice * qty;
       subtotalBase += basePrice * qty;
       subtotalWithLevel += lineTotal;
@@ -814,7 +818,7 @@ const OrdersPage = {
     if (totalsEl) {
       totalsEl.innerHTML = `
         <div style="font-size:1.1rem;">Итого: <strong style="color:var(--accent-teal)">${Table.formatMoney(total)}</strong></div>
-        ${levelName ? `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:4px">💰 Наценка уровня «${levelName}» (${levelMarkupPct > 0 ? '+' : ''}${levelMarkupPct}%): <strong>${levelDiff >= 0 ? '+' : ''}${Table.formatMoneyRaw(levelDiff)}</strong></div>` : ''}
+        ${levelName ? `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:4px">💰 Наценка уровня «${esc(levelName)}» (${levelMarkupPct > 0 ? '+' : ''}${levelMarkupPct}%): <strong>${levelDiff >= 0 ? '+' : ''}${Table.formatMoneyRaw(levelDiff)}</strong></div>` : ''}
         <div style="font-size:0.82rem;color:var(--text-muted);margin-top:2px">в т.ч. комиссия агента (${commPct}%): ${Table.formatMoney(commission)}</div>
       `;
     }
@@ -851,19 +855,24 @@ const OrdersPage = {
 
       if (product_name && parseFloat(priceInput.value) > 0) {
         const basePrice = parseFloat(priceInput.value);
-        const markupPctInput = row.querySelector('.item-markup-pct');
-        const manualMarkupPct = parseFloat(markupPctInput?.value) || 0;
-        // Наценка уровня клиента
-        const clientOpt = document.getElementById('order-client')?.selectedOptions[0];
-        const lvlMarkup = parseFloat(clientOpt?.dataset?.markup) || 0;
-        const priceWithLevel = basePrice * (1 + lvlMarkup / 100);
-        const effectivePrice = Math.round(priceWithLevel * (1 + manualMarkupPct / 100) * 100) / 100;
+        const manualMarkupPct = parseFloat(row.querySelector('.item-markup-pct')?.value) || 0;
+        const drawingId = parseInt(row.querySelector('.item-drawing-id')?.value) || null;
+        const metadataRaw = row.querySelector('.item-metadata')?.value || '';
+        let metadata;
+        if (metadataRaw) {
+          try { metadata = JSON.parse(metadataRaw); } catch (e) { metadata = undefined; }
+        }
+        // Наценку уровня и итоговую цену рассчитывает сервер
         items.push({
           product_id,
           product_name,
-          unit_price: effectivePrice,
+          base_price: basePrice,
+          markup_pct: manualMarkupPct,
+          markup_rub: 0,
           quantity: Math.round(parseFloat(qtyInput.value)) || 1,
           is_drawing: isDrawing,
+          drawing_id: drawingId,
+          metadata,
         });
       }
     });

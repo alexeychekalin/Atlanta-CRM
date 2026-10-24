@@ -49,13 +49,17 @@ async function seed() {
       ['ЗАО «Сибирь»', '+7 (383) 777-88-99', 'siberia@yandex.ru', 'г. Новосибирск, ул. Красная, 7', ''],
     ];
     for (const c of clients) {
+      // Повторный seed (deploy на существующей базе) не должен дублировать записи
       await db.query(
         `INSERT INTO clients (name, phone, email, address, notes)
-         VALUES ($1, $2, $3, $4, $5)`,
+         SELECT v.name, v.phone, v.email, v.address, v.notes
+           FROM (VALUES ($1::text, $2::text, $3::text, $4::text, $5::text))
+             AS v(name, phone, email, address, notes)
+          WHERE NOT EXISTS (SELECT 1 FROM clients c WHERE lower(c.name) = lower(v.name))`,
         c
       );
     }
-    console.log('✅ Тестовые клиенты созданы (3 шт.)');
+    console.log('✅ Тестовые клиенты готовы (3 шт.)');
 
     // Тестовые товары
     const products = [
@@ -68,11 +72,14 @@ async function seed() {
     for (const p of products) {
       await db.query(
         `INSERT INTO products (name, base_price, unit, description, is_active)
-         VALUES ($1, $2, $3, $4, $5)`,
+         SELECT v.name, v.base_price, v.unit, v.description, v.is_active
+           FROM (VALUES ($1::text, $2::numeric, $3::text, $4::text, $5::boolean))
+             AS v(name, base_price, unit, description, is_active)
+          WHERE NOT EXISTS (SELECT 1 FROM products p WHERE lower(p.name) = lower(v.name))`,
         p
       );
     }
-    console.log('✅ Тестовые товары/услуги созданы (5 шт.)');
+    console.log('✅ Тестовые товары/услуги готовы (5 шт.)');
 
     // Тестовые заказы
     const orderData = [
@@ -90,11 +97,20 @@ async function seed() {
       const commAmount = subtotal * commPct / 100;
       const total = subtotal;
 
+      const orderNumber = `ORD-${String(orderNum).padStart(4, '0')}`;
+      // Существующий заказ не пересоздаём — deploy можно запускать повторно
+      const existing = await db.query(
+        'SELECT id FROM orders WHERE order_number = $1', [orderNumber]);
+      if (existing.rows.length > 0) {
+        orderNum++;
+        continue;
+      }
+
       const res = await db.query(
         `INSERT INTO orders (order_number, client_id, principal_id, order_date, status, subtotal, commission_pct, commission_amount, total, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING id`,
-        [`ORD-${String(orderNum).padStart(4, '0')}`, o.clientId, o.principalId, o.date, o.status, subtotal, commPct, commAmount, total, 1]
+        [orderNumber, o.clientId, o.principalId, o.date, o.status, subtotal, commPct, commAmount, total, 1]
       );
       const orderId = res.rows[0].id;
 
@@ -107,7 +123,7 @@ async function seed() {
       }
       orderNum++;
     }
-    console.log('✅ Тестовые заказы созданы (4 шт.)');
+    console.log('✅ Тестовые заказы готовы (4 шт.)');
 
     console.log('\n🎉 Инициализация завершена!');
     console.log('   Вход: admin / admin123');

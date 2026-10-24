@@ -1,4 +1,10 @@
 /* Calculator Page — Калькулятор чертежей */
+
+/** Округление до копеек — как в services/drawings.js (цены должны совпадать). */
+function calcRound2(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
 const CalculatorPage = {
   principals: [],
   clients: [],
@@ -9,6 +15,10 @@ const CalculatorPage = {
   drawingFile: null,
   pendingDrawingId: null,
   pendingClientId: null,
+  currentDrawingId: null,
+  clientDrawings: [],
+  currentDrawingClients: [],
+  currentClientPrice: null,
 
   async render(drawingIdOrParams) {
     const content = document.getElementById('content-area');
@@ -36,6 +46,8 @@ const CalculatorPage = {
     this.drawings = drawRes.data;
     this.bomItems = [];
     this.drawingFile = null;
+    this.currentDrawingId = null;
+    this.clientDrawings = [];
 
     content.innerHTML = `
       <div class="calc-layout">
@@ -48,10 +60,21 @@ const CalculatorPage = {
               ${this.drawings.length > 0 ? `
                 <select class="filter-select" id="calc-template" style="width:auto" onchange="CalculatorPage.loadTemplate(this.value)">
                   <option value="">Загрузить шаблон...</option>
-                  ${this.drawings.map(d => `<option value="${d.id}">${d.name} (${d.components_count} комп.)</option>`).join('')}
                 </select>
               ` : ''}
             </div>
+            ${this.drawings.length > 0 ? `
+              <div style="display:flex;gap:14px;font-size:0.78rem;color:var(--text-secondary);padding:0 0 10px;flex-wrap:wrap">
+                <label style="display:flex;gap:5px;align-items:center;cursor:pointer">
+                  <input type="checkbox" id="calc-only-client" checked onchange="CalculatorPage.refreshTemplateOptions()">
+                  только чертежи клиента
+                </label>
+                <label style="display:flex;gap:5px;align-items:center;cursor:pointer">
+                  <input type="checkbox" id="calc-only-new" onchange="CalculatorPage.refreshTemplateOptions()">
+                  без расчёта
+                </label>
+              </div>
+            ` : ''}
             <div class="upload-zone" id="calc-drawing-zone" style="min-height:100px">
               <div id="calc-drawing-preview">
                 <div style="padding:20px;text-align:center;color:var(--text-muted)">
@@ -73,7 +96,7 @@ const CalculatorPage = {
                 <label>Клиент</label>
                 <select class="form-control" id="calc-client" onchange="CalculatorPage.onClientChange(this.value)">
                   <option value="">Не выбран</option>
-                  ${this.clients.map(c => `<option value="${c.id}" data-markup="${c.pricing_markup_pct || 0}" data-level="${c.pricing_level_name || ''}">${c.name}</option>`).join('')}
+                  ${this.clients.map(c => `<option value="${c.id}" data-markup="${c.pricing_markup_pct || 0}" data-level="${esc(c.pricing_level_name)}">${esc(c.name)}</option>`).join('')}
                 </select>
                 <div id="calc-client-level" style="margin-top:4px;font-size:0.78rem"></div>
               </div>
@@ -154,6 +177,8 @@ const CalculatorPage = {
             </div>
             </div> <!-- /calc-bom-totals -->
 
+            <div id="calc-client-price-hint" style="margin-top:10px;font-size:0.8rem"></div>
+
             <div id="calc-final" style="margin-top:16px;padding-top:12px;border-top:2px solid var(--accent-teal)">
               <div class="calc-summary-row total">
                 <span class="label">ИТОГО</span>
@@ -162,8 +187,10 @@ const CalculatorPage = {
             </div>
 
             <div style="margin-top:20px;display:flex;flex-direction:column;gap:8px">
-              ${API.isAdmin() ? `
+              ${API.can('drawings', 'edit') ? `
                 <button class="btn btn-primary btn-full" onclick="CalculatorPage.saveAsDrawing()">💾 Сохранить как шаблон</button>
+              ` : ''}
+              ${API.can('orders', 'edit') ? `
                 <button class="btn btn-secondary btn-full" onclick="CalculatorPage.saveAsOrder()">📋 Сохранить как заказ</button>
               ` : ''}
             </div>
@@ -185,6 +212,9 @@ const CalculatorPage = {
     zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
     zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('drag-over'); if (e.dataTransfer.files[0]) this.uploadDrawing(e.dataTransfer.files[0]); });
     input.addEventListener('change', (e) => { if (e.target.files[0]) this.uploadDrawing(e.target.files[0]); });
+
+    // Построить отфильтрованный список шаблонов
+    await this.refreshTemplateOptions();
 
     // Если есть отложенная загрузка — выполняем
     const pendingDrawingId = this.pendingDrawingId;
@@ -212,9 +242,53 @@ const CalculatorPage = {
     }
   },
 
-  // === При выборе клиента — показать его расчёты ===
+  // === Фильтрация шаблонов по клиенту ===
+  // Чертежи клиента: привязанные к нему (client_ids) или его собственные.
+  // Универсальные (без привязок) показываем отдельной группой.
+  async refreshTemplateOptions() {
+    const select = document.getElementById('calc-template');
+    if (!select) return;
+
+    const clientId = document.getElementById('calc-client')?.value || '';
+    const onlyClient = document.getElementById('calc-only-client')?.checked;
+    const onlyNew = document.getElementById('calc-only-new')?.checked;
+
+    let calculatedIds = new Set();
+    if (clientId) {
+      try {
+        const res = await API.get(`/drawings?client_id=${clientId}&archived=0`);
+        this.clientDrawings = res.data || [];
+        calculatedIds = new Set(this.clientDrawings.filter(d => d.is_calculated).map(d => d.id));
+      } catch { this.clientDrawings = []; }
+    } else {
+      this.clientDrawings = [];
+    }
+
+    const forClient = new Set(this.clientDrawings.map(d => d.id));
+    let list = this.drawings.filter(d => !d.archived_at);
+    if (clientId && onlyClient) list = list.filter(d => forClient.has(d.id));
+    if (clientId && onlyNew) list = list.filter(d => forClient.has(d.id) && !calculatedIds.has(d.id));
+
+    const own = clientId ? list.filter(d => forClient.has(d.id)) : [];
+    const universal = list.filter(d => !(d.client_ids || []).length && !forClient.has(d.id));
+    const others = list.filter(d => !own.includes(d) && !universal.includes(d));
+
+    const opt = (d) => {
+      const calc = calculatedIds.has(d.id) ? ' · ✅ рассчитан' : '';
+      return `<option value="${d.id}">${esc(d.name)} (${d.components_count} комп.${calc})</option>`;
+    };
+
+    select.innerHTML = '<option value="">Загрузить шаблон...</option>' +
+      (own.length ? `<optgroup label="Чертежи клиента">${own.map(opt).join('')}</optgroup>` : '') +
+      (universal.length ? `<optgroup label="Универсальные (общий BOM)">${universal.map(opt).join('')}</optgroup>` : '') +
+      (others.length ? `<optgroup label="Другие клиенты">${others.map(opt).join('')}</optgroup>` : '');
+  },
+
+  // === При выборе клиента — показать его чертежи ===
   async onClientChange(clientId) {
     const container = document.getElementById('calc-client-drawings');
+    if (this.currentDrawingId) await this.applyClientPricing(clientId);
+    await this.refreshTemplateOptions();
     if (!clientId) {
       container.style.display = 'none';
       container.innerHTML = '';
@@ -222,9 +296,8 @@ const CalculatorPage = {
     }
 
     try {
-      const res = await API.get(`/clients/${clientId}/documents/calculations`);
-      const calcs = res.data;
-      if (calcs.length === 0) {
+      const list = this.clientDrawings || [];
+      if (list.length === 0) {
         container.style.display = 'none';
         container.innerHTML = '';
         return;
@@ -233,20 +306,20 @@ const CalculatorPage = {
       container.style.display = 'block';
       container.innerHTML = `
         <div style="padding:8px 0 0;border-top:1px solid var(--border);margin-top:8px">
-          <label style="font-size:0.82rem;color:var(--text-secondary);display:block;margin-bottom:6px">📋 Сохранённые расчёты клиента</label>
-          <div style="display:flex;flex-direction:column;gap:4px;max-height:160px;overflow-y:auto">
-            ${calcs.map(c => `
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--bg-main);border-radius:6px;border:1px solid var(--border);cursor:pointer;transition:background 0.15s" 
-                   onmouseenter="this.style.background='var(--bg-hover)'" 
+          <label style="font-size:0.82rem;color:var(--text-secondary);display:block;margin-bottom:6px">📐 Чертежи клиента</label>
+          <div style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto">
+            ${list.map(c => `
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--bg-main);border-radius:6px;border:1px solid var(--border);cursor:pointer;transition:background 0.15s"
+                   onmouseenter="this.style.background='var(--bg-hover)'"
                    onmouseleave="this.style.background='var(--bg-main)'"
                    onclick="CalculatorPage.loadTemplate(${c.id})">
                 <div>
-                  <div style="font-weight:600;font-size:0.85rem">${c.name}</div>
+                  <div style="font-weight:600;font-size:0.85rem">${esc(c.name)}</div>
                   <div style="font-size:0.75rem;color:var(--text-muted)">${c.components_count} комп. · ${new Date(c.created_at).toLocaleDateString('ru-RU')}</div>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px">
-                  <span style="font-weight:600;font-size:0.85rem;color:var(--accent-teal)">${Table.formatMoney(c.base_cost)}</span>
-                  <span style="font-size:0.8rem;color:var(--text-muted)">→</span>
+                  <span class="badge" style="font-size:0.7rem;background:${c.is_calculated ? 'var(--accent-teal)' : 'var(--bg-tertiary)'};color:${c.is_calculated ? '#fff' : 'var(--text-muted)'}">${c.is_calculated ? '✅ рассчитан' : 'новый'}</span>
+                  <span style="font-weight:600;font-size:0.85rem;color:var(--accent-teal)">${Table.formatMoney(c.total_cost)}</span>
                 </div>
               </div>
             `).join('')}
@@ -289,9 +362,16 @@ const CalculatorPage = {
 
   // === Загрузка шаблона ===
   async loadTemplate(drawingId) {
-    if (!drawingId) return;
+    if (!drawingId) {
+      this.currentDrawingId = null;
+      this.currentDrawingClients = [];
+      this.currentClientPrice = null;
+      this.renderClientPriceHint();
+      return;
+    }
     try {
       const drawing = await API.get(`/drawings/${drawingId}`);
+      this.currentDrawingId = drawing.id;
       this.bomItems = (drawing.components || []).map(c => {
         // Использовать цену модификации, если есть
         const effectivePrice = c.modification_price !== null && c.modification_price !== undefined
@@ -312,24 +392,21 @@ const CalculatorPage = {
         };
       });
 
-      // Если у шаблона есть client_id — выставить клиента
-      if (drawing.client_id) {
-        const clientSelect = document.getElementById('calc-client');
-        if (clientSelect) {
-          clientSelect.value = drawing.client_id;
-        } else {
-          this.pendingClientId = drawing.client_id;
-        }
+      // Клиент: выбранный пользователем важнее владельца чертежа
+      const clientSelect = document.getElementById('calc-client');
+      if (clientSelect && !clientSelect.value && drawing.client_id) {
+        clientSelect.value = drawing.client_id;
       }
+      this.currentDrawingClients = drawing.clients || [];
 
       if (drawing.file_path) {
         document.getElementById('calc-drawing-path').value = drawing.file_path;
         document.getElementById('calc-drawing-type').value = drawing.file_type || '';
         const preview = document.getElementById('calc-drawing-preview');
         if (['jpg', 'jpeg', 'png', 'webp'].includes(drawing.file_type)) {
-          preview.innerHTML = `<img src="${drawing.file_path}" style="max-height:200px;border-radius:8px;display:block;margin:8px auto">`;
+          preview.innerHTML = `<img src="${esc(drawing.file_path)}" style="max-height:200px;border-radius:8px;display:block;margin:8px auto">`;
         } else if (drawing.file_type === 'pdf') {
-          preview.innerHTML = `<div style="padding:16px;text-align:center"><div style="font-size:2rem">📄</div><a href="${drawing.file_path}" target="_blank" style="color:var(--accent-teal)">Открыть PDF →</a></div>`;
+          preview.innerHTML = `<div style="padding:16px;text-align:center"><div style="font-size:2rem">📄</div><a href="${esc(drawing.file_path)}" target="_blank" rel="noopener" style="color:var(--accent-teal)">Открыть PDF →</a></div>`;
         }
       }
 
@@ -337,21 +414,72 @@ const CalculatorPage = {
       const templateSelect = document.getElementById('calc-template');
       if (templateSelect) templateSelect.value = drawingId;
 
-      // Восстановить фиксированную цену если есть
-      const toggle = document.getElementById('calc-fixed-price-toggle');
-      if (drawing.fixed_price !== null && drawing.fixed_price !== undefined && parseFloat(drawing.fixed_price) > 0) {
-        toggle.checked = true;
-        document.getElementById('calc-fixed-price').value = parseFloat(drawing.fixed_price);
-        this.toggleFixedPrice();
-      } else {
-        toggle.checked = false;
-        this.toggleFixedPrice();
-      }
+      // Восстановить общие наценки шаблона
+      const markupPctInput = document.getElementById('calc-markup-pct');
+      const markupRubInput = document.getElementById('calc-markup-rub');
+      if (markupPctInput) markupPctInput.value = parseFloat(drawing.global_markup_pct) || 0;
+      if (markupRubInput) markupRubInput.value = parseFloat(drawing.global_markup_rub) || 0;
+
+      // Фикс-цена принадлежит клиенту: берём её из связи, а не из чертежа
+      await this.applyClientPricing(clientSelect ? clientSelect.value : null, drawing);
 
       this.renderBom();
       this.recalc();
       Toast.success(`Шаблон «${drawing.name}» загружен`);
     } catch (err) { Toast.error(err.message); }
+  },
+
+  // === Цена для выбранного клиента ===
+  // Фикс-цена и наценка живут на связи «чертёж ↔ клиент», поэтому при смене
+  // клиента пересчитываем подсказку и режим фиксированной цены.
+  async applyClientPricing(clientId, drawing) {
+    if (drawing) this.currentDrawingClients = drawing.clients || [];
+    this.currentClientPrice = null;
+
+    const toggle = document.getElementById('calc-fixed-price-toggle');
+    if (!clientId || !this.currentDrawingId) {
+      this.renderClientPriceHint();
+      return;
+    }
+
+    const link = (this.currentDrawingClients || [])
+      .find(c => String(c.client_id) === String(clientId));
+    let price = link ? link.price : null;
+    if (!price) {
+      try {
+        price = await API.get(`/drawings/${this.currentDrawingId}/price?client_id=${clientId}`);
+      } catch (e) {
+        price = null;
+      }
+    }
+    this.currentClientPrice = price || null;
+
+    const fixed = price && price.fixedPrice !== null && price.fixedPrice !== undefined
+      && Number(price.fixedPrice) > 0 ? Number(price.fixedPrice) : null;
+    if (toggle) {
+      toggle.checked = !!fixed;
+      const input = document.getElementById('calc-fixed-price');
+      if (input) input.value = fixed || '';
+      this.toggleFixedPrice();
+    }
+    this.renderClientPriceHint();
+  },
+
+  renderClientPriceHint() {
+    const el = document.getElementById('calc-client-price-hint');
+    if (!el) return;
+    const clientId = document.getElementById('calc-client')?.value;
+    const price = this.currentClientPrice;
+    if (!clientId || !price) {
+      el.innerHTML = '';
+      return;
+    }
+    const isFixed = price.fixedPrice !== null && price.fixedPrice !== undefined;
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:8px;padding:8px 12px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border)">
+        <span style="color:var(--text-secondary)">Цена для клиента${isFixed ? ' (фикс.)' : ''}</span>
+        <strong style="color:var(--accent-teal)">${Table.formatMoney(price.total)}</strong>
+      </div>`;
   },
 
   // === Увеличение фото компонента ===
@@ -385,10 +513,10 @@ const CalculatorPage = {
                 const modCount = parseInt(c.modifications_count) || 0;
                 return `
                   <tr style="cursor:pointer;${already ? 'opacity:0.5' : ''}" onclick="CalculatorPage.addComponent(${c.id})" title="Добавить компонент">
-                    <td>${c.image_path ? `<img src="${c.image_path}" style="width:32px;height:32px;object-fit:cover;border-radius:4px;cursor:zoom-in" onclick="event.stopPropagation();CalculatorPage.zoomImage('${c.image_path}')">` : '📦'}</td>
-                    <td class="font-mono" style="color:var(--accent-teal)">${c.article}</td>
-                    <td>${c.name}${modCount > 0 ? `<span style="margin-left:6px;padding:1px 6px;border-radius:8px;font-size:0.65rem;font-weight:600;background:var(--accent-teal);color:#fff">${modCount} мод.</span>` : ''}</td>
-                    <td><span class="badge badge-in_progress" style="font-size:0.7rem">${c.category_name || '—'}</span></td>
+                    <td>${c.image_path ? `<img src="${esc(c.image_path)}" style="width:32px;height:32px;object-fit:cover;border-radius:4px;cursor:zoom-in" onclick="event.stopPropagation();CalculatorPage.zoomImage(this.src)">` : '📦'}</td>
+                    <td class="font-mono" style="color:var(--accent-teal)">${esc(c.article)}</td>
+                    <td>${esc(c.name)}${modCount > 0 ? `<span style="margin-left:6px;padding:1px 6px;border-radius:8px;font-size:0.65rem;font-weight:600;background:var(--accent-teal);color:#fff">${modCount} мод.</span>` : ''}</td>
+                    <td><span class="badge badge-in_progress" style="font-size:0.7rem">${esc(c.category_name) || '—'}</span></td>
                     <td class="text-right">${Table.formatMoney(c.price)}</td>
                     <td class="text-right" onclick="event.stopPropagation()">${already ? '✓' : `<button class="btn btn-primary btn-sm" onclick="CalculatorPage.addComponent(${c.id})">+</button>`}</td>
                   </tr>`;
@@ -412,7 +540,7 @@ const CalculatorPage = {
           <div class="form-group" style="margin-bottom:0">
             <select class="form-control" id="calc-comp-cat">
               <option value="">Все категории</option>
-              ${this.categories.map(cat => `<option value="${cat.id}">${cat.name}</option>`).join('')}
+              ${this.categories.map(cat => `<option value="${cat.id}">${esc(cat.name)}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -533,7 +661,7 @@ const CalculatorPage = {
                onmouseenter="this.style.borderColor='var(--accent-teal)'" onmouseleave="this.style.borderColor='var(--border)'"` : ''}>
             <div style="display:flex;justify-content:space-between;align-items:center">
               <div>
-                <div style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;color:var(--text-primary)">${comp.article}</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;color:var(--text-primary)">${esc(comp.article)}</div>
                 <div style="font-size:0.85rem;color:var(--text-secondary)">Базовый компонент (без модификации)</div>
               </div>
               <div style="font-weight:600">${Table.formatMoney(comp.price)}</div>
@@ -642,11 +770,11 @@ const CalculatorPage = {
               const lineTotal = base + mPct + mRub;
               return `
                 <tr>
-                  <td>${item.image_path ? `<img src="${item.image_path}" class="calc-comp-thumb" style="width:28px;height:28px;object-fit:cover;border-radius:4px;cursor:zoom-in;transition:transform 0.2s,box-shadow 0.2s" onmouseenter="this.style.transform='scale(3)';this.style.zIndex='100';this.style.position='relative';this.style.boxShadow='0 8px 30px rgba(0,0,0,0.4)'" onmouseleave="this.style.transform='scale(1)';this.style.zIndex='';this.style.position='';this.style.boxShadow=''" onclick="CalculatorPage.zoomImage('${item.image_path}')">` : '📦'}</td>
+                  <td>${item.image_path ? `<img src="${esc(item.image_path)}" class="calc-comp-thumb" style="width:28px;height:28px;object-fit:cover;border-radius:4px;cursor:zoom-in;transition:transform 0.2s,box-shadow 0.2s" onmouseenter="this.style.transform='scale(3)';this.style.zIndex='100';this.style.position='relative';this.style.boxShadow='0 8px 30px rgba(0,0,0,0.4)'" onmouseleave="this.style.transform='scale(1)';this.style.zIndex='';this.style.position='';this.style.boxShadow=''" onclick="CalculatorPage.zoomImage(this.src)">` : '📦'}</td>
                   <td>
-                    <div style="font-weight:600;font-size:0.85rem">${item.name}${item.doc_count > 0 ? ` <a href="/api/components/${item.component_id}/documents/download-all?token=${API.getToken()}" title="Скачать документы (${item.doc_count})" style="text-decoration:none;cursor:pointer">📎<sup style="font-size:0.65rem;color:var(--accent-teal)">${item.doc_count}</sup></a>` : ''}</div>
-                    <div style="font-size:0.75rem;color:var(--accent-teal)" class="font-mono">${item.article}</div>
-                    ${item.modification_name ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:1px">${item.modification_name}</div>` : ''}
+                    <div style="font-weight:600;font-size:0.85rem">${esc(item.name)}${item.doc_count > 0 ? ` <a href="/api/components/${item.component_id}/documents/download-all" title="Скачать документы (${item.doc_count})" style="text-decoration:none;cursor:pointer">📎<sup style="font-size:0.65rem;color:var(--accent-teal)">${item.doc_count}</sup></a>` : ''}</div>
+                    <div style="font-size:0.75rem;color:var(--accent-teal)" class="font-mono">${esc(item.article)}</div>
+                    ${item.modification_name ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:1px">${esc(item.modification_name)}</div>` : ''}
                   </td>
                   <td class="text-center"><div style="display:flex;align-items:stretch;border-radius:6px;border:1px solid var(--border);overflow:hidden;height:30px;margin:0 auto;max-width:100px"><button type="button" onclick="CalculatorPage.updateBomItem(${i},'quantity',Math.max(1,${item.quantity}-1))" style="width:24px;border:none;background:var(--bg-tertiary);color:var(--text-secondary);cursor:pointer;font-size:0.9rem;font-weight:700;display:flex;align-items:center;justify-content:center;transition:all 0.15s" onmouseenter="this.style.background='var(--accent-teal)';this.style.color='#fff'" onmouseleave="this.style.background='var(--bg-tertiary)';this.style.color='var(--text-secondary)'">−</button><input type="number" value="${item.quantity}" min="1" step="1" style="flex:1;font-size:0.85rem;padding:0;text-align:center;border:none;border-left:1px solid var(--border);border-right:1px solid var(--border);border-radius:0;-moz-appearance:textfield;-webkit-appearance:none;min-width:0;font-weight:700;height:100%;line-height:30px;background:var(--bg-input);color:var(--text-primary);outline:none;box-sizing:border-box" onchange="CalculatorPage.updateBomItem(${i},'quantity',this.value)"><button type="button" onclick="CalculatorPage.updateBomItem(${i},'quantity',${item.quantity}+1)" style="width:24px;border:none;background:var(--bg-tertiary);color:var(--text-secondary);cursor:pointer;font-size:0.9rem;font-weight:700;display:flex;align-items:center;justify-content:center;transition:all 0.15s" onmouseenter="this.style.background='var(--accent-teal)';this.style.color='#fff'" onmouseleave="this.style.background='var(--bg-tertiary)';this.style.color='var(--text-secondary)'">+</button></div></td>
                   <td class="text-right" style="font-size:0.85rem">${Table.formatMoney(item.price)}</td>
@@ -728,15 +856,16 @@ const CalculatorPage = {
       itemMarkupTotal += mPct + mRub;
     });
 
-    const subtotal = baseTotal + itemMarkupTotal;
-    // Наценка уровня клиента
-    const levelMarkupAmount = subtotal * levelMarkupPct / 100;
-    const subtotalWithLevel = subtotal + levelMarkupAmount;
+    // Округляем на каждом шаге — так же, как services/drawings.js,
+    // иначе калькулятор и карточка чертежа расходятся на копейки.
+    const subtotal = calcRound2(baseTotal + itemMarkupTotal);
+    const levelMarkupAmount = calcRound2(subtotal * levelMarkupPct / 100);
+    const subtotalWithLevel = calcRound2(subtotal + levelMarkupAmount);
 
     const totalMarkupPct = parseFloat(document.getElementById('calc-markup-pct')?.value) || 0;
-    const totalMarkupRub = parseFloat(document.getElementById('calc-markup-rub')?.value) || 0;
-    const totalMarkup = subtotalWithLevel * totalMarkupPct / 100 + totalMarkupRub;
-    const total = subtotalWithLevel + totalMarkup;
+    const totalMarkupRub = calcRound2(parseFloat(document.getElementById('calc-markup-rub')?.value) || 0);
+    const totalMarkup = calcRound2(subtotalWithLevel * totalMarkupPct / 100) + totalMarkupRub;
+    const total = calcRound2(subtotalWithLevel + totalMarkup);
 
     document.getElementById('calc-base').innerHTML = Table.formatMoney(baseTotal);
     document.getElementById('calc-item-markup').innerHTML = (itemMarkupTotal >= 0 ? '+' : '') + Table.formatMoney(itemMarkupTotal);
@@ -767,36 +896,106 @@ const CalculatorPage = {
   },
 
   // === Сохранить как шаблон чертежа ===
+  // Если шаблон уже загружен — обновляем его, а не создаём дубликат.
+  // Один файл = один чертёж: при совпадении хэша предлагаем привязать существующий.
   async saveAsDrawing(autoName) {
     if (!this.isFixedPrice() && this.bomItems.length === 0) { Toast.error('Добавьте хотя бы один компонент или укажите фиксированную цену'); return null; }
+
+    // Чертёж всегда принадлежит клиенту — без него сохранять нельзя
+    const clientSelect = document.getElementById('calc-client');
+    const client_id = clientSelect.value || null;
+    if (!client_id) { Toast.error('Выберите клиента — чертёж без клиента сохранить нельзя'); return null; }
 
     const defaultName = autoName || 'Чертёж ' + new Date().toLocaleDateString('ru-RU');
     const name = autoName || prompt('Название шаблона чертежа:', defaultName);
     if (!name) return null;
 
-    const client_id = document.getElementById('calc-client').value || null;
+    const fixedPrice = this.isFixedPrice() ? (parseFloat(document.getElementById('calc-fixed-price')?.value) || 0) : null;
+    if (this.isFixedPrice() && !(fixedPrice > 0)) {
+      Toast.error('Укажите фиксированную цену больше нуля');
+      return null;
+    }
+    const globalMarkupPct = parseFloat(document.getElementById('calc-markup-pct')?.value) || 0;
+    const globalMarkupRub = parseFloat(document.getElementById('calc-markup-rub')?.value) || 0;
+
+    const payload = {
+      name,
+      file_path: document.getElementById('calc-drawing-path').value || null,
+      file_type: document.getElementById('calc-drawing-type').value || null,
+      description: '',
+      fixed_price: fixedPrice,
+      level_markup_pct: (() => {
+        const opt = clientSelect?.selectedOptions[0];
+        return parseFloat(opt?.dataset?.markup) || 0;
+      })(),
+      global_markup_pct: globalMarkupPct,
+      global_markup_rub: globalMarkupRub,
+      components: this.bomItems.map(item => ({
+        component_id: item.component_id,
+        modification_id: item.modification_id || null,
+        quantity: item.quantity,
+        item_markup_pct: item.item_markup_pct,
+        item_markup_rub: item.item_markup_rub,
+      })),
+    };
 
     try {
-      const fixedPrice = this.isFixedPrice() ? (parseFloat(document.getElementById('calc-fixed-price')?.value) || 0) : null;
-      const result = await API.post('/drawings', {
-        name,
-        file_path: document.getElementById('calc-drawing-path').value || null,
-        file_type: document.getElementById('calc-drawing-type').value || null,
-        description: '',
-        client_id,
-        fixed_price: fixedPrice,
-        components: this.bomItems.map(item => ({
-          component_id: item.component_id,
-          modification_id: item.modification_id || null,
-          quantity: item.quantity,
-          item_markup_pct: item.item_markup_pct,
-          item_markup_rub: item.item_markup_rub,
-        })),
-      });
-      if (!autoName) Toast.success('Шаблон чертежа сохранён!');
-      // Обновить список шаблонов
+      let result;
+
+      if (this.currentDrawingId) {
+        // Обновляем существующий BOM (общий для всех привязанных клиентов).
+        // description не передаём, чтобы не затереть описание чертежа.
+        const { description, ...updatePayload } = payload;
+        result = await API.put(`/drawings/${this.currentDrawingId}`, updatePayload);
+      } else {
+        try {
+          result = await API.post('/drawings', { ...payload, client_id });
+        } catch (err) {
+          const dup = err.data && err.data.duplicate;
+          if (err.status === 409 && dup) {
+            const owners = dup.client_names || 'без клиента';
+            if (!confirm(`Такой файл уже загружен: «${dup.name}» (${owners}).\n\nИспользовать существующий чертёж?`)) return null;
+            if (client_id) {
+              await API.post(`/drawings/${dup.id}/clients`, {
+                client_id,
+                ...(fixedPrice !== null ? { fixed_price: fixedPrice } : {}),
+              });
+            }
+            result = await API.get(`/drawings/${dup.id}`);
+            Toast.info('Используем существующий чертёж');
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      this.currentDrawingId = result.id;
+
+      // Подтянуть связи и цену клиента после сохранения
+      try {
+        const fresh = await API.get(`/drawings/${result.id}`);
+        this.currentDrawingClients = fresh.clients || [];
+        const link = this.currentDrawingClients.find(c => String(c.client_id) === String(client_id));
+        this.currentClientPrice = link ? link.price : fresh.price;
+        this.renderClientPriceHint();
+      } catch (e) { /* подсказка не должна блокировать сохранение */ }
+
+      // Снимок расчёта в журнал (суммы пересчитывает сервер)
+      try {
+        await API.post('/drawings/calculations', {
+          drawing_id: result.id,
+          client_id,
+          principal_id: document.getElementById('calc-principal')?.value || null,
+          global_markup_pct: globalMarkupPct,
+          global_markup_rub: globalMarkupRub,
+          ...(fixedPrice !== null ? { fixed_price: fixedPrice } : {}),
+        });
+      } catch (e) { /* журнал не должен блокировать сохранение */ }
+
+      if (!autoName) Toast.success(this.currentDrawingId ? 'Шаблон чертежа сохранён!' : 'Шаблон создан!');
       const drawRes = await API.get('/drawings');
       this.drawings = drawRes.data;
+      await this.refreshTemplateOptions();
       return result;
     } catch (err) { Toast.error(err.message); return null; }
   },
@@ -815,18 +1014,26 @@ const CalculatorPage = {
     const totalMarkupPct = parseFloat(document.getElementById('calc-markup-pct')?.value) || 0;
     const totalMarkupRub = parseFloat(document.getElementById('calc-markup-rub')?.value) || 0;
 
-    // Автоматически сохраняем шаблон
-    await this.saveAsDrawing(drawingName);
+    // Автоматически сохраняем шаблон и запоминаем его id
+    const savedDrawing = await this.saveAsDrawing(drawingName);
+    if (!savedDrawing) return;
+
+    // Цена заказа = цене чертежа для этого клиента (сервер — единственный источник)
+    let clientPrice = null;
+    try {
+      clientPrice = await API.get(`/drawings/${savedDrawing.id}/price?client_id=${client_id}`);
+    } catch (e) { /* ниже — резервный локальный расчёт */ }
 
     let grandTotal;
     let metadata;
 
     if (this.isFixedPrice()) {
       // Режим фиксированной цены
-      grandTotal = parseFloat(document.getElementById('calc-fixed-price')?.value) || 0;
+      grandTotal = clientPrice ? clientPrice.total : (parseFloat(document.getElementById('calc-fixed-price')?.value) || 0);
       metadata = {
         type: 'calculator_fixed_price',
-        fixed_price: grandTotal,
+        client_id: Number(client_id),
+        fixed_price: clientPrice && clientPrice.fixedPrice ? clientPrice.fixedPrice : grandTotal,
         grand_total: grandTotal,
       };
     } else {
@@ -861,9 +1068,12 @@ const CalculatorPage = {
       const globalMarkupPctAmount = subtotalWithLevel * totalMarkupPct / 100;
       const globalMarkupRubAmount = totalMarkupRub;
       grandTotal = subtotalWithLevel + globalMarkupPctAmount + globalMarkupRubAmount;
+      // Если у клиента есть фикс-цена или наценка связи — берём расчёт сервера
+      if (clientPrice) grandTotal = clientPrice.total;
 
       metadata = {
         type: 'calculator_drawing',
+        client_id: Number(client_id),
         components: componentsData,
         components_total: componentsTotal,
         item_markups_total: itemMarkupsTotal,
@@ -880,6 +1090,8 @@ const CalculatorPage = {
       product_name: drawingName,
       unit_price: grandTotal,
       quantity: 1,
+      is_drawing: true,
+      drawing_id: savedDrawing.id || null,
       metadata,
     }];
 
@@ -900,6 +1112,6 @@ const CalculatorPage = {
   downloadAllDocs() {
     const ids = [...new Set(this.bomItems.filter(it => it.doc_count > 0).map(it => it.component_id))];
     if (ids.length === 0) { Toast.error('Нет документов для скачивания'); return; }
-    window.open(`/api/component-documents/download-zip?ids=${ids.join(',')}&token=${API.getToken()}`, '_blank');
+    window.open(`/api/component-documents/download-zip?ids=${ids.join(',')}`, '_blank');
   },
 };
