@@ -72,8 +72,8 @@ async function insertClient(runner, entry, statusId, pricingLevelId) {
   const result = await runner.query(
     `INSERT INTO clients (name, phone, email, site, address, notes, status_id, pricing_level_id,
        inn, kpp, legal_address, ogrn, postal_address, bank_account, bank_name, bik, corr_account,
-       director, client_type)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+       director, client_type, ogrnip)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
      RETURNING id`,
     [
       entry.name,
@@ -95,6 +95,7 @@ async function insertClient(runner, entry, statusId, pricingLevelId) {
       entry.corr_account || null,
       entry.director || null,
       entry.client_type || 'ooo',
+      entry.ogrnip || null,
     ]
   );
   return result.rows[0].id;
