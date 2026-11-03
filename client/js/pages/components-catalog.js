@@ -378,7 +378,7 @@ const ComponentsCatalogPage = {
           </div>
           <div style="display:flex;flex-direction:column;gap:10px" id="mods-list">
             ${mods.map(m => {
-              const fullArticle = comp.article + '.' + m.code;
+              const fullArticle = fullArticle(comp.article, m.code);
               const modPrice = m.price_override !== null ? m.price_override : comp.price;
               const images = m.images || [];
               return `

@@ -376,7 +376,7 @@ const CalculatorPage = {
         // Использовать цену модификации, если есть
         const effectivePrice = c.modification_price !== null && c.modification_price !== undefined
           ? parseFloat(c.modification_price) : parseFloat(c.price);
-        const displayArticle = c.modification_code ? c.article + '.' + c.modification_code : c.article;
+        const displayArticle = fullArticle(c.article, c.modification_code);
         return {
           component_id: c.component_id,
           modification_id: c.modification_id || null,
@@ -591,7 +591,7 @@ const CalculatorPage = {
     if (modificationId && this._lastMods) {
       const mod = this._lastMods.find(m => m.id === modificationId);
       if (mod) {
-        article = comp.article + '.' + mod.code;
+        article = fullArticle(comp.article, mod.code);
         modName = mod.name;
         if (mod.price_override !== null && mod.price_override !== undefined) {
           price = parseFloat(mod.price_override);
@@ -629,7 +629,7 @@ const CalculatorPage = {
 
     const renderModPicker = () => {
       const items = mods.filter(m => m.is_active !== false).map(m => {
-        const fullArticle = comp.article + '.' + m.code;
+        const fullArticle = fullArticle(comp.article, m.code);
         const price = m.price_override !== null ? m.price_override : comp.price;
         const already = this.bomItems.some(b => b.component_id === comp.id && b.modification_id === m.id);
         return `
@@ -699,7 +699,7 @@ const CalculatorPage = {
     if (modId && this._lastMods) {
       const mod = this._lastMods.find(m => m.id === modId);
       if (mod) {
-        article = comp.article + '.' + mod.code;
+        article = fullArticle(comp.article, mod.code);
         modName = mod.name;
         if (mod.price_override !== null && mod.price_override !== undefined) {
           price = parseFloat(mod.price_override);

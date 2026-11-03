@@ -427,7 +427,7 @@ const EquipmentPage = {
                 </tr></thead>
                 <tbody>
                   ${comps.map(c => {
-                    const fullArticle = c.modification_code ? c.article + '.' + c.modification_code : c.article;
+                    const fullArticle = fullArticle(c.article, c.modification_code);
                     const displayName = c.modification_name ? c.component_name + ' — ' + c.modification_name : c.component_name;
                     const price = c.modification_price !== null && c.modification_price !== undefined ? parseFloat(c.modification_price) : parseFloat(c.component_price);
                     return `
@@ -469,7 +469,7 @@ const EquipmentPage = {
     if (!data) return;
     const c = (data.comps || []).find(x => x.id === compId);
     if (!c) return;
-    const fullArticle = c.modification_code ? c.article + '.' + c.modification_code : c.article;
+    const fullArticle = fullArticle(c.article, c.modification_code);
     const displayName = c.modification_name ? c.component_name + ' — ' + c.modification_name : c.component_name;
     const price = c.modification_price !== null && c.modification_price !== undefined
       ? parseFloat(c.modification_price) : parseFloat(c.component_price);
@@ -491,7 +491,7 @@ const EquipmentPage = {
       const product = (mfr.products || []).find(p => p.id === productId);
       if (!product) return;
       (product.components || []).forEach(c => {
-        const fullArticle = c.modification_code ? c.article + '.' + c.modification_code : c.article;
+        const fullArticle = fullArticle(c.article, c.modification_code);
         const displayName = c.modification_name ? c.component_name + ' — ' + c.modification_name : c.component_name;
         const price = c.modification_price !== null && c.modification_price !== undefined ? parseFloat(c.modification_price) : parseFloat(c.component_price);
         this.addToCart({
@@ -978,7 +978,7 @@ const EquipmentPage = {
           </div>
         </div>
         ${mods.map(m => {
-          const fullArticle = comp.article + '.' + m.code;
+          const fullArticle = fullArticle(comp.article, m.code);
           const price = m.price_override !== null ? m.price_override : comp.price;
           return `
             <div style="background:var(--bg-main);border:1px solid var(--border);border-radius:10px;padding:10px 14px;cursor:pointer;transition:border-color 0.2s"

@@ -1,4 +1,5 @@
 const express = require('express');
+const { fullArticle } = require('../utils/article');
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { normalizeUploadPath, fileSha256 } = require('../utils/files');
@@ -318,7 +319,7 @@ router.post('/calculations', auth, async (req, res) => {
       const markupRub = round2(item.item_markup_rub);
       return {
         component_id: item.component_id,
-        article: item.modification_code ? `${item.article}.${item.modification_code}` : item.article,
+        article: fullArticle(item.article, item.modification_code),
         name: item.component_name,
         price: round2(price),
         quantity,
@@ -852,7 +853,7 @@ router.post('/:id/calculate', auth, async (req, res) => {
 
       return {
         component_name: item.component_name,
-        article: item.modification_code ? `${item.article}.${item.modification_code}` : item.article,
+        article: fullArticle(item.article, item.modification_code),
         modification_name: item.modification_name || null,
         price: effectivePrice,
         quantity: parseFloat(item.quantity),

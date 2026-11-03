@@ -15,7 +15,11 @@
     "lint": "eslint src dev test eslint.config.js && node scripts/check-client-syntax.js",
     "demo:migrate": "node dev/run.js src/db/migrate.js",
     "db:preseed": "node src/db/preseed.js",
-    "demo:preseed": "node dev/preseed.js"
+    "demo:preseed": "node dev/preseed.js",
+    "db:catalog": "node src/db/catalog.js",
+    "demo:catalog": "node dev/catalog.js",
+    "db:init:full": "npm run db:init && npm run db:catalog",
+    "demo:init:full": "npm run demo:init && npm run demo:catalog"
   },
   "dependencies": {
     "archiver": "^5.3.2",

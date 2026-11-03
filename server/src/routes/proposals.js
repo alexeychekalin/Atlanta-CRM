@@ -1,4 +1,5 @@
 const express = require('express');
+const { fullArticle } = require('../utils/article');
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { calculateItems, getVatSettings, calculateVat } = require('../services/pricing');
@@ -294,7 +295,7 @@ router.post('/:id/convert', auth, async (req, res) => {
           const lineTotal = baseTotal + markupPctAmount + markupRub;
           return {
             name: c.component_name || 'Компонент',
-            article: c.modification_code ? (c.article || '') + '.' + c.modification_code : (c.article || ''),
+            article: fullArticle(c.article, c.modification_code),
             modification_name: c.modification_name || null,
             price: effectivePrice,
             quantity: qty,

@@ -168,6 +168,20 @@ node src/db/migrate_roles.js 2>/dev/null || warn "Миграция ролей: �
 
 # Предзаполнение: клиенты из карточек предприятий (src/db/preseed)
 node src/db/preseed.js 2>/dev/null || warn "Предзаполнение: ошибка или данные уже загружены"
+
+# Каталог компонентов (src/db/catalog) — только для полной версии.
+# Пустая версия разворачивается без каталога, догрузить позже: cd server && npm run db:catalog
+if [ "${WITH_CATALOG:-0}" = "1" ]; then
+  log "Импортирую каталог компонентов..."
+  if node src/db/catalog.js; then
+    touch "$APP_DIR/server/.catalog-enabled"
+    log "Каталог компонентов загружен"
+  else
+    warn "Каталог: ошибка импорта (система запустится с пустым каталогом)"
+  fi
+else
+  log "Каталог не импортирован — пустая версия (полная: sudo WITH_CATALOG=1 ./deploy.sh)"
+fi
 cd "$APP_DIR"
 log "Данные загружены"
 

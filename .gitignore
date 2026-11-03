@@ -46,3 +46,6 @@ yarn-error.log*
 # Antigravity artifacts
 .gemini/
 .pglite/
+
+# Маркер «полной» установки: каталог компонентов включён
+server/.catalog-enabled

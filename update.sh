@@ -54,6 +54,19 @@ fi
 if [ -f "$APP_DIR/server/src/db/preseed.js" ]; then
   node src/db/preseed.js >/dev/null 2>&1 && log "Предзаполнение применено" || warn "Предзаполнение: ошибка или данные уже загружены"
 fi
+
+# Каталог компонентов: обновляем, только если он был включён при установке
+# (маркер server/.catalog-enabled) или передан WITH_CATALOG=1
+if [ -f "$APP_DIR/server/.catalog-enabled" ] || [ "${WITH_CATALOG:-0}" = "1" ]; then
+  if [ -f "$APP_DIR/server/src/db/catalog.js" ]; then
+    if node src/db/catalog.js >/dev/null 2>&1; then
+      touch "$APP_DIR/server/.catalog-enabled"
+      log "Каталог компонентов обновлён"
+    else
+      warn "Каталог: ошибка импорта"
+    fi
+  fi
+fi
 cd "$APP_DIR"
 
 # 4. Запустить сервис

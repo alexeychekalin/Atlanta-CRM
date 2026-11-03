@@ -27,9 +27,11 @@ function loadDrawingsPage(overrides = {}) {
   };
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(clientDir, 'components/escape.js'), 'utf8'), sandbox);
+  vm.runInContext(fs.readFileSync(path.join(clientDir, 'components/article.js'), 'utf8'), sandbox);
   // В браузере helpers висят на window и доступны как глобальные
   sandbox.esc = sandbox.window.esc;
   sandbox.safeUrl = sandbox.window.safeUrl;
+  sandbox.fullArticle = sandbox.window.fullArticle;
   vm.runInContext(
     fs.readFileSync(path.join(clientDir, 'pages/drawings.js'), 'utf8') + '\n;globalThis.DrawingsPage = DrawingsPage;',
     sandbox
