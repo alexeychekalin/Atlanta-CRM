@@ -1,5 +1,8 @@
-"""Разбор разделов «Указатели поворота» (стр. 48) и «Фонари освещения номерного
-знака» (стр. 50–54) каталога АТЛАНТА-26.
+"""Разбор разделов «Указатели поворота» (стр. 48), «Фонари освещения номерного
+знака» (стр. 50–54), «Фонари заднего хода» (стр. 55–57), «Фонари
+противотуманные» (стр. 58–59) и «Фонари дополнительного сигнала торможения»
+(стр. 60–62) и «Плафоны внутреннего освещения» (стр. 63–66)
+каталога АТЛАНТА-26.
 
 Эти разделы устроены проще габаритных: одна позиция на страницу, заголовок
 с пометкой в скобках стоит внизу страницы, таблица артикулов — там же.
@@ -30,12 +33,21 @@ STOP = ('ООО "АТЛАНТА"', 'Артикул Описание', 'Функ�
 SECTIONS = [
     {'key': 'turn', 'category': 'turn', 'pages': [48]},
     {'key': 'plate', 'category': 'plate', 'pages': [50, 51, 52, 53, 54]},
+    {'key': 'reverse', 'category': 'reverse', 'pages': [56, 57]},
+    {'key': 'fog', 'category': 'fog', 'pages': [59]},
+    {'key': 'brake', 'category': 'brake', 'pages': [61, 62]},
+    {'key': 'interior', 'category': 'interior', 'pages': [64, 65, 66]},
 ]
 
 # Опечатки каталога, которые в карточке товара читались бы как ошибка
 NAME_FIXES = {
     'заднегорегистрационного': 'заднего регистрационного',
 }
+
+# Стр. 62: в таблице напечатан артикул предыдущей позиции (А.3716.003),
+# хотя страница о А.3716.004 — коды модификаций одинаковые, поэтому строки
+# берём с этим base, а результат пишем на артикул из заголовка.
+ROW_BASE_OVERRIDE = {62: 'А.3716.003'}
 
 TR = str.maketrans({'А': 'a', 'Б': 'b', 'Ж': 'zh', 'Л': 'l', 'П': 'p', 'Т': 't',
                     'О': 'o', 'У': 'u', '.': '-', '/': '-', ' ': '-'})
@@ -79,13 +91,15 @@ def specs(t):
         line = line.lstrip('• ').strip()
         if not line:
             continue
-        if merged and (line.startswith('(') or merged[-1].endswith('+')):
+        if merged and (line.startswith('(') or line[0].islower()
+                       or merged[-1].endswith(('+', ','))):
             merged[-1] = merged[-1] + ' ' + line
         else:
             merged.append(line)
 
     p = block(t, 'Параметры:', ['Артикул Описание', 'ООО "АТЛАНТА"'])
-    out = {'functions': merged, 'voltage': None, 'temperature': None, 'protection': None, 'power': []}
+    out = {'functions': merged, 'voltage': None, 'temperature': None, 'protection': None,
+           'power': [], 'color_temperature': None, 'luminous_flux': None}
     inp = False
     for line in p:
         if line.startswith('Напряжение питания'):
@@ -93,6 +107,10 @@ def specs(t):
         elif line.startswith('Диапазон раб'):
             v = after_colon(line, r'Диапазон раб\.?\s*Темп\.?')
             out['temperature'] = re.sub(r'\s+', ' ', re.sub(r'от\s*[–-]\s*', 'от −', v).replace('°C', ' °C')).strip()
+        elif line.startswith('Температура цвета'):
+            out['color_temperature'] = tidy(after_colon(line, 'Температура цвета'))
+        elif line.startswith('Световой поток'):
+            out['luminous_flux'] = tidy(after_colon(line, 'Световой поток'))
         elif line.startswith('Степень защиты'):
             v = after_colon(line, 'Степень защиты')
             m = re.match(r'(IP\d+)\s*(ГОСТ\s*\d+)?', v)
@@ -112,7 +130,7 @@ def normalize_name(s):
     for wrong, right in NAME_FIXES.items():
         s = s.replace(wrong, right)
     s = re.sub(r'^([а-яё])', lambda m: m.group(1).upper(), s)
-    for a in ('LED', 'IP', 'ТС', 'ФОНЗ', 'E28'):
+    for a in ('LED', 'IP', 'ТС', 'ФОНЗ', 'ФЗХ', 'ПТФ', 'ДСТ', 'E28'):
         s = re.sub(r'(?<![а-яёa-z])' + a.lower() + r'(?![а-яёa-z])', a, s)
     return s
 
@@ -128,6 +146,10 @@ def description(name, sp):
         tech.append('защита ' + sp['protection'])
     if sp['temperature']:
         tech.append('рабочая температура ' + sp['temperature'])
+    if sp['color_temperature']:
+        tech.append('цветовая температура ' + sp['color_temperature'])
+    if sp['luminous_flux']:
+        tech.append('световой поток ' + sp['luminous_flux'].replace('Лм', 'лм').replace('ЛМ', 'лм'))
     if tech:
         s = ', '.join(tech)
         parts.append(s[0].upper() + s[1:] + '.')
@@ -179,13 +201,14 @@ def parse_page(pg, category):
         return None
 
     sp = specs(t)
+    row_base = ROW_BASE_OVERRIDE.get(pg, title[0])
     mods = []
     for l in lines:
         m = ROW_RE.match(l)
         if not m:
             continue
         base, code, desc = m.group(1), m.group(2), m.group(3).strip()
-        if base != title[0] or not code:
+        if base != row_base or not code:
             continue
         if re.match(r'^[А-ЯЁ\s]+$', desc):
             continue
