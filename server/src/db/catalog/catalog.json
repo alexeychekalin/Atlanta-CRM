@@ -13,7 +13,7 @@
   "catalog": {
     "title": "АТЛАНТА-26",
     "source": "Каталог АТЛАНТА-26.pdf",
-    "pages_imported": "6-66",
+    "pages_imported": "6-79",
     "imported_at": "2026-11-03"
   },
   "categories": [
@@ -74,6 +74,142 @@
     }
   ],
   "components": [
+    {
+      "category": "accessory",
+      "article": "9540-3716450-50",
+      "name": "Чехол защитный средний",
+      "description": "Чехол защитный средний. чехол средний предназначен для защиты зоны подключения фонаря от механических повреждений, агрессивных воздействий дорожной среды, совместим с фонарями А.3776.005 (01), А.3776.015 (01), А.3776.008, А.3776.008.1",
+      "specs": {
+        "functions": [],
+        "voltage": null,
+        "temperature": null,
+        "protection": null,
+        "power": [],
+        "dimensions": null
+      },
+      "image": "9540-3716450-50.jpeg",
+      "source_page": 78,
+      "modifications": []
+    },
+    {
+      "category": "accessory",
+      "article": "97461Н-3716021-01",
+      "name": "Кронштейн на обечайку",
+      "description": "Кронштейн на обечайку. надёжное крепление на обечайку габаритных боковых фонарей — резиновый кронштейн эффективно гасит вибрацию и ударные нагрузки",
+      "specs": {
+        "functions": [],
+        "voltage": null,
+        "temperature": null,
+        "protection": null,
+        "power": [],
+        "dimensions": null
+      },
+      "image": "97461n-3716021-01.jpeg",
+      "source_page": 77,
+      "modifications": []
+    },
+    {
+      "category": "accessory",
+      "article": "А.4739.001",
+      "name": "Кронштейн на трубу",
+      "description": "Кронштейн на трубу. надёжное крепление для габаритного бокового фонаря на круглую трубу диаметром 42 мм резиновый кронштейн гасит вибрации и защищает трубу и корпус фонаря от повреждений",
+      "specs": {
+        "functions": [],
+        "voltage": null,
+        "temperature": null,
+        "protection": null,
+        "power": [],
+        "dimensions": null
+      },
+      "image": "a-4739-001.jpeg",
+      "source_page": 77,
+      "modifications": []
+    },
+    {
+      "category": "accessory",
+      "article": "А.4739.002",
+      "name": "Чехол защитный большой",
+      "description": "Чехол защитный большой. чехол большой предназначен для защиты зоны подключения фонаря от механических повреждений, агрессивных воздействий дорожной среды, совместим с фонарями А.3776.005, А.3776.015",
+      "specs": {
+        "functions": [],
+        "voltage": null,
+        "temperature": null,
+        "protection": null,
+        "power": [],
+        "dimensions": null
+      },
+      "image": "a-4739-002.jpeg",
+      "source_page": 78,
+      "modifications": []
+    },
+    {
+      "category": "accessory",
+      "article": "А.4739.006",
+      "name": "Колпачок на гайку 32",
+      "description": "Колпачок на гайку 32. колпачок на гайку 32 мм: защита резьбы от грязи, пыли и влаги, декоративная функция",
+      "specs": {
+        "functions": [],
+        "voltage": null,
+        "temperature": null,
+        "protection": null,
+        "power": [],
+        "dimensions": null
+      },
+      "image": "a-4739-006.jpeg",
+      "source_page": 78,
+      "modifications": []
+    },
+    {
+      "category": "accessory",
+      "article": "А.4739.009-01",
+      "name": "Коробка распределительная электрическая (одинарная)",
+      "description": "Коробка распределительная электрическая (одинарная). распределительная коробка одинарная предназначена для организации 8 разветвлений проводов в бортовой сети ТС. обеспечивает надёжную коммутацию электрических цепей, защищает контактные узлы от пыли, влаги, вибраций и случайных прикосновений. корпус выполнен из ударопрочного термостойкого пластика, устойчивого к воздействию масел, топлива и дорожных реагентов. герметичные вводы с уплотнительными кольцами обеспечивают высокую степень защиты IP69",
+      "specs": {
+        "functions": [],
+        "voltage": null,
+        "temperature": null,
+        "protection": null,
+        "power": [],
+        "dimensions": null
+      },
+      "image": "a-4739-009-01.jpeg",
+      "source_page": 79,
+      "modifications": []
+    },
+    {
+      "category": "accessory",
+      "article": "А.4739.009-02",
+      "name": "Коробка распределительная электрическая (двойная)",
+      "description": "Коробка распределительная электрическая (двойная). распределительная коробка двойная предназначена для организации 14 разветвлений проводов в бортовой сети ТС. обеспечивает надёжную коммутацию электрических цепей, защищает контактные узлы от пыли, влаги, вибраций и случайных прикосновений. корпус выполнен из ударопрочного термостойкого пластика, устойчивого к воздействию масел, топлива и дорожных реагентов. герметичные вводы с уплотнительными кольцами обеспечивают высокую степень защиты IP69",
+      "specs": {
+        "functions": [],
+        "voltage": null,
+        "temperature": null,
+        "protection": null,
+        "power": [],
+        "dimensions": null
+      },
+      "image": "a-4739-009-02.jpeg",
+      "source_page": 79,
+      "modifications": []
+    },
+    {
+      "category": "accessory",
+      "article": "ЗИСС 02.3713.000-10",
+      "name": "Универсальный кронштейн",
+      "description": "Универсальный кронштейн. кронштейн из ударопрочного ABS-пластика выдерживает вибрацию на неровных дорогах и не подвержен коррозии",
+      "specs": {
+        "functions": [],
+        "voltage": null,
+        "temperature": null,
+        "protection": null,
+        "power": [],
+        "dimensions": null
+      },
+      "image": "ziss-02-3713-000-10.jpeg",
+      "source_page": 77,
+      "modifications": []
+    },
     {
       "category": "brake",
       "article": "А.3716.003",
@@ -141,6 +277,91 @@
           "name": "кабель 0,5 м с открытым концом"
         }
       ]
+    },
+    {
+      "category": "connector",
+      "article": "А.3723.001",
+      "name": "Соединитель универсальный (быстрый обжим)",
+      "description": "Соединитель универсальный (быстрый обжим). длина кабеля — 0,5/1/1,5 м с открытым концом. соединитель универсальный совместим с кабелем КАВТ 2х1,5 прямоугольный",
+      "specs": {
+        "functions": [],
+        "voltage": null,
+        "temperature": null,
+        "protection": null,
+        "power": [],
+        "dimensions": null
+      },
+      "image": "a-3723-001.jpeg",
+      "source_page": 75,
+      "modifications": []
+    },
+    {
+      "category": "connector",
+      "article": "А.3723.006",
+      "name": "Вилка типа 282104",
+      "description": "Вилка типа 282104. длина кабеля — 0,5/1/1,5 м с открытым концом",
+      "specs": {
+        "functions": [],
+        "voltage": null,
+        "temperature": null,
+        "protection": null,
+        "power": [],
+        "dimensions": null
+      },
+      "image": "a-3723-006.jpeg",
+      "source_page": 75,
+      "modifications": []
+    },
+    {
+      "category": "connector",
+      "article": "А.3723.007",
+      "name": "Розетка типа 282080",
+      "description": "Розетка типа 282080. длина кабеля — 0,5/1/1,5 м с открытым концом",
+      "specs": {
+        "functions": [],
+        "voltage": null,
+        "temperature": null,
+        "protection": null,
+        "power": [],
+        "dimensions": null
+      },
+      "image": "a-3723-007.jpeg",
+      "source_page": 75,
+      "modifications": []
+    },
+    {
+      "category": "connector",
+      "article": "А.3723.015",
+      "name": "Вилка байонет 5-конт. жёлтая",
+      "description": "Вилка байонет 5-конт. жёлтая. вилка байонетная, 5-конт., жёлтая, с кабелем 5×0,5 мм², длина кабеля 1 м, открытый конец",
+      "specs": {
+        "functions": [],
+        "voltage": null,
+        "temperature": null,
+        "protection": null,
+        "power": [],
+        "dimensions": null
+      },
+      "image": "a-3723-015.jpeg",
+      "source_page": 75,
+      "modifications": []
+    },
+    {
+      "category": "connector",
+      "article": "А.3723.016",
+      "name": "Вилка байонет 5-конт. зелёная",
+      "description": "Вилка байонет 5-конт. зелёная. вилка байонетная, 5-конт., зелёная, с кабелем 5×0,5 мм², длина кабеля 1 м, открытый конец",
+      "specs": {
+        "functions": [],
+        "voltage": null,
+        "temperature": null,
+        "protection": null,
+        "power": [],
+        "dimensions": null
+      },
+      "image": "a-3723-016.png",
+      "source_page": 75,
+      "modifications": []
     },
     {
       "category": "fog",
