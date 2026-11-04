@@ -1,0 +1,48 @@
+name: Photos relay (Yandex.Disk → ветка)
+
+# Одноразовый мост: песочница разработки не ходит на disk.yandex.ru,
+# а раннер может. Скачивает публичную папку с фотографиями изделий,
+# переводит снимки в JPEG и коммитит их в ветку, откуда их забирает импортёр.
+# Запускается вручную (workflow_dispatch) или правкой .github/photos-relay.trigger.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/photos-relay.trigger'
+
+permissions:
+  contents: write
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Зависимости
+        run: pip install --quiet pillow pillow-heif
+
+      - name: Скачать фотографии
+        run: |
+          python3 server/scripts/fetch_yandex_photos.py \
+            "https://disk.yandex.ru/d/qos0XLZpqddatA" \
+            server/src/db/catalog/files/incoming
+
+      - name: Закоммитить в ветку
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f server/src/db/catalog/files/incoming
+          if git diff --cached --quiet; then
+            echo "Новых файлов нет"
+            exit 0
+          fi
+          git commit -m "Фото изделий: выгрузка с Яндекс.Диска ($(date -u +%Y-%m-%d))"
+          git push origin "HEAD:${{ github.ref_name }}"
