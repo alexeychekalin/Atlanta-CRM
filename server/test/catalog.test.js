@@ -89,17 +89,24 @@ test('каталог: фото лежат в репозитории и откр�
     webp: Buffer.from('RIFF'),
   };
 
+  const images = [];
   for (const entry of components) {
-    if (!entry.image) continue;
-    const file = path.join(FILES_DIR, entry.image);
-    assert.ok(fs.existsSync(file), `${entry.article}: нет файла ${entry.image}`);
+    if (entry.image) images.push([entry.article, entry.image]);
+    for (const mod of entry.modifications || []) {
+      for (const image of mod.images || []) images.push([`${entry.article}-${mod.code}`, image]);
+    }
+  }
 
-    const ext = path.extname(entry.image).slice(1).toLowerCase();
+  for (const [article, name] of images) {
+    const file = path.join(FILES_DIR, name);
+    assert.ok(fs.existsSync(file), `${article}: нет файла ${name}`);
+
+    const ext = path.extname(name).slice(1).toLowerCase();
     const signature = signatures[ext];
-    assert.ok(signature, `${entry.article}: неподдерживаемый формат ${ext}`);
+    assert.ok(signature, `${article}: неподдерживаемый формат ${ext}`);
 
     const head = fs.readFileSync(file).subarray(0, signature.length);
-    assert.ok(head.equals(signature), `${entry.article}: ${entry.image} не похож на ${ext.toUpperCase()}`);
+    assert.ok(head.equals(signature), `${article}: ${name} не похож на ${ext.toUpperCase()}`);
   }
 });
 
@@ -117,4 +124,48 @@ test('каталог: фото копируется под стабильным 
   assert.deepEqual(fs.readdirSync(target), [path.basename(first.url)]);
 
   fs.rmSync(target, { recursive: true, force: true });
+});
+
+test('каталог: у жгутов базовый артикул семейства, исполнения — модификации', () => {
+  const { components } = readConfig();
+  const harness = components.filter(c => c.category === 'harness');
+  assert.ok(harness.length >= 120, `семейств жгутов: ${harness.length}`);
+
+  let executions = 0;
+  for (const entry of harness) {
+    // А.3724.304 — семейство, А.3724.304-03.01 — исполнение внутри него
+    assert.match(entry.article, /^А\.3724\.(МД-\d{3}\.\d{5}-\d{2}-\d{2}|\d{3})$/,
+      `${entry.article}: база семейства должна быть без кода исполнения`);
+
+    for (const mod of entry.modifications) {
+      assert.ok(mod.name && mod.name.length > 3,
+        `${entry.article}-${mod.code}: пустое описание исполнения`);
+    }
+    executions += entry.modifications.length;
+  }
+
+  assert.ok(executions >= 580, `исполнений жгутов: ${executions}`);
+});
+
+test('каталог: прежние плоские артикулы жгутов стали исполнениями', () => {
+  const { components } = readConfig();
+  const legacy = [
+    'А.3724.106-03', 'А.3724.209-03', 'А.3724.217-02', 'А.3724.304-03.01',
+    'А.3724.401-04', 'А.3724.401-12.01', 'А.3724.502-02.01', 'А.3724.504-01',
+    'А.3724.504-02', 'А.3724.602-02',
+  ];
+
+  const texts = [];
+  for (const entry of components.filter(c => c.category === 'harness')) {
+    texts.push(entry.article);
+    for (const mod of entry.modifications) {
+      texts.push(fullArticle(entry.article, mod.code));
+      texts.push(mod.name);
+    }
+  }
+
+  for (const article of legacy) {
+    assert.ok(texts.some(text => text.includes(article)),
+      `${article}: потерян при разбиении на семейства`);
+  }
 });

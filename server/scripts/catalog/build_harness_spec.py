@@ -49,64 +49,27 @@ HEADER_LABELS = {
 BASE_RE = re.compile(r'^(А\.3724\.\d{3}|А\.3724\.МД-\d{3}\.\d{5}-\d{2}-\d{2})(?:-(.+))?$')
 
 
-def page_grid(page):
-    """Границы колонок и полосы блоков по векторным линиям."""
-    matrix = page.rotation_matrix
-    horiz, vert = [], []
-    for path in page.get_drawings():
-        for item in path['items']:
-            if item[0] == 'l':
-                a, b = pymupdf.Point(item[1]) * matrix, pymupdf.Point(item[2]) * matrix
-                if abs(a.y - b.y) < 0.8:
-                    horiz.append((a.y, min(a.x, b.x), max(a.x, b.x)))
-                elif abs(a.x - b.x) < 0.8:
-                    vert.append((a.x, min(a.y, b.y), max(a.y, b.y)))
-            elif item[0] == 're':
-                r = pymupdf.Rect(item[1]) * matrix
-                horiz += [(r.y0, r.x0, r.x1), (r.y1, r.x0, r.x1)]
-                vert += [(r.x0, r.y0, r.y1), (r.x1, r.y0, r.y1)]
-    if not horiz or not vert:
-        return None, []
+def table_grid(page):
+    """Ячейки таблицы в координатах отображения (модуль уже разворачивает поворот)."""
+    try:
+        tables = page.find_tables()
+    except Exception:                                   # noqa: BLE001 — битый разбор
+        return None
+    if not tables.tables:
+        return None
+    table = tables.tables[0]
+    cells = [pymupdf.Rect(c) for c in table.cells if c]
+    if not cells:
+        return None
 
-    top = min(min(h[0] for h in horiz), min(v[1] for v in vert))
-    bottom = max(max(h[0] for h in horiz), max(v[2] for v in vert))
-    left = min(min(h[1] for h in horiz), min(v[0] for v in vert))
-    right = max(max(h[2] for h in horiz), max(v[0] for v in vert))
-    height = bottom - top or 1
-    width = right - left or 1
-
-    # колонки — вертикальные линии на всю высоту таблицы
-    tall = {}
-    for x, y0, y1 in vert:
-        tall.setdefault(round(x, 1), []).append((y0, y1))
-    columns = []
-    for x in sorted(tall):
-        covered = sum(max(0.0, b1 - b0) for b0, b1 in tall[x])
-        if covered > height * 0.5 and (not columns or x - columns[-1] > 2.0):
-            columns.append(x)
-
-    # уровни горизонтальных линий: рамка ячейки — прямоугольник высотой 1 pt,
-    # соседние отрезки на одном уровне по X не объединяются
-    levels = []
-    for y, x0, x1 in sorted(horiz):
-        if levels and abs(levels[-1][0] - y) < 2.0:
-            levels[-1][1].append((x0, x1))
-        else:
-            levels.append((y, [(x0, x1)]))
-
-    blocks = [top]
-    for y, segs in levels:
-        segs.sort()
-        merged = [list(segs[0])]
-        for x0, x1 in segs[1:]:
-            if x0 - merged[-1][1] < 3.0:
-                merged[-1][1] = max(merged[-1][1], x1)
-            else:
-                merged.append([x0, x1])
-        if any(x1 - x0 > width * 0.9 and x0 < left + width * 0.05
-               for x0, x1 in merged) and y - blocks[-1] > 2.0:
-            blocks.append(y)
-    return columns, blocks
+    width = max(r.x1 for r in cells) - min(r.x0 for r in cells)
+    borders = []
+    for x in sorted({round(r.x0, 1) for r in cells} | {round(r.x1, 1) for r in cells}):
+        if not borders or x - borders[-1] > 2.0:
+            borders.append(x)
+    wide = [r for r in cells if r.width > width * 0.9]
+    narrow = [r for r in cells if r.width <= width * 0.9]
+    return {'cells': narrow, 'sections': wide, 'borders': borders}
 
 
 def page_spans(page):
@@ -126,7 +89,7 @@ def page_spans(page):
     return spans
 
 
-def column_index(spans, columns):
+def column_index(spans, borders):
     """Смысл колонок по подписям шапки: 7 подписей — 7 колонок слева направо."""
     labels = []
     for key, label in HEADER_LABELS.items():
@@ -135,71 +98,113 @@ def column_index(spans, columns):
         if not xs:
             return None
         labels.append((sum(xs) / len(xs), key))
-    if len(columns) - 1 != len(labels):
+    if len(labels) != len(borders) - 1:
         return None
     return {key: i for i, (_, key) in enumerate(sorted(labels))}
 
 
-def parse_page(page, columns, col_index):
+def column_of(x, borders):
+    for i in range(len(borders) - 1):
+        if borders[i] <= x < borders[i + 1]:
+            return i
+    return None
+
+
+def cell_lines(spans, rect):
+    """Строки текста внутри ячейки, сверху вниз."""
+    inside = sorted((sp for sp in spans
+                     if rect.y0 <= sp['y'] <= rect.y1 and rect.x0 - 1 <= sp['x'] <= rect.x1 + 1),
+                    key=lambda sp: (round(sp['y'], 1), sp['x']))
+    lines, current = [], None
+    for sp in inside:
+        if current is None or abs(sp['y'] - current) > 4.0:
+            lines.append([sp['text']])
+            current = sp['y']
+        else:
+            lines[-1].append(sp['text'])
+    return [re.sub(r'\s+', ' ', ' '.join(parts)).strip() for parts in lines]
+
+
+def join_lines(lines):
+    """Склейка строк одной ячейки: перенос артикула, перечисление через запятую."""
+    out = ''
+    for line in lines:
+        if not out:
+            out = line
+        elif out.endswith(('-', '/', ',', '(')):
+            out += line
+        else:
+            out += ' ' + line
+    return re.sub(r'\s+', ' ', out).strip()
+
+
+def parse_page(page, borders, col_index):
+    grid = table_grid(page)
+    if not grid:
+        return []
     spans = page_spans(page)
-    _, blocks = page_grid(page)
-    if not blocks:
+    cells = grid['cells']
+    width = max(r.x1 for r in cells) - min(r.x0 for r in cells)
+
+    art_col = col_index['article']
+    by_column = {}
+    for rect in cells:
+        idx = column_of((rect.x0 + rect.x1) / 2, borders)
+        if idx is not None:
+            by_column.setdefault(idx, []).append(rect)
+
+    art_cells = sorted(by_column.get(art_col, []), key=lambda r: r.y0)
+    art_texts = [join_lines(cell_lines(spans, r)) for r in art_cells]
+    keep = [i for i, text in enumerate(art_texts)
+            if text and not text.startswith(HEADER_LABELS['article'])]
+    art_cells = [art_cells[i] for i in keep]
+    art_texts = [art_texts[i] for i in keep]
+
+    rows = [{'article': text, 'y0': r.y0, 'y1': r.y1}
+            for r, text in zip(art_cells, art_texts)]
+    if not rows:
         return []
 
-    def column_of(span):
-        for i in range(len(columns) - 1):
-            if columns[i] <= span['x'] < columns[i + 1]:
-                return i
-        return None
+    def spanned(rect):
+        return [i for i, row in enumerate(rows)
+                if rect.y0 < row['y1'] - 1 and rect.y1 > row['y0'] + 1]
 
-    rows = []
-    for y0, y1 in zip(blocks, blocks[1:] + [page.rect.height]):
-        inside = [sp for sp in spans if y0 + 1 < sp['y'] < y1 - 1]
-        if not inside:
+    for key, idx in col_index.items():
+        if key == 'article':
             continue
-        cells = {}
-        for sp in inside:
-            idx = column_of(sp)
-            if idx is not None:
-                cells.setdefault(idx, []).append(sp)
+        for rect in sorted(by_column.get(idx, []), key=lambda r: r.y0):
+            targets = spanned(rect)
+            if not targets:
+                continue                                # ячейка шапки
+            lines = [ln for ln in cell_lines(spans, rect) if ln]
+            if not lines:
+                continue
+            if len(lines) == len(targets) > 1:
+                for row_idx, line in zip(targets, lines):
+                    rows[row_idx][key] = line if not rows[row_idx].get(key) \
+                        else rows[row_idx][key] + ' ' + line
+            else:
+                rows[targets[0]][key] = join_lines(lines)
 
-        if col_index['article'] not in cells:
-            text = ' '.join(sp['text'] for sp in cells.get(col_index['main'], []))
-            if text.strip():
-                rows.append({'section': re.sub(r'\s+', ' ', text).strip()})
+    for key in ('name', 'length', 'main', 'addl', 'consumer', 'format'):
+        for row in rows:
+            row.setdefault(key, '')
+
+    parsed = []
+    sections = sorted((r for r in grid['sections'] if r.width > width * 0.9),
+                      key=lambda r: r.y0)
+    events = [(r.y0, 's', r) for r in sections] + [(r['y0'], 'r', r) for r in rows]
+    for _, kind, item in sorted(events, key=lambda e: e[0]):
+        if kind == 's':
+            text = join_lines(cell_lines(spans, item))
+            if text and not text.startswith(HEADER_LABELS['article']):
+                parsed.append({'section': text})
             continue
-
-        def values(key):
-            items = sorted(cells.get(col_index[key], []),
-                           key=lambda sp: (round(sp['y'], 1), sp['x']))
-            return [re.sub(r'\s+', ' ', sp['text']).strip() for sp in items]
-
-        arts = values('article')
-        if arts and arts[0] == HEADER_LABELS['article']:
-            continue                                  # шапка таблицы
-
-        names, lengths = values('name'), values('length')
-        mains, addls = values('main'), values('addl')
-        consumers, formats = values('consumer'), values('format')
-
-        for i, art in enumerate(arts):
-            def pick(seq):
-                """Значение колонки для исполнения i: ячейка своя или объединённая."""
-                if len(seq) == len(arts):
-                    return seq[i]
-                return ' '.join(seq) if i == 0 else ''
-
-            rows.append({
-                'article': art,
-                'name': pick(names),
-                'length': lengths[i] if len(lengths) == len(arts) and i < len(lengths) else \
-                    (' '.join(lengths) if i == 0 else ''),
-                'main': pick(mains),
-                'addl': pick(addls),
-                'consumer': pick(consumers),
-                'format': pick(formats),
-            })
-    return rows
+        item = dict(item)
+        item.pop('y0', None)
+        item.pop('y1', None)
+        parsed.append(item)
+    return parsed
 
 
 def split_alias(article):
@@ -218,18 +223,20 @@ def tidy_article(text):
 
 def parse_document(path):
     doc = pymupdf.open(path)
-    rows, columns, col_index = [], None, None
+    rows, borders, col_index = [], None, None
 
     for pno in range(doc.page_count):
         page = doc[pno]
-        page_columns, _ = page_grid(page)
-        if columns is None:
-            columns = page_columns
-        if col_index is None:
-            col_index = column_index(page_spans(page), columns)
-        if not columns or col_index is None:
-            raise SystemExit('не удалось определить колонки таблицы')
-        for row in parse_page(page, columns, col_index):
+        if borders is None:
+            grid = table_grid(page)
+            if not grid:
+                raise SystemExit(f'таблица не найдена (стр. {pno + 1})')
+            borders = grid['borders']
+            col_index = column_index(page_spans(page), borders)
+            if col_index is None:
+                raise SystemExit('не удалось прочитать шапку таблицы')
+
+        for row in parse_page(page, borders, col_index):
             row['page'] = pno + 1
             rows.append(row)
 
@@ -244,12 +251,10 @@ def parse_document(path):
         if art.startswith('(') and clean and BASE_RE.match(clean[-1]['article']):
             prev = clean[-1]
             prev['article'] = f"{prev['article']} {art}"
-            prev['name'] = (prev['name'] + ' ' + row['name']).strip()
             continue
         if re.match(r'^\d{3}\.', art) and clean and clean[-1]['article'].endswith('-'):
             prev = clean[-1]
             prev['article'] += art
-            prev['name'] = (prev['name'] + ' ' + row['name']).strip()
             continue
 
         row['article'], row['alias'] = split_alias(art)
@@ -272,6 +277,30 @@ def merge_names(names):
         else:
             merged.append(name)
     return merged
+
+
+def assign_names(variants):
+    """Раскладывает объединённую ячейку «Наименование» по исполнениям.
+
+    Возвращает список названий по группам строк; каждому исполнению достаётся
+    название его группы (у объединённой ячейки — одно на несколько строк).
+    """
+    groups = []
+    for i, variant in enumerate(variants):
+        name = (variant.get('name') or '').strip()
+        if not name:
+            continue
+        if groups and (groups[-1][1].endswith(('-', '(', '/', ',')) or name[:1].islower()):
+            groups[-1][1] += ' ' + name
+        else:
+            groups.append([i, name])
+
+    group_idx = -1
+    for i, variant in enumerate(variants):
+        if group_idx + 1 < len(groups) and groups[group_idx + 1][0] == i:
+            group_idx += 1
+        variant['label'] = groups[group_idx][1] if group_idx >= 0 else ''
+    return [name for _, name in groups]
 
 
 def build_families(rows):
@@ -307,7 +336,7 @@ def build_families(rows):
 
     for fam in families.values():
         variants = fam['variants']
-        merged = merge_names([v['name'] for v in variants])
+        merged = assign_names(variants)
         fam['names'] = merged
         names = [n for n in merged if len(n) > 3]
         fam['name'] = max(names, key=len) if names else ''

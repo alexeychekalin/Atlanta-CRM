@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS component_modifications (
   id SERIAL PRIMARY KEY,
   component_id INT NOT NULL REFERENCES components(id) ON DELETE CASCADE,
   code VARCHAR(100) NOT NULL,
-  name VARCHAR(255),
+  name TEXT,
   price_override NUMERIC(12,2),
   description TEXT,
   sort_order INT DEFAULT 0,

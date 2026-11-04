@@ -115,6 +115,7 @@ async function fillEmptyFields(runner, componentId, current, entry, imagePath) {
 
 async function ensureModifications(runner, componentId, entry) {
   const mods = Array.isArray(entry.modifications) ? entry.modifications : [];
+  const items = [];
   let created = 0;
 
   for (let i = 0; i < mods.length; i += 1) {
@@ -123,17 +124,98 @@ async function ensureModifications(runner, componentId, entry) {
       'SELECT id FROM component_modifications WHERE component_id = $1 AND lower(code) = lower($2) LIMIT 1',
       [componentId, mod.code]
     );
+    if (existing.rows.length > 0) {
+      items.push({ id: existing.rows[0].id, mod });
+      continue;
+    }
+
+    const inserted = await runner.query(
+      `INSERT INTO component_modifications (component_id, code, name, sort_order)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [componentId, mod.code, mod.name || null, i]
+    );
+    items.push({ id: inserted.rows[0].id, mod });
+    created += 1;
+  }
+
+  return { created, items };
+}
+
+/** Фото исполнений кладутся рядом с фото компонентов и привязываются к коду. */
+async function ensureModificationImages(runner, item) {
+  const files = Array.isArray(item.mod.images) ? item.mod.images : [];
+  let created = 0;
+
+  for (let i = 0; i < files.length; i += 1) {
+    const image = placeImage(files[i]);
+    const existing = await runner.query(
+      'SELECT id FROM component_modification_images WHERE modification_id = $1 AND image_path = $2 LIMIT 1',
+      [item.id, image.url]
+    );
     if (existing.rows.length > 0) continue;
 
     await runner.query(
-      `INSERT INTO component_modifications (component_id, code, name, sort_order)
-       VALUES ($1, $2, $3, $4)`,
-      [componentId, mod.code, mod.name || null, i]
+      `INSERT INTO component_modification_images (modification_id, image_path, sort_order)
+       VALUES ($1, $2, $3)`,
+      [item.id, image.url, i]
     );
     created += 1;
   }
 
   return created;
+}
+
+/**
+ * Старые плоские артикулы жгутов (А.3724.304-03.01 как отдельный компонент)
+ * после перехода на модель «семейство + исполнение» становятся исполнением
+ * семьи. Дубль убираем: удаляем, если на него нигде не ссылаются, иначе
+ * гасим (is_active = false), чтобы не порвать чертежи и документы.
+ */
+const REFERENCE_TABLES = ['drawing_components', 'component_documents', 'manufacturer_product_components'];
+
+async function isReferenced(runner, componentId) {
+  for (const table of REFERENCE_TABLES) {
+    const result = await runner.query(
+      `SELECT 1 FROM ${table} WHERE component_id = $1 LIMIT 1`, [componentId]);
+    if (result.rows.length > 0) return true;
+  }
+  return false;
+}
+
+async function retireLegacyFlats(runner, entries) {
+  const families = new Map();
+  for (const entry of entries) {
+    for (const mod of entry.modifications || []) {
+      if (!mod.code) continue;
+      families.set(fullArticle(entry.article, mod.code), entry.article);
+      // артикул из прежнего каталога, если код исполнения записан иначе
+      if (mod.legacy_article) families.set(mod.legacy_article, entry.article);
+    }
+  }
+  if (families.size === 0) return { removed: 0, disabled: 0 };
+
+  const bases = new Set(entries.map(entry => entry.article));
+  const rows = await runner.query(
+    "SELECT id, article FROM components WHERE article LIKE 'А.3724.%'"
+  );
+
+  let removed = 0;
+  let disabled = 0;
+  for (const row of rows.rows) {
+    if (bases.has(row.article) || !families.has(row.article)) continue;
+
+    if (await isReferenced(runner, row.id)) {
+      await runner.query(
+        'UPDATE components SET is_active = false, name = left(name, 200) || $2 WHERE id = $1',
+        [row.id, ` (исполнение ${families.get(row.article)})`]
+      );
+      disabled += 1;
+    } else {
+      await runner.query('DELETE FROM components WHERE id = $1', [row.id]);
+      removed += 1;
+    }
+  }
+  return { removed, disabled };
 }
 
 /** Артикулы, которые появятся в системе: базовые и полные (для лога и тестов). */
@@ -166,6 +248,7 @@ async function run(db = require('../db')) {
   let updatedComponents = 0;
   let skippedComponents = 0;
   let createdModifications = 0;
+  let createdModificationImages = 0;
   const errors = [];
 
   for (const entry of components) {
@@ -193,18 +276,30 @@ async function run(db = require('../db')) {
       }
 
       const mods = await ensureModifications(db, componentId, entry);
-      createdModifications += mods;
+      createdModifications += mods.created;
+      for (const item of mods.items) {
+        createdModificationImages += await ensureModificationImages(db, item);
+      }
     } catch (err) {
       errors.push(`${entry.article}: ${err.message}`);
       console.error(`✗ ${entry.article}: ${err.message}`);
     }
   }
 
+  const legacy = await retireLegacyFlats(db, components);
+
   console.log(
     `✅ Каталог: категорий создано ${createdCategories}, ` +
     `позиций создано ${createdComponents}, дополнено ${updatedComponents}, ` +
-    `без изменений ${skippedComponents}, модификаций создано ${createdModifications}`
+    `без изменений ${skippedComponents}, модификаций создано ${createdModifications}, ` +
+    `фото исполнений ${createdModificationImages}`
   );
+  if (legacy.removed > 0 || legacy.disabled > 0) {
+    console.log(
+      `↪️  Плоские артикулы жгутов: удалено ${legacy.removed}, ` +
+      `погашено (есть ссылки) ${legacy.disabled}`
+    );
+  }
 
   if (errors.length > 0) {
     console.error(`⚠️  Ошибки: ${errors.join('; ')}`);
@@ -233,6 +328,8 @@ module.exports = {
   readConfig,
   placeImage,
   expandArticles,
+  ensureModifications,
+  retireLegacyFlats,
   CATALOG_JSON,
   FILES_DIR,
 };
