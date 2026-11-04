@@ -222,6 +222,7 @@ server/src/db/catalog/
 ```
 
 - `npm run db:data` — наполнить обычную базу контрагентами и каталогом, `npm run demo:data` — то же в демо на PGlite. Точечно: `npm run db:catalog` — только каталог, `npm run db:preseed` — только контрагенты.
+- Фото изделий: `scripts/catalog/import_photos.py <папка>` — раскладывает снимки поставщика по артикулам (HEIC → JPEG), раскладывает в галереи; нужны `pip install pillow pillow-heif`. Выгрузку с Яндекс.Диска тянет `scripts/fetch_yandex_photos.py` (в песочнице недоступен, запускается на раннере GitHub — `.github/workflows/photos-relay.yml`).
 - Полная установка: `sudo WITH_CATALOG=1 ./deploy.sh`. Пустая — обычный `./deploy.sh`; догрузить позже можно командой `WITH_CATALOG=1 npm run db:data`.
 - Демо-записи (3 клиента, 5 услуг, 4 заказа) отключаются `SEED_DEMO=0`, клиенты из предзаполнения — `SKIP_PRESEED=1`: например `sudo WITH_CATALOG=1 SEED_DEMO=0 ./deploy.sh` даёт рабочую базу с каталогом и реальными клиентами, но без демо-мусора. Все варианты — в [`DEPLOY.md`](DEPLOY.md#-варианты-наполнения-базы).
 - `update.sh` обновляет каталог сам, если он был включён при установке (маркер `server/.catalog-enabled`).
