@@ -219,8 +219,11 @@ def parse_description(paragraphs):
                 continue
 
             if BULLET_RE.match(line):
-                flush()
                 text = clean_item(BULLET_RE.sub('', line))
+                if pending is not None and section == 'params':
+                    pending[1].append(text)              # список значений под заголовком
+                    continue
+                flush()
                 parsed['functions' if section == 'functions' else 'features'].append(text)
                 continue
 
@@ -229,6 +232,15 @@ def parse_description(paragraphs):
                 flush()
                 pending = [normalize(header.group('key')), []]
                 section = 'params'
+                continue
+
+            bare = next((word for word in BARE_PARAMS
+                         if line.lower().startswith(word.lower())), None)
+            if bare:
+                flush()
+                rest = normalize(line[len(bare):].strip(' :–—-'))
+                rest = re.sub(r'^окружающей среды\s*', '', rest)
+                parsed['params'].append([bare, rest])
                 continue
 
             if pending is not None and section == 'params' and not KEY_RE.match(line):
@@ -249,15 +261,6 @@ def parse_description(paragraphs):
                 elif key.lower() not in ('от', 'до', 'при'):
                     flush()
                     parsed['params'].append([key, value])
-                continue
-
-            bare = next((word for word in BARE_PARAMS
-                         if line.lower().startswith(word.lower())), None)
-            if bare:
-                flush()
-                rest = normalize(line[len(bare):].strip(' :–—-'))
-                rest = re.sub(r'^окружающей среды\s*', '', rest)
-                parsed['params'].append([bare, rest])
                 continue
 
             if index == 0 and not parsed['title'] and (len(line) > 20 or ARTICLE_RE.search(line)):
@@ -515,6 +518,13 @@ def run(root, catalog_path=CATALOG_JSON, dry_run=False, quiet=False):
     return report
 
 
+def repeats_name(line, name):
+    """Строка начинается так же, как название позиции — это её дубль, не особенность."""
+    head = normalize(line).lower().split()[:2]
+    title = normalize(name).lower().split()[:2]
+    return bool(head) and head == title
+
+
 def merge_group(entry, docs, report):
     """Слить все документы одной позиции: общее — добавляем, разное — в отчёт."""
     text = entry.get('description') or ''
@@ -532,7 +542,8 @@ def merge_group(entry, docs, report):
 
     fresh = []
     for feature in dict.fromkeys(features):
-        if len(feature) > 3 and not overlap(text, feature):
+        if len(feature) > 3 and not overlap(text, feature) \
+                and not repeats_name(feature, entry.get('name')):
             fresh.append(feature)
     if fresh:
         line = sentence('Особенности: ' + '; '.join(fresh))
