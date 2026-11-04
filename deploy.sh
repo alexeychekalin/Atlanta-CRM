@@ -32,6 +32,13 @@ DB_PASS=$(openssl rand -hex 16)
 JWT_SECRET=$(openssl rand -hex 32)
 PORT=3000
 
+# Наполнение базы (см. DEPLOY.md, раздел «Варианты наполнения»)
+#   WITH_CATALOG=1  — импортировать каталог АТЛАНТА-26 (полная версия)
+#   SEED_DEMO=0     — не создавать демо-клиентов, услуги и заказы
+#   SKIP_PRESEED=1  — не загружать предзаполненных клиентов из src/db/preseed
+export SEED_DEMO="${SEED_DEMO:-1}"
+SKIP_PRESEED="${SKIP_PRESEED:-0}"
+
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║      CRM «Атланта» — Установка           ║${NC}"
@@ -40,6 +47,19 @@ echo ""
 echo "  Директория: $APP_DIR"
 echo "  БД:         $DB_NAME"
 echo "  Пользователь БД: $DB_USER"
+if [ "${WITH_CATALOG:-0}" = "1" ]; then
+  echo "  Каталог:    с каталогом АТЛАНТА-26 (полная версия)"
+else
+  echo "  Каталог:    без каталога (пустая версия)"
+fi
+if [ "$SEED_DEMO" = "0" ]; then
+  echo "  Демо-данные: не создаются (SEED_DEMO=0)"
+else
+  echo "  Демо-данные: 3 клиента, 5 услуг, 4 заказа (SEED_DEMO=0 — отключить)"
+fi
+if [ "$SKIP_PRESEED" = "1" ]; then
+  echo "  Предзаполнение клиентов: пропускается (SKIP_PRESEED=1)"
+fi
 echo ""
 
 # Интерактивный ввод домена
@@ -159,15 +179,19 @@ log "Применяю миграции..."
 cd "$APP_DIR/server"
 node src/db/migrate.js || err "Ошибка миграции БД"
 
-# Заполнить тестовые данные
-log "Заполняю тестовые данные (seed)..."
+# Заполнить тестовые данные (SEED_DEMO=0 — только структура, пользователи и справочники)
+log "Инициализирую базу (seed)..."
 node src/db/seed.js 2>/dev/null || warn "Seed уже был применён или произошла ошибка"
 
 # Миграция ролей (добавляет guest и др.)
 node src/db/migrate_roles.js 2>/dev/null || warn "Миграция ролей: ошибка или уже применена"
 
 # Предзаполнение: клиенты из карточек предприятий (src/db/preseed)
-node src/db/preseed.js 2>/dev/null || warn "Предзаполнение: ошибка или данные уже загружены"
+if [ "$SKIP_PRESEED" = "1" ]; then
+  warn "Предзаполнение клиентов пропущено (SKIP_PRESEED=1)"
+else
+  node src/db/preseed.js 2>/dev/null || warn "Предзаполнение: ошибка или данные уже загружены"
+fi
 
 # Каталог компонентов (src/db/catalog) — только для полной версии.
 # Пустая версия разворачивается без каталога, догрузить позже: cd server && npm run db:catalog

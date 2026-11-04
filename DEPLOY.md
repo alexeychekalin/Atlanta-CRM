@@ -11,6 +11,80 @@
 
 ---
 
+## 🧩 Варианты наполнения базы
+
+Одна и та же сборка разворачивается с разным набором данных. Выбирать нужно **на этапе
+установки** — всё, что относится к структуре, создаётся в любом случае.
+
+**Всегда создаётся:** таблицы, справочники (статусы клиентов, уровни цен, типы техники,
+категории компонентов), роли и права, пользователи `admin` и `viewer`, принципал «Атланта».
+
+Три переключателя задают, что добавить сверху:
+
+| Переключатель | Что включает | По умолчанию |
+|---|---|---|
+| `WITH_CATALOG=1` | каталог АТЛАНТА-26: 11 категорий, 113 позиций, 286 модификаций, 99 фото (цены `0`) | выключен |
+| `SEED_DEMO=0` | **выключает** демонстрационные записи: 3 клиента, 5 услуг, 4 заказа | демо включено |
+| `SKIP_PRESEED=1` | **выключает** 8 реальных клиентов из предзаполнения с карточками предприятий | предзаполнение включено |
+
+Отсюда четыре готовых рецепта:
+
+| Вариант | Что в базе | Команда |
+|---|---|---|
+| **Полная витрина** — показать систему целиком | всё: клиенты, демо-заказы, каталог | `sudo WITH_CATALOG=1 ./deploy.sh` |
+| **Рабочая** — запуск в производство | реальные клиенты и каталог, без демо-мусора | `sudo WITH_CATALOG=1 SEED_DEMO=0 ./deploy.sh` |
+| **Пустая** — каталог заполнят вручную | клиенты и справочники, каталог пуст | `sudo SEED_DEMO=0 ./deploy.sh` |
+| **Совсем чистая** — структура под свой импорт | только структура, справочники и `admin` | `sudo SEED_DEMO=0 SKIP_PRESEED=1 ./deploy.sh` |
+
+Переключатели можно комбинировать свободно:
+
+```bash
+# всё, кроме каталога
+sudo SEED_DEMO=0 ./deploy.sh
+
+# каталог и клиенты, но и демо-заказы тоже (если нужна витрина на реальных клиентах)
+sudo WITH_CATALOG=1 ./deploy.sh
+```
+
+### Догрузить каталог позже
+
+Пустую версию можно догнать до полной без переустановки: импорт идемпотентен, цены и правки
+из интерфейса не затираются, у существующих позиций дозаполняются только пустые поля.
+
+```bash
+cd /opt/atlanta-crm/server
+npm run db:catalog
+touch .catalog-enabled      # чтобы update.sh обновлял каталог и дальше
+```
+
+Без маркера `server/.catalog-enabled` скрипт обновления каталог не трогает. Обратная
+операция (убрать каталог) не предусмотрена — позиции удаляются только вручную.
+
+### Проверить, что получилось
+
+```bash
+cd /opt/atlanta-crm/server
+node -e "
+const db = require('./src/db');
+(async () => {
+  for (const t of ['clients','orders','components','component_modifications','component_categories'])
+    console.log(t, (await db.query('SELECT count(*)::int c FROM ' + t)).rows[0].c);
+  await db.close();
+})();
+"
+```
+
+Ожидаемые числа для полной витрины: клиенты 11 (3 демо + 8 из предзаполнения), заказы 4,
+позиции каталога 113, модификации 286. Для рабочей версии — клиенты 8, заказы 0, каталог 113.
+
+> Пароли `admin/admin123` и `viewer/viewer123` — стартовые. Смените их сразу после установки.
+> Повторный `./deploy.sh` пересоздаёт пользователей и **сбрасывает пароль `admin` на
+> `admin123`** (так устроен `seed.js`); `update.sh` этого не делает.
+>
+> Цены в каталоге не публикуются: после импорта `price = 0`, их заполняют в интерфейсе.
+
+---
+
 ## Вариант 1: Быстрый запуск через скрипт
 
 Скрипт `deploy.sh` автоматически установит всё необходимое и запустит приложение.
@@ -22,17 +96,20 @@ cd /opt/atlanta-crm
 
 # 2. Сделайте скрипт исполняемым и запустите
 chmod +x deploy.sh
-sudo ./deploy.sh
+sudo WITH_CATALOG=1 SEED_DEMO=0 ./deploy.sh     # любой рецепт из таблицы выше
 ```
 
 Скрипт выполнит:
 - Установку Node.js 20, PostgreSQL 17, Nginx
 - Создание базы данных и пользователя
 - Применение схемы и всех миграций
-- Заполнение тестовых данных (seed)
+- Наполнение базы по выбранному варианту (см. раздел выше); выбранный набор печатается в шапке
 - Настройку Nginx (проксирование порт 80 → 3000)
 - Создание systemd-сервиса для автозапуска
 - Настройку UFW-файрвола
+
+Переменные окружения передаются перед `./deploy.sh` — `sudo` их пробрасывает:
+`sudo WITH_CATALOG=1 SEED_DEMO=0 SKIP_PRESEED=1 ./deploy.sh`.
 
 ---
 
@@ -80,8 +157,7 @@ EOF
 ### Шаг 5. Загрузка и установка проекта
 
 ```bash
-# Клонируйте проект
-git clone https://github.com/alexeychekalin/AtlantaCRM-deploy.git /opt/atlanta-crm
+git clone https://github.com/alexeychekalin/Atlanta-CRM.git /opt/atlanta-crm
 cd /opt/atlanta-crm
 
 # Установите зависимости
@@ -99,23 +175,27 @@ NODE_ENV=production
 EOF
 ```
 
-### Шаг 7. Инициализация базы данных
+### Шаг 7. Инициализация базы данных под выбранный вариант
+
+Схему, миграции, роли и справочники накатывают npm-скрипты — тот же путь, что и в `deploy.sh`:
 
 ```bash
-cd /opt/atlanta-crm
+cd /opt/atlanta-crm/server
 
-# Основная схема
-PGPASSWORD=ЗАМЕНИТЕ_НА_СВОЙ_ПАРОЛЬ psql -h localhost -U atlanta_user -d atlanta_crm -f server/src/db/schema.sql
+# пустая версия: структура, справочники, пользователи, клиенты из предзаполнения
+npm run db:init
 
-# Миграции (все безопасны для повторного запуска)
-for migration in server/src/db/migration_*.sql; do
-  echo "Applying: $migration"
-  PGPASSWORD=ЗАМЕНИТЕ_НА_СВОЙ_ПАРОЛЬ psql -h localhost -U atlanta_user -d atlanta_crm -f "$migration"
-done
+# полная версия: то же + каталог компонентов
+npm run db:init:full
 
-# Тестовые данные (опционально)
-cd server && node src/db/seed.js && cd ..
+# без демо-записей (3 клиента, 5 услуг, 4 заказа) и/или без предзаполнения клиентов
+SEED_DEMO=0 npm run db:init
+SKIP_PRESEED=1 SEED_DEMO=0 npm run db:init
 ```
+
+`db:init` = `seed.js` (схема, пользователи, принципал, демо-данные) → `migrate.js` (миграции по
+реестру `schema_migrations`) → `migrate_roles.js` → `preseed.js` (8 клиентов), плюс `db:catalog`
+в полной версии. Все шаги безопасно запускать повторно: существующие записи не дублируются.
 
 ### Шаг 8. Проверка запуска
 
@@ -209,19 +289,50 @@ sudo certbot --nginx -d ваш-домен.ru
 
 ---
 
-## Альтернатива: Docker Compose
+## Демо без PostgreSQL (PGlite)
 
-Если на VPS установлен Docker, можно развернуть одной командой:
+Для показа системы на ноутбуке ставить PostgreSQL не нужно: база собирается в WASM и лежит
+в `.pglite` в корне проекта.
 
 ```bash
-git clone https://github.com/alexeychekalin/AtlantaCRM-deploy.git /opt/atlanta-crm
+cd server
+
+npm run demo:init          # демо-данные без каталога
+npm run demo:init:full     # демо-данные + каталог АТЛАНТА-26
+npm run demo               # http://localhost:3000
+
+npm run demo:catalog       # догрузить каталог в уже созданную демо-базу
+```
+
+Учётные записи те же: `admin/admin123`, `manager/manager123`, `viewer/viewer123`.
+Каталог данных переопределяется `PGLITE_DIR=/path/to/data npm run demo`.
+Демо-база — только для разработки и показа, для боевой установки она не подходит.
+
+---
+
+## Альтернатива: Docker Compose
+
+```bash
+git clone https://github.com/alexeychekalin/Atlanta-CRM.git /opt/atlanta-crm
 cd /opt/atlanta-crm
 
-# Запуск (PostgreSQL + App)
-docker-compose up -d --build
+cat > .env <<EOF
+POSTGRES_PASSWORD=$(openssl rand -hex 16)
+JWT_SECRET=$(openssl rand -hex 32)
+EOF
 
-# Инициализация данных
-docker-compose exec app node server/src/db/seed.js
+docker-compose up -d --build
+```
+
+`docker-compose` монтирует только `schema.sql`. Миграции и наполнение выполняются в контейнере
+после старта — по тем же рецептам:
+
+```bash
+# пустая версия
+docker-compose exec app sh -c "cd server && node src/db/migrate.js && SEED_DEMO=0 node src/db/seed.js && node src/db/migrate_roles.js && node src/db/preseed.js"
+
+# полная версия (добавить каталог)
+docker-compose exec app sh -c "cd server && node src/db/catalog.js"
 ```
 
 ---
@@ -249,17 +360,27 @@ sudo systemctl stop atlanta-crm
 
 ```bash
 cd /opt/atlanta-crm
-git pull origin main
+sudo ./update.sh
+```
 
-# Обновить зависимости
-cd server && npm ci --omit=dev && cd ..
+`update.sh` делает `git pull`, обновляет зависимости, применяет новые миграции, догружает
+клиентов из предзаполнения (существующие не дублируются) и обновляет каталог, **только если
+он был включён при установке** (маркер `server/.catalog-enabled`). Демо-записи и пароли
+пользователей обновление не трогает.
 
-# Применить новые миграции
-for migration in server/src/db/migration_*.sql; do
-  PGPASSWORD=ваш_пароль psql -h localhost -U atlanta_user -d atlanta_crm -f "$migration"
-done
+Догрузить каталог на установке, где его не было:
 
-# Перезапустить
+```bash
+cd /opt/atlanta-crm && sudo WITH_CATALOG=1 ./update.sh
+```
+
+Вручную, без обновления кода:
+
+```bash
+cd /opt/atlanta-crm/server
+node src/db/migrate.js      # новые миграции
+node src/db/preseed.js      # новые клиенты из предзаполнения
+node src/db/catalog.js      # новые позиции каталога (цены сохраняются)
 sudo systemctl restart atlanta-crm
 ```
 
@@ -269,9 +390,13 @@ sudo systemctl restart atlanta-crm
 # Дамп базы
 pg_dump -h localhost -U atlanta_user atlanta_crm > backup_$(date +%Y%m%d_%H%M%S).sql
 
-# Бэкап загруженных файлов
+# Бэкап загруженных файлов: фото каталога, чертежи, документы, вложения клиентов
 tar czf uploads_backup_$(date +%Y%m%d).tar.gz /opt/atlanta-crm/server/uploads/
 
 # Восстановление из дампа
 psql -h localhost -U atlanta_user atlanta_crm < backup_XXXXXXXX.sql
 ```
+
+Фото каталога после импорта лежат в `server/uploads/images/` под именами
+`catalog_<sha256:16>.<ext>`. Если их нет в бэкапе, каталог восстановится без картинок —
+повторный `npm run db:catalog` дозальёт только пустые `image_path`.
