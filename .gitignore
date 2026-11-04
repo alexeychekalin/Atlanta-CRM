@@ -49,3 +49,7 @@ yarn-error.log*
 
 # Маркер «полной» установки: каталог компонентов включён
 server/.catalog-enabled
+
+# Python
+__pycache__/
+*.pyc

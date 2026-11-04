@@ -155,6 +155,7 @@ app.use('/api/principals', requirePermission('orders'), require('./routes/princi
 app.use('/api/drawings', requirePermission('drawings'), require('./routes/drawings'));
 
 app.use('/api/components/:id/modifications', requirePermission('components'), require('./routes/component-modifications'));
+app.use('/api/components/:id/images', requirePermission('components'), require('./routes/component-images'));
 app.use('/api/components/:id/documents', requirePermission('components'), require('./routes/component-documents'));
 app.use('/api/component-categories', requirePermission('components'), require('./routes/component-categories'));
 app.use('/api/components', requirePermission('components'), require('./routes/comp-catalog'));

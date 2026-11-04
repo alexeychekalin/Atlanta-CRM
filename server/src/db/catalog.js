@@ -165,6 +165,38 @@ async function ensureModificationImages(runner, item) {
   return created;
 }
 
+/** Галерея позиции: несколько фото изделия, первое — обложка. */
+async function ensureComponentImages(runner, componentId, entry, imagePath) {
+  const files = Array.isArray(entry.images) ? entry.images : [];
+  let created = 0;
+
+  for (let i = 0; i < files.length; i += 1) {
+    const image = placeImage(files[i]);
+    const existing = await runner.query(
+      'SELECT id FROM component_images WHERE component_id = $1 AND image_path = $2 LIMIT 1',
+      [componentId, image.url]
+    );
+    if (existing.rows.length > 0) continue;
+
+    await runner.query(
+      `INSERT INTO component_images (component_id, image_path, sort_order)
+       VALUES ($1, $2, $3)`,
+      [componentId, image.url, i]
+    );
+    created += 1;
+  }
+
+  // обложки нет, а галерея появилась — берём первое фото
+  if (imagePath === null && files.length > 0) {
+    await runner.query(
+      'UPDATE components SET image_path = $2 WHERE id = $1 AND image_path IS NULL',
+      [componentId, placeImage(files[0]).url]
+    );
+  }
+
+  return created;
+}
+
 /**
  * Старые плоские артикулы жгутов (А.3724.304-03.01 как отдельный компонент)
  * после перехода на модель «семейство + исполнение» становятся исполнением
@@ -249,6 +281,7 @@ async function run(db = require('../db')) {
   let skippedComponents = 0;
   let createdModifications = 0;
   let createdModificationImages = 0;
+  let createdComponentImages = 0;
   const errors = [];
 
   for (const entry of components) {
@@ -275,6 +308,8 @@ async function run(db = require('../db')) {
         createdComponents += 1;
       }
 
+      createdComponentImages += await ensureComponentImages(db, componentId, entry, imagePath);
+
       const mods = await ensureModifications(db, componentId, entry);
       createdModifications += mods.created;
       for (const item of mods.items) {
@@ -292,7 +327,7 @@ async function run(db = require('../db')) {
     `✅ Каталог: категорий создано ${createdCategories}, ` +
     `позиций создано ${createdComponents}, дополнено ${updatedComponents}, ` +
     `без изменений ${skippedComponents}, модификаций создано ${createdModifications}, ` +
-    `фото исполнений ${createdModificationImages}`
+    `фото в галерею ${createdComponentImages}, фото исполнений ${createdModificationImages}`
   );
   if (legacy.removed > 0 || legacy.disabled > 0) {
     console.log(
@@ -329,6 +364,7 @@ module.exports = {
   placeImage,
   expandArticles,
   ensureModifications,
+  ensureComponentImages,
   retireLegacyFlats,
   CATALOG_JSON,
   FILES_DIR,

@@ -12,6 +12,7 @@ router.get('/', auth, async (req, res) => {
     let sql = `
       SELECT c.*, cc.name AS category_name,
         (SELECT COUNT(*) FROM component_modifications cm WHERE cm.component_id = c.id) AS modifications_count,
+        (SELECT COUNT(*) FROM component_images ci WHERE ci.component_id = c.id) AS images_count,
         (SELECT COUNT(*) FROM component_documents cd WHERE cd.component_id = c.id) AS doc_count
       FROM components c
       LEFT JOIN component_categories cc ON c.category_id = cc.id
@@ -70,6 +71,12 @@ router.get('/:id', auth, async (req, res) => {
       [req.params.id]
     );
     comp.modifications = modsRes.rows;
+
+    const imagesRes = await db.query(
+      'SELECT id, image_path, sort_order FROM component_images WHERE component_id = $1 ORDER BY sort_order, id',
+      [req.params.id]
+    );
+    comp.images = imagesRes.rows;
 
     res.json(comp);
   } catch (err) {

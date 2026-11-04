@@ -429,16 +429,41 @@ const ComponentsCatalogPage = {
         </div>
       ` : '');
 
+      const gallery = comp.images || [];
+      const galleryHtml = (comp.image_path || gallery.length > 0) ? `
+        <div style="margin-bottom:16px">
+          ${comp.image_path ? `
+            <div style="border-radius:12px;overflow:hidden;border:1px solid var(--border);max-height:350px;margin-bottom:8px;cursor:zoom-in"
+                 onclick="ComponentsCatalogPage.viewComponentImage('${esc(comp.image_path)}')">
+              <img src="${esc(comp.image_path)}" alt="${esc(comp.name)}" style="width:100%;height:100%;object-fit:cover">
+            </div>
+          ` : ''}
+          ${gallery.length > 0 ? `
+            <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:6px">Фото изделия (${gallery.length})</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              ${gallery.map(img => `
+                <div style="position:relative;width:76px;height:76px;border-radius:8px;overflow:hidden;border:1px solid ${img.image_path === comp.image_path ? 'var(--accent-teal)' : 'var(--border)'};cursor:pointer"
+                     onclick="ComponentsCatalogPage.viewComponentImage('${esc(img.image_path)}')">
+                  <img src="${esc(img.image_path)}" style="width:100%;height:100%;object-fit:cover">
+                  ${canEdit ? `<button style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center"
+                     onclick="event.stopPropagation();ComponentsCatalogPage.deleteComponentImage(${id}, ${img.id})" title="Убрать фото">×</button>` : ''}
+                  ${canEdit && img.image_path !== comp.image_path ? `<button style="position:absolute;left:2px;bottom:2px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:4px;font-size:9px;padding:1px 4px;cursor:pointer"
+                     onclick="event.stopPropagation();ComponentsCatalogPage.setCoverImage(${id}, ${img.id})" title="Сделать обложкой">обложка</button>` : ''}
+                </div>
+              `).join('')}
+              ${canEdit ? `<div style="width:76px;height:76px;border-radius:8px;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);font-size:20px"
+                     onclick="event.stopPropagation();ComponentsCatalogPage.uploadComponentImage(${id})" title="Добавить фото">+</div>` : ''}
+            </div>
+          ` : (canEdit ? `<button class="btn btn-sm btn-secondary" onclick="ComponentsCatalogPage.uploadComponentImage(${id})">📷 Добавить фото</button>` : '')}
+        </div>
+      ` : '';
+
       Modal.open({
         title: comp.name,
         wide: true,
         body: `
           <div style="display:grid;grid-template-columns:${comp.image_path ? '1fr 1fr' : '1fr'};gap:20px">
-            ${comp.image_path ? `
-              <div style="border-radius:12px;overflow:hidden;border:1px solid var(--border);max-height:350px">
-                <img src="${esc(comp.image_path)}" alt="${esc(comp.name)}" style="width:100%;height:100%;object-fit:cover">
-              </div>
-            ` : ''}
+            ${galleryHtml ? `<div>${galleryHtml}</div>` : ''}
             <div>
               <div style="margin-bottom:16px">
                 <div style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;color:var(--accent-teal);margin-bottom:4px">${esc(comp.article)}</div>
@@ -920,6 +945,60 @@ const ComponentsCatalogPage = {
       body: `<div style="text-align:center"><img src="${imagePath}" style="max-width:100%;max-height:70vh;border-radius:8px"></div>`,
       footer: '<button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>',
     });
+  },
+
+  // === ГАЛЕРЕЯ ПОЗИЦИИ ===
+  uploadComponentImage(componentId) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = true;
+    input.addEventListener('change', async (e) => {
+      const files = e.target.files;
+      if (!files.length) return;
+      for (const file of files) {
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          const res = await API.upload('/upload/image', formData);
+          await API.post(`/components/${componentId}/images`, { image_path: res.path });
+        } catch (err) {
+          Toast.error(`Ошибка загрузки ${file.name}: ${err.message}`);
+        }
+      }
+      Toast.success('Фото добавлены');
+      this.viewComponent(componentId);
+      this.loadAllComponents().then(() => this.filterAndRender());
+    });
+    input.click();
+  },
+
+  viewComponentImage(imagePath) {
+    Modal.open({
+      title: 'Фото изделия',
+      wide: true,
+      body: `<div style="text-align:center"><img src="${imagePath}" style="max-width:100%;max-height:70vh;border-radius:8px"></div>`,
+      footer: '<button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>',
+    });
+  },
+
+  async setCoverImage(componentId, imageId) {
+    try {
+      await API.put(`/components/${componentId}/images/${imageId}/cover`, {});
+      Toast.success('Обложка обновлена');
+      this.viewComponent(componentId);
+      this.loadAllComponents().then(() => this.filterAndRender());
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  async deleteComponentImage(componentId, imageId) {
+    if (!await ConfirmDialog.delete('Убрать фото из галереи?')) return;
+    try {
+      await API.del(`/components/${componentId}/images/${imageId}`);
+      Toast.success('Фото убрано');
+      this.viewComponent(componentId);
+      this.loadAllComponents().then(() => this.filterAndRender());
+    } catch (err) { Toast.error(err.message); }
   },
 
   // === ДОКУМЕНТЫ КОМПОНЕНТОВ ===

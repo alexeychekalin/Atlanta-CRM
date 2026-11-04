@@ -80,6 +80,21 @@ test('каталог: полные артикулы совпадают с печ
   assert.equal(fullArticle(set.article, undefined), 'А.3776.005Л-01/А.3731.007');
 });
 
+test('каталог: у позиций есть галерея, обложка берётся из неё', () => {
+  const { components } = readConfig();
+  const gallery = components.filter(entry => (entry.images || []).length > 0);
+
+  assert.ok(gallery.length >= 50, `позиций с галереей: ${gallery.length}`);
+  for (const entry of gallery) {
+    assert.ok(entry.images.length <= 10, `${entry.article}: больше десяти фото в галерее`);
+    assert.equal(new Set(entry.images).size, entry.images.length,
+      `${entry.article}: в галерее повторяются файлы`);
+    assert.ok(entry.image, `${entry.article}: нет обложки при непустой галерее`);
+    assert.ok(entry.images.includes(entry.image),
+      `${entry.article}: обложка ${entry.image} не входит в галерею`);
+  }
+});
+
 test('каталог: фото лежат в репозитории и открываются браузером', () => {
   const { components } = readConfig();
   const signatures = {
@@ -92,6 +107,7 @@ test('каталог: фото лежат в репозитории и откр�
   const images = [];
   for (const entry of components) {
     if (entry.image) images.push([entry.article, entry.image]);
+    for (const image of entry.images || []) images.push([entry.article, image]);
     for (const mod of entry.modifications || []) {
       for (const image of mod.images || []) images.push([`${entry.article}-${mod.code}`, image]);
     }

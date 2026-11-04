@@ -192,6 +192,15 @@ CREATE TABLE IF NOT EXISTS component_modification_images (
   created_at TIMESTAMP DEFAULT now()
 );
 
+-- Галерея позиции каталога (несколько фото изделия, первое — обложка)
+CREATE TABLE IF NOT EXISTS component_images (
+  id SERIAL PRIMARY KEY,
+  component_id INT NOT NULL REFERENCES components(id) ON DELETE CASCADE,
+  image_path VARCHAR(500) NOT NULL,
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT now()
+);
+
 -- Документы компонентов (сертификаты и информационные сообщения)
 CREATE TABLE IF NOT EXISTS component_documents (
   id SERIAL PRIMARY KEY,
