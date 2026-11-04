@@ -13,6 +13,7 @@ import io
 import json
 import re
 import sys
+import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -20,6 +21,8 @@ from pathlib import Path
 PUBLIC_URL = sys.argv[1] if len(sys.argv) > 1 else 'https://disk.yandex.ru/d/qos0XLZpqddatA'
 DEST = Path(sys.argv[2] if len(sys.argv) > 2 else
             Path(__file__).resolve().parents[1] / 'src/db/catalog/files/incoming')
+MAX_FILE_BYTES = 40 * 1024 * 1024        # фото с телефона — до 10 МБ, остальное не нужно
+MAX_TOTAL_BYTES = 400 * 1024 * 1024     # чтобы не раздувать репозиторий и время сборки
 
 API = 'https://cloud-api.yandex.net/v1/disk/public/resources'
 MAX_SIDE = 1600
@@ -45,9 +48,12 @@ def download(path, target):
     params = {'public_key': PUBLIC_URL, 'path': path}
     href = api(API + '/download?' + urllib.parse.urlencode(params))['href']
     target.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(href, timeout=300) as response:
-        target.write_bytes(response.read())
-    return target.stat().st_size
+    with urllib.request.urlopen(href, timeout=120) as response:
+        data = response.read(MAX_FILE_BYTES + 1)
+    if len(data) > MAX_FILE_BYTES:
+        raise ValueError(f'файл больше {MAX_FILE_BYTES // 1024 // 1024} МБ — пропущен')
+    target.write_bytes(data)
+    return len(data)
 
 
 def safe_name(name):
@@ -83,9 +89,16 @@ def walk(path='', depth=0):
             yield from walk(item['path'], depth + 1)
 
 
+def write_report(manifest, failed, total_bytes, skipped):
+    (DEST / '_manifest.json').write_text(
+        json.dumps({'source': PUBLIC_URL, 'total_bytes': total_bytes,
+                    'files': manifest, 'failed': failed, 'skipped': skipped},
+                   ensure_ascii=False, indent=1), encoding='utf-8')
+
+
 def main():
     DEST.mkdir(parents=True, exist_ok=True)
-    manifest, failed = [], []
+    manifest, failed, skipped = [], [], []
     total_bytes = 0
 
     for item in walk():
@@ -93,6 +106,10 @@ def main():
             continue
         suffix = Path(item['name']).suffix.lower()
         if suffix not in IMAGE_EXT and suffix not in KEEP_EXT:
+            skipped.append({'source': item['path'], 'reason': f'формат {suffix}'})
+            continue
+        if total_bytes > MAX_TOTAL_BYTES:
+            skipped.append({'source': item['path'], 'reason': 'лимит объёма'})
             continue
 
         relative = item['path'].lstrip('/')
@@ -103,28 +120,33 @@ def main():
         else:
             target = DEST / relative
 
-        try:
-            raw = DEST / Path(relative).parent / f'__raw_{stem}{suffix}'
-            size = download(item['path'], raw)
-            if suffix in IMAGE_EXT:
-                size = to_jpeg(raw, target)
+        raw = DEST / Path(relative).parent / f'__raw_{stem}{suffix}'
+        error = None
+        for attempt in range(1, 4):                   # Яндекс отдаёт по одному файлу,
+            try:                                      # сеть на раннере тоже моргает
+                size = download(item['path'], raw)
+                if suffix in IMAGE_EXT:
+                    size = to_jpeg(raw, target)
+                    raw.unlink(missing_ok=True)
+                manifest.append({'source': item['path'], 'file': str(target.relative_to(DEST)),
+                                 'bytes': size})
+                total_bytes += size
+                print(f"  {item['path'][:70]:70} {size / 1024:8.0f} КБ", flush=True)
+                error = None
+                break
+            except Exception as err:                  # noqa: BLE001 — отчёт важнее падения
+                error = err
                 raw.unlink(missing_ok=True)
-            total_bytes += size
-            manifest.append({'source': item['path'], 'file': str(target.relative_to(DEST)),
-                             'bytes': size})
-            print(f"  {item['path'][:70]:70} {size / 1024:8.0f} КБ")
-        except Exception as err:                      # noqa: BLE001 — отчёт важнее падения
-            failed.append({'source': item['path'], 'error': str(err)})
-            print(f'  ✗ {item["path"]}: {err}')
+                time.sleep(2 * attempt)
+        if error is not None:
+            failed.append({'source': item['path'], 'error': str(error)})
+            print(f'  ✗ {item["path"]}: {error}', flush=True)
 
-    (DEST / '_manifest.json').write_text(
-        json.dumps({'source': PUBLIC_URL, 'files': manifest, 'failed': failed},
-                   ensure_ascii=False, indent=1), encoding='utf-8')
+        write_report(manifest, failed, total_bytes, skipped)   # отчёт после каждого файла
 
-    print(f'\nфайлов: {len(manifest)}, ошибок: {len(failed)}, '
+    write_report(manifest, failed, total_bytes, skipped)
+    print(f'\nфайлов: {len(manifest)}, ошибок: {len(failed)}, пропущено: {len(skipped)}, '
           f'объём: {total_bytes / 1024 / 1024:.1f} МБ → {DEST}')
-    if failed:
-        sys.exit(1)
 
 
 if __name__ == '__main__':
