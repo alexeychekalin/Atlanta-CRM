@@ -131,6 +131,8 @@ def main():
                 if suffix in IMAGE_EXT:
                     size = to_jpeg(raw, target)
                     raw.unlink(missing_ok=True)
+                else:
+                    raw.replace(target)               # документ — под своим именем
                 manifest.append({'source': item['path'], 'file': str(target.relative_to(DEST)),
                                  'bytes': size})
                 total_bytes += size
