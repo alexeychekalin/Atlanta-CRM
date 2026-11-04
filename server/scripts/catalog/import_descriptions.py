@@ -80,6 +80,7 @@ FIELD_LABEL = {
     'color_temperature': 'Цветовая температура',
     'luminous_flux': 'Световой поток',
     'dimensions': 'Размер',
+    'mass': 'Масса',
 }
 # артикулы, под которыми поставщик присылает документы, и позиции каталога
 ARTICLE_ALIASES = {
@@ -578,7 +579,7 @@ def merge_specs_from(entry, docs):
     for _, parsed, _ in docs:
         for key, value in parsed['params']:
             field = param_kind(key)
-            if not field or field in ('climate', 'light'):
+            if not field or field in ('climate', 'light', 'mass'):
                 continue
             if has_field(text, field) and not numbers_present(text, value):
                 continue                                  # в описании другое значение
