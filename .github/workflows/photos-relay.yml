@@ -62,7 +62,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f server/src/db/catalog/files/incoming server/src/db/catalog/docs
+          for dir in server/src/db/catalog/files/incoming server/src/db/catalog/docs; do
+            if [ -d "$dir" ]; then git add -f "$dir"; fi
+          done
           if git diff --cached --quiet; then
             echo "Новых файлов нет"
             exit 0
