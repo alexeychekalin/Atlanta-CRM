@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { readConfig, placeImage, expandArticles, CATALOG_JSON, FILES_DIR } =
+const { readConfig, placeImage, expandArticles, fillEmptyFields, CATALOG_JSON, FILES_DIR } =
   require('../src/db/catalog');
 const { fullArticle } = require('../src/utils/article');
 
@@ -184,4 +184,36 @@ test('каталог: прежние плоские артикулы жгуто�
     assert.ok(texts.some(text => text.includes(article)),
       `${article}: потерян при разбиении на семейства`);
   }
+});
+
+test('каталог: описание расширяется, ручная правка не затирается', async () => {
+  const queries = [];
+  const runner = {
+    query: async (sql, params) => {
+      queries.push({ sql, params });
+      return { rows: [], rowCount: 1 };
+    },
+  };
+
+  const base = 'Фонарь габаритный. Функции: габаритный огонь.';
+  const extended = `${base}\nОсобенности: Биполярный; Европейский сертификат E28.`;
+
+  // пустое описание — заполняем
+  await fillEmptyFields(runner, 1, { description: null, image_path: null }, { description: base }, null);
+  assert.ok(queries.at(-1).sql.includes('description'), 'описание не заполнено');
+  assert.match(queries.at(-1).sql, /UPDATE components SET/);
+
+  // каталожное описание продолжает текущее — обновляем
+  assert.equal(
+    await fillEmptyFields(runner, 1, { description: base, image_path: null },
+      { description: extended }, null),
+    true
+  );
+
+  // пользователь дописал своё — каталожная версия не затирает правку
+  assert.equal(
+    await fillEmptyFields(runner, 1, { description: `${base} Наш комментарий.`, image_path: null },
+      { description: extended }, null),
+    false
+  );
 });

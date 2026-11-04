@@ -100,7 +100,14 @@ async function insertComponent(runner, entry, categoryId, imagePath) {
 async function fillEmptyFields(runner, componentId, current, entry, imagePath) {
   const patch = {};
   if (!current.image_path && imagePath) patch.image_path = imagePath;
-  if (!current.description && entry.description) patch.description = entry.description;
+  if (entry.description) {
+    const currentText = (current.description || '').trim();
+    // пустое заполняем, а расширенный текст из каталога принимаем только если
+    // он продолжает текущий — ручные правки в интерфейсе не затираются
+    if (!currentText || entry.description.startsWith(currentText)) {
+      if (current.description !== entry.description) patch.description = entry.description;
+    }
+  }
 
   const fields = Object.keys(patch);
   if (fields.length === 0) return false;
@@ -366,6 +373,7 @@ module.exports = {
   ensureModifications,
   ensureComponentImages,
   retireLegacyFlats,
+  fillEmptyFields,
   CATALOG_JSON,
   FILES_DIR,
 };

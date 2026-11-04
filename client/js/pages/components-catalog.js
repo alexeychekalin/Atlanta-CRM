@@ -477,7 +477,7 @@ const ComponentsCatalogPage = {
               ${comp.description ? `
                 <div style="margin-bottom:12px">
                   <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">Описание</div>
-                  <div style="font-size:0.9rem;line-height:1.5">${esc(comp.description)}</div>
+                  <div style="font-size:0.9rem;line-height:1.5;white-space:pre-line">${esc(comp.description)}</div>
                 </div>
               ` : ''}
               ${comp.comment ? `

@@ -8,7 +8,9 @@ name: Photos relay (Yandex.Disk → ветка)
 #   photos (по умолчанию) — снимки в JPEG + документы в catalog/files/incoming
 #   docs                  — только .docx/.txt/.ini/.pdf в catalog/docs
 #
-# Запускается вручную или правкой .github/photos-relay.trigger.
+# Запускается вручную или правкой .github/photos-relay.trigger: если в файле
+# встречается слово «docs», релей работает в режиме описаний (dispatch из
+# песочницы недоступен, поэтому режим задаётся содержимым триггера).
 
 on:
   workflow_dispatch:
@@ -44,7 +46,7 @@ jobs:
       - name: Скачать материалы
         continue-on-error: true      # частичный сбой не должен терять уже скачанное
         run: |
-          if [ -n "$DOCS_ONLY" ]; then
+          if [ -n "$DOCS_ONLY" ] || grep -qi docs .github/photos-relay.trigger 2>/dev/null; then
             TARGET=server/src/db/catalog/docs
             FLAG=--docs
           else
