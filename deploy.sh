@@ -186,28 +186,26 @@ node src/db/seed.js 2>/dev/null || warn "Seed уже был применён и�
 # Миграция ролей (добавляет guest и др.)
 node src/db/migrate_roles.js 2>/dev/null || warn "Миграция ролей: ошибка или уже применена"
 
-# Предзаполнение: клиенты из карточек предприятий (src/db/preseed)
-if [ "$SKIP_PRESEED" = "1" ]; then
-  warn "Предзаполнение клиентов пропущено (SKIP_PRESEED=1)"
+# Наполнение базы одним шагом (src/db/data.js): контрагенты из карточек
+# предприятий + каталог АТЛАНТА-26, если включён WITH_CATALOG=1.
+# Контрагенты пропускаются флагом SKIP_PRESEED=1.
+export WITH_CATALOG="${WITH_CATALOG:-0}"
+export SKIP_PRESEED
+if [ "$WITH_CATALOG" = "1" ]; then
+  DATASET_LABEL="контрагенты + каталог АТЛАНТА-26"
 else
-  node src/db/preseed.js 2>/dev/null || warn "Предзаполнение: ошибка или данные уже загружены"
+  DATASET_LABEL="контрагенты (каталог выключен)"
 fi
-
-# Каталог компонентов (src/db/catalog) — только для полной версии.
-# Пустая версия разворачивается без каталога, догрузить позже: cd server && npm run db:catalog
-if [ "${WITH_CATALOG:-0}" = "1" ]; then
-  log "Импортирую каталог компонентов..."
-  if node src/db/catalog.js; then
+log "Загружаю данные: ${DATASET_LABEL}..."
+if node src/db/data.js; then
+  if [ "$WITH_CATALOG" = "1" ]; then
     touch "$APP_DIR/server/.catalog-enabled"
-    log "Каталог компонентов загружен"
-  else
-    warn "Каталог: ошибка импорта (система запустится с пустым каталогом)"
   fi
+  log "Данные загружены"
 else
-  log "Каталог не импортирован — пустая версия (полная: sudo WITH_CATALOG=1 ./deploy.sh)"
+  warn "Наполнение: часть данных не загрузилась (см. сообщения выше)"
 fi
 cd "$APP_DIR"
-log "Данные загружены"
 
 # Повторно выдать права (seed/migrate_roles могли создать записи)
 sudo -u postgres psql -d $DB_NAME -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO $DB_USER;" 2>/dev/null
