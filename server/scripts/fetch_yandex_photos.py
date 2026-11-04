@@ -28,7 +28,8 @@ API = 'https://cloud-api.yandex.net/v1/disk/public/resources'
 MAX_SIDE = 1600
 JPEG_QUALITY = 86
 IMAGE_EXT = {'.heic', '.heif', '.jpg', '.jpeg', '.png', '.webp', '.bmp'}
-KEEP_EXT = {'.docx', '.doc', '.pdf'}
+KEEP_EXT = {'.docx', '.doc', '.pdf', '.txt', '.ini', '.rtf'}
+DOCS_ONLY = '--docs' in sys.argv
 
 
 def api(url):
@@ -105,6 +106,8 @@ def main():
         if item['type'] != 'file':
             continue
         suffix = Path(item['name']).suffix.lower()
+        if DOCS_ONLY and suffix in IMAGE_EXT:
+            continue
         if suffix not in IMAGE_EXT and suffix not in KEEP_EXT:
             skipped.append({'source': item['path'], 'reason': f'формат {suffix}'})
             continue
@@ -118,9 +121,9 @@ def main():
         if suffix in IMAGE_EXT:
             target = DEST / Path(relative).parent / f'{stem}.jpg'
         else:
-            target = DEST / relative
+            target = DEST / relative                      # документ — под своим именем
 
-        raw = DEST / Path(relative).parent / f'__raw_{stem}{suffix}'
+        raw = DEST / Path(relative).parent / f'.download{suffix}'
         error = None
         for attempt in range(1, 4):                   # Яндекс отдаёт по одному файлу,
             try:                                      # сеть на раннере тоже моргает

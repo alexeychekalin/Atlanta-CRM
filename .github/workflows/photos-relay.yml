@@ -1,12 +1,22 @@
 name: Photos relay (Yandex.Disk → ветка)
 
 # Одноразовый мост: песочница разработки не ходит на disk.yandex.ru,
-# а раннер может. Скачивает публичную папку с фотографиями изделий,
-# переводит снимки в JPEG и коммитит их в ветку, откуда их забирает импортёр.
-# Запускается вручную (workflow_dispatch) или правкой .github/photos-relay.trigger.
+# а раннер может. Скачивает публичную папку с фотографиями и описаниями
+# изделий и коммитит их в ветку, откуда их забирают импортёры.
+#
+# Режимы (workflow_dispatch → docs):
+#   photos (по умолчанию) — снимки в JPEG + документы в catalog/files/incoming
+#   docs                  — только .docx/.txt/.ini/.pdf в catalog/docs
+#
+# Запускается вручную или правкой .github/photos-relay.trigger.
 
 on:
   workflow_dispatch:
+    inputs:
+      docs:
+        description: 'Только описания (.docx/.txt/.ini), без фото'
+        type: boolean
+        default: false
   push:
     paths:
       - '.github/photos-relay.trigger'
@@ -17,6 +27,8 @@ permissions:
 jobs:
   relay:
     runs-on: ubuntu-latest
+    env:
+      DOCS_ONLY: ${{ inputs.docs && '1' || '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,22 +41,29 @@ jobs:
       - name: Зависимости
         run: pip install --quiet pillow pillow-heif
 
-      - name: Скачать фотографии
+      - name: Скачать материалы
         continue-on-error: true      # частичный сбой не должен терять уже скачанное
         run: |
+          if [ -n "$DOCS_ONLY" ]; then
+            TARGET=server/src/db/catalog/docs
+            FLAG=--docs
+          else
+            TARGET=server/src/db/catalog/files/incoming
+            FLAG=
+          fi
+          echo "Режим: ${DOCS_ONLY:-photos} → $TARGET"
           python3 server/scripts/fetch_yandex_photos.py \
-            "https://disk.yandex.ru/d/qos0XLZpqddatA" \
-            server/src/db/catalog/files/incoming || true
+            "https://disk.yandex.ru/d/qos0XLZpqddatA" "$TARGET" $FLAG || true
 
       - name: Закоммитить в ветку
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f server/src/db/catalog/files/incoming
+          git add -f server/src/db/catalog/files/incoming server/src/db/catalog/docs
           if git diff --cached --quiet; then
             echo "Новых файлов нет"
             exit 0
           fi
-          git commit -m "Фото изделий: выгрузка с Яндекс.Диска ($(date -u +%Y-%m-%d))"
+          git commit -m "Материалы изделий: выгрузка с Яндекс.Диска ($(date -u +%Y-%m-%d))"
           git push origin "HEAD:${{ github.ref_name }}"
