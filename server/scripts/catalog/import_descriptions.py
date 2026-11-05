@@ -17,14 +17,16 @@
 * дописывает в описание позиции только то, чего в нём ещё нет: блок
   «Особенности», климатическое исполнение, источник света, комплектацию;
 * если параметр в документе расходится с каталогом (например, диапазон
-  температур), описание не трогает и выносит расхождение в отчёт —
-  каталог поставщика считается главнее;
+  температур), описание не трогает и выносит расхождение в отчёт: описание
+  из PDF-каталога приоритетно, паспорт только дополняет его;
 * заполняет пустые характеристики позиции (`specs`);
 * если документ описывает конкретное исполнение, текст уходит в него.
 
 Запуск:
     python3 scripts/catalog/import_descriptions.py /path/to/docs
     python3 scripts/catalog/import_descriptions.py /path/to/docs --dry-run
+    python3 scripts/catalog/import_descriptions.py /path/to/docs --dry-run \
+        --report-md docs/catalog-descriptions.md
 """
 import configparser
 import json
@@ -484,7 +486,8 @@ def run(root, catalog_path=CATALOG_JSON, dry_run=False, quiet=False):
         mod = next((m for m in mods if m), None)
         how = ', '.join(dict.fromkeys(hows))
         if not entries:
-            report['unmatched'].append((path, ', '.join(articles), how or 'нет в каталоге'))
+            report['unmatched'].append(
+                (path, ', '.join(articles) or path.stem, how or 'нет в каталоге'))
             continue
 
         if not quiet:
@@ -553,7 +556,8 @@ def merge_group(entry, docs, report):
     for field, variants in values.items():
         if len(variants) > 1:
             report['conflicts'].append(
-                (entry['article'], 'разные значения: ' + ' / '.join(v for _, v in variants.values())))
+                (entry['article'], 'разные значения: ' + ' / '.join(v for _, v in variants.values()),
+                 field))
             continue
         key, value = next(iter(variants.values()))
         add_param(entry, field, value, report)
@@ -573,7 +577,7 @@ def add_param(entry, field, value, report):
         if field in ('voltage', 'temperature', 'protection', 'power') \
                 and not numbers_present(text, value):
             report['conflicts'].append(
-                (entry['article'], f'{FIELD_LABEL.get(field, field)}: {value}'))
+                (entry['article'], f'{FIELD_LABEL.get(field, field)}: {value}', field))
         return 0
     if numbers(value) and numbers(value) <= numbers(text):
         return 0
@@ -604,18 +608,100 @@ def merge_specs_from(entry, docs):
             specs['functions'] = parsed['functions']
 
 
+def catalog_value(entry, field):
+    """Строка описания, где в каталоге записан этот параметр."""
+    entry_pattern = next((item[2] for item in PARAM_TYPES if item[0] == field), None)
+    if not entry_pattern:
+        return ''
+    for line in (entry.get('description') or '').split('\n'):
+        if re.search(entry_pattern, line, re.IGNORECASE):
+            return normalize(line).rstrip('.')
+    return ''
+
+
+def write_markdown_report(result, root, path, catalog, dry_run=True):
+    """Отчёт импорта в markdown: что добавлено, что разошлось, что не нашли."""
+    root = Path(root)
+    lines = ['# Описания изделий из документов поставщика', '']
+    lines.append('Отчёт собирает `server/scripts/catalog/import_descriptions.py` '
+                 'по папке с документами поставщика. Повторный запуск отчёт перезаписывает.')
+    lines.append('')
+
+    lines.append('**Политика слияния.** Описание из PDF-каталога приоритетно: паспорт только '
+                 'дописывает то, чего в нём нет (особенности, источник света, климатическое '
+                 'исполнение, комплектация). Если значение в паспорте расходится с каталогом, '
+                 'описание не меняется — расхождение попадает в таблицу ниже.')
+    lines.append('')
+
+    added = result['added']
+    conflicts = result['conflicts']
+    unmatched = result['unmatched']
+    lines.append(f'**Итог прогона:** расхождений — {len(conflicts)}, документов без позиции — '
+                 f'{len(unmatched)}, дополнений в этом прогоне — {len(added)} '
+                 f'(позиций {len({a for a, _ in added})}).')
+    lines.append('')
+
+    if not added:
+        lines.append('_Повторный запуск: всё, что есть в документах, уже перенесено в каталог._')
+        lines.append('')
+
+    if added:
+        lines.append('## Что добавлено')
+        lines.append('')
+        lines.append('| Позиция | Добавленный текст |')
+        lines.append('|---|---|')
+        for article, line in added:
+            lines.append(f'| `{article}` | {line.replace("|", "/")} |')
+        lines.append('')
+
+    if conflicts:
+        lines.append('## Расхождения с PDF-каталогом (не перезаписаны)')
+        lines.append('')
+        lines.append('| Позиция | В паспорте | В каталоге (PDF) |')
+        lines.append('|---|---|---|')
+        for article, line, field in conflicts:
+            entry = catalog.by_key.get(Catalog.key(article)) or {}
+            current = catalog_value(entry, field) or '—'
+            lines.append(f'| `{article}` | {units(line).replace("|", "/")} | '
+                         f'{current.replace("|", "/")} |')
+        lines.append('')
+
+    if unmatched:
+        lines.append('## Документы без позиции в каталоге')
+        lines.append('')
+        lines.append('Позиции не заводим: документы остаются в этом отчёте, пока артикул '
+                     'не появится в каталоге.')
+        lines.append('')
+        lines.append('| Документ | Артикул | Почему |')
+        lines.append('|---|---|---|')
+        for item, article, why in unmatched:
+            rel = Path(item).relative_to(root) if root in Path(item).parents else Path(item).name
+            lines.append(f'| `{normalize(str(rel))}` | {normalize(article) or "—"} | {why} |')
+        lines.append('')
+
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    return Path(path)
+
+
 if __name__ == '__main__':
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     if not args:
         sys.exit(__doc__)
-    result = run(args[0], dry_run='--dry-run' in sys.argv, quiet='--report' in sys.argv)
+    report_md = next((a.split('=', 1)[1] for a in sys.argv[1:] if a.startswith('--report-md=')), '')
+    result = run(args[0], dry_run='--dry-run' in sys.argv,
+                 quiet='--report' in sys.argv or bool(report_md))
+
+    if report_md:
+        written = write_markdown_report(result, args[0], report_md, Catalog())
+        print(f'отчёт: {written}')
 
     if '--report' in sys.argv:
         print('ДОБАВЛЕНО')
         for article, line in result['added']:
             print(f'  {article}: {line}')
         print('\nРАСХОЖДЕНИЯ')
-        for article, line in result['conflicts']:
+        for article, line, _ in result['conflicts']:
             print(f'  {article}: {line}')
         print('\nНЕ СОПОСТАВЛЕНО')
         for path, article, why in result['unmatched']:
