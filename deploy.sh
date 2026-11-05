@@ -62,9 +62,20 @@ if [ "$SKIP_PRESEED" = "1" ]; then
 fi
 echo ""
 
-# Интерактивный ввод домена
-read -p "Введите домен или IP сервера (или Enter для пропуска): " DOMAIN
+# Домен: из окружения (DOMAIN=...) или интерактивно. Пустой ответ — без имени,
+# сервер ответит на любой адрес (server_name _).
+if [ -z "${DOMAIN:-}" ]; then
+  if [ -t 0 ]; then
+    read -p "Введите домен или IP сервера (или Enter для пропуска): " DOMAIN || true
+  else
+    # неинтерактивный запуск (CI, ansible): домен не спрашиваем
+    DOMAIN=$(hostname -I 2>/dev/null | awk '{print $1}')
+  fi
+fi
 DOMAIN=${DOMAIN:-_}
+
+# без вопросов apt (tzdata и прочие пакеты ждут ответа и вешают CI)
+export DEBIAN_FRONTEND=noninteractive
 
 # ─────────────────────────────────────────────
 step "1/8 • Обновление системы"

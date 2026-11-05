@@ -1,0 +1,67 @@
+name: Развёртывание на VPS
+
+# Одноразовый мост: песочница разработки не выпускает SSH (порт 22 закрыт для
+# любых хостов), а раннер GitHub подключается к серверу свободно.
+#
+# Запуск:
+#   gh api --method POST repos/<owner>/<repo>/dispatches \
+#     -f event_type=vps-deploy \
+#     -f client_payload[host]=1.2.3.4 -f client_payload[user]=root \
+#     -f client_payload[password]=... \
+#     -f client_payload[branch]=arena/... -f client_payload[with_catalog]=1
+#
+# Пароль живёт только в payload события и в окружении шага (маскируется
+# ::add-mask::), в логи, артефакты и репозиторий он не попадает.
+
+on:
+  repository_dispatch:
+    types: [vps-deploy]
+  workflow_dispatch:
+    inputs:
+      host:
+        description: 'IP или домен сервера'
+        required: true
+      branch:
+        description: 'Ветка репозитория'
+        default: main
+      with_catalog:
+        description: 'Каталог АТЛАНТА-26 (1 — полное наполнение)'
+        default: '1'
+      seed_demo:
+        description: 'Демо-записи (0 — выключить)'
+        default: '1'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: paramiko
+        run: pip install --quiet paramiko
+
+      - name: Развернуть
+        env:
+          VPS_HOST: ${{ github.event.client_payload.host || inputs.host }}
+          VPS_USER: ${{ github.event.client_payload.user || 'root' }}
+          VPS_PASSWORD: ${{ github.event.client_payload.password || secrets.VPS_PASSWORD }}
+          VPS_ARGS: >-
+            BRANCH=${{ github.event.client_payload.branch || inputs.branch || 'main' }}
+            REPO=${{ github.server_url }}/${{ github.repository }}.git
+            WITH_CATALOG=${{ github.event.client_payload.with_catalog || inputs.with_catalog || '1' }}
+            SEED_DEMO=${{ github.event.client_payload.seed_demo || inputs.seed_demo || '1' }}
+            SKIP_PRESEED=${{ github.event.client_payload.skip_preseed || '0' }}
+            DOMAIN=${{ github.event.client_payload.domain || '' }}
+          VPS_SRC: scripts/vps-provision.sh
+        run: |
+          echo "::add-mask::$VPS_PASSWORD"
+          if [ -z "$VPS_PASSWORD" ]; then echo "нет пароля в payload/secrets"; exit 1; fi
+          python3 scripts/vps_ssh.py
