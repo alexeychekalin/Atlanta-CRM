@@ -370,6 +370,26 @@ const ComponentsCatalogPage = {
       const canEdit = API.can('components', 'edit');
       const mods = comp.modifications || [];
 
+      // Фото карточки для просмотра: обложка первой, дальше галерея без повторов.
+      // Список живёт до следующего открытия карточки — его листает Lightbox.
+      const photos = [];
+      if (comp.image_path) photos.push(comp.image_path);
+      (comp.images || []).forEach(img => {
+        if (img.image_path && !photos.includes(img.image_path)) photos.push(img.image_path);
+      });
+      this._photos = photos;
+      this._photoTitle = comp.name;
+
+      // Фото модификаций: у каждой свой набор для листания
+      const modPhotos = {};
+      const modCodes = {};
+      mods.forEach(m => {
+        modPhotos[m.id] = (m.images || []).map(img => img.image_path).filter(Boolean);
+        modCodes[m.id] = m.code;
+      });
+      this._modPhotos = modPhotos;
+      this._modCodes = modCodes;
+
       const modsHtml = mods.length > 0 ? `
         <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -401,8 +421,8 @@ const ComponentsCatalogPage = {
                   </div>
                   ${images.length > 0 ? `
                     <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-                      ${images.map(img => `
-                        <div style="position:relative;width:80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid var(--border);cursor:pointer" onclick="event.stopPropagation();ComponentsCatalogPage.viewModImage('${img.image_path}')">
+                      ${images.map((img, imgIndex) => `
+                        <div style="position:relative;width:80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid var(--border);cursor:pointer" onclick="event.stopPropagation();ComponentsCatalogPage.viewModImage(${m.id}, ${imgIndex})">
                           <img src="${img.image_path}" style="width:100%;height:100%;object-fit:cover">
                           ${canEdit ? `<button style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center" onclick="event.stopPropagation();ComponentsCatalogPage.deleteModImage(${id}, ${m.id}, ${img.id})">×</button>` : ''}
                         </div>
@@ -434,7 +454,7 @@ const ComponentsCatalogPage = {
         <div style="margin-bottom:16px">
           ${comp.image_path ? `
             <div style="border-radius:12px;overflow:hidden;border:1px solid var(--border);max-height:350px;margin-bottom:8px;cursor:zoom-in"
-                 onclick="ComponentsCatalogPage.viewComponentImage('${esc(comp.image_path)}')">
+                 onclick="ComponentsCatalogPage.viewComponentImage(0)">
               <img src="${esc(comp.image_path)}" alt="${esc(comp.name)}" style="width:100%;height:100%;object-fit:cover">
             </div>
           ` : ''}
@@ -443,7 +463,7 @@ const ComponentsCatalogPage = {
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               ${gallery.map(img => `
                 <div style="position:relative;width:76px;height:76px;border-radius:8px;overflow:hidden;border:1px solid ${img.image_path === comp.image_path ? 'var(--accent-teal)' : 'var(--border)'};cursor:pointer"
-                     onclick="ComponentsCatalogPage.viewComponentImage('${esc(img.image_path)}')">
+                     onclick="ComponentsCatalogPage.viewComponentImage(${photos.indexOf(img.image_path)})">
                   <img src="${esc(img.image_path)}" style="width:100%;height:100%;object-fit:cover">
                   ${canEdit ? `<button style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center"
                      onclick="event.stopPropagation();ComponentsCatalogPage.deleteComponentImage(${id}, ${img.id})" title="Убрать фото">×</button>` : ''}
@@ -938,12 +958,15 @@ const ComponentsCatalogPage = {
     } catch (err) { Toast.error(err.message); }
   },
 
-  viewModImage(imagePath) {
-    Modal.open({
-      title: 'Фото модификации',
-      wide: true,
-      body: `<div style="text-align:center"><img src="${imagePath}" style="max-width:100%;max-height:70vh;border-radius:8px"></div>`,
-      footer: '<button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>',
+  /** Просмотр фото модификации: листаются все фото этой модификации. */
+  viewModImage(modId, index = 0) {
+    const images = (this._modPhotos && this._modPhotos[modId]) || [];
+    if (!images.length) return;
+    const code = this._modCodes && this._modCodes[modId];
+    Lightbox.open({
+      images,
+      index,
+      title: code ? `Фото модификации ${code}` : 'Фото модификации',
     });
   },
 
@@ -973,13 +996,11 @@ const ComponentsCatalogPage = {
     input.click();
   },
 
-  viewComponentImage(imagePath) {
-    Modal.open({
-      title: 'Фото изделия',
-      wide: true,
-      body: `<div style="text-align:center"><img src="${imagePath}" style="max-width:100%;max-height:70vh;border-radius:8px"></div>`,
-      footer: '<button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>',
-    });
+  /** Просмотр фото изделия: листаются все фото карточки, карточка не закрывается. */
+  viewComponentImage(index = 0) {
+    const images = this._photos || [];
+    if (!images.length) return;
+    Lightbox.open({ images, index, title: this._photoTitle || 'Фото изделия' });
   },
 
   async setCoverImage(componentId, imageId) {

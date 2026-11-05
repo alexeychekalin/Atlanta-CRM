@@ -38,6 +38,7 @@ function makeSandbox(overrides = {}) {
     },
     Toast: { error: () => {}, success: () => {}, info: () => {} },
     Modal: { open: () => {}, close: () => {} },
+    Lightbox: { open: () => {}, close: () => {} },
     ConfirmDialog: { delete: async () => true },
     App: { navigateTo: () => {} },
     ...overrides.globals,
@@ -111,4 +112,68 @@ test('модификации: код подставляется и когда м
 
   assert.match(modal.body, /А\.3716\.002/);
   assert.match(modal.body, /Нет модификаций/);
+});
+
+test('галерея: просмотр листает все фото карточки, начиная с выбранного', async () => {
+  const component = {
+    id: 9,
+    article: 'А.3731.013',
+    name: 'Фонарь габаритный',
+    price: 1200,
+    is_active: true,
+    image_path: '/uploads/cover.jpg',
+    // обложка повторяется в галерее — в просмотре она должна быть один раз
+    images: [
+      { id: 1, image_path: '/uploads/cover.jpg' },
+      { id: 2, image_path: '/uploads/second.jpg' },
+      { id: 3, image_path: '/uploads/third.jpg' },
+    ],
+    modifications: [],
+  };
+  let opened = null;
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage', {
+    api: { get: async url => (url.endsWith('/documents') ? { data: [] } : component) },
+    globals: { Lightbox: { open: options => { opened = options; }, close: () => {} } },
+  });
+
+  await page.viewComponent(9);
+  page.viewComponentImage(2);
+
+  assert.deepEqual(opened.images, ['/uploads/cover.jpg', '/uploads/second.jpg', '/uploads/third.jpg']);
+  assert.equal(opened.index, 2, 'открывается то фото, по которому кликнули');
+  assert.equal(opened.title, 'Фонарь габаритный');
+
+  // закрытие просмотра не трогает карточку: Modal остаётся как был
+  assert.ok(!Object.prototype.hasOwnProperty.call(opened, 'footer'));
+});
+
+test('галерея: фото модификации листаются отдельным набором', async () => {
+  const component = {
+    id: 10,
+    article: 'А.3776.005Л',
+    name: 'Фонарь задний',
+    price: 2500,
+    is_active: true,
+    images: [],
+    modifications: [
+      { id: 4, code: '01', name: 'левый', images: [{ image_path: '/uploads/m1-1.jpg' }, { image_path: '/uploads/m1-2.jpg' }] },
+      { id: 5, code: '05', name: 'левый расширенный', images: [{ image_path: '/uploads/m2-1.jpg' }] },
+    ],
+  };
+  let opened = null;
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage', {
+    api: { get: async url => (url.endsWith('/documents') ? { data: [] } : component) },
+    globals: { Lightbox: { open: options => { opened = options; }, close: () => {} } },
+  });
+
+  await page.viewComponent(10);
+  page.viewModImage(4, 1);
+
+  assert.deepEqual(opened.images, ['/uploads/m1-1.jpg', '/uploads/m1-2.jpg']);
+  assert.equal(opened.index, 1);
+  assert.match(opened.title, /01/);
+
+  // у второй модификации свой набор
+  page.viewModImage(5, 0);
+  assert.deepEqual(opened.images, ['/uploads/m2-1.jpg']);
 });
