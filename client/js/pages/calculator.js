@@ -629,7 +629,7 @@ const CalculatorPage = {
 
     const renderModPicker = () => {
       const items = mods.filter(m => m.is_active !== false).map(m => {
-        const fullArticle = fullArticle(comp.article, m.code);
+        const modArticle = fullArticle(comp.article, m.code);
         const price = m.price_override !== null ? m.price_override : comp.price;
         const already = this.bomItems.some(b => b.component_id === comp.id && b.modification_id === m.id);
         return `
@@ -639,7 +639,7 @@ const CalculatorPage = {
             <div style="display:flex;justify-content:space-between;align-items:center">
               <div style="flex:1">
                 <div style="display:flex;align-items:center;gap:8px">
-                  <span style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;color:var(--accent-teal)">${fullArticle}</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;color:var(--accent-teal)">${modArticle}</span>
                   ${already ? '<span style="font-size:0.7rem;color:var(--accent-teal)">✓ Добавлено</span>' : ''}
                 </div>
                 ${m.name ? `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:2px">${m.name}</div>` : ''}

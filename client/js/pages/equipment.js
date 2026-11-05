@@ -427,13 +427,13 @@ const EquipmentPage = {
                 </tr></thead>
                 <tbody>
                   ${comps.map(c => {
-                    const fullArticle = fullArticle(c.article, c.modification_code);
+                    const modArticle = fullArticle(c.article, c.modification_code);
                     const displayName = c.modification_name ? c.component_name + ' — ' + c.modification_name : c.component_name;
                     const price = c.modification_price !== null && c.modification_price !== undefined ? parseFloat(c.modification_price) : parseFloat(c.component_price);
                     return `
                       <tr>
                         <td>${c.component_image ? `<img src="${esc(c.component_image)}" style="width:32px;height:32px;object-fit:cover;border-radius:4px">` : '📦'}</td>
-                        <td><span class="font-mono" style="color:var(--accent-teal);font-weight:600">${esc(fullArticle)}</span></td>
+                        <td><span class="font-mono" style="color:var(--accent-teal);font-weight:600">${esc(modArticle)}</span></td>
                         <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(displayName)}">${esc(displayName)}</td>
                         <td class="text-right">${Table.formatMoney(price)}</td>
                         <td class="text-right">${c.quantity}</td>
@@ -469,14 +469,14 @@ const EquipmentPage = {
     if (!data) return;
     const c = (data.comps || []).find(x => x.id === compId);
     if (!c) return;
-    const fullArticle = fullArticle(c.article, c.modification_code);
+    const modArticle = fullArticle(c.article, c.modification_code);
     const displayName = c.modification_name ? c.component_name + ' — ' + c.modification_name : c.component_name;
     const price = c.modification_price !== null && c.modification_price !== undefined
       ? parseFloat(c.modification_price) : parseFloat(c.component_price);
     this.addToCart({
       component_id: c.component_id,
       modification_id: c.modification_id || null,
-      article: fullArticle,
+      article: modArticle,
       name: displayName,
       price,
       quantity: c.quantity,
@@ -491,13 +491,13 @@ const EquipmentPage = {
       const product = (mfr.products || []).find(p => p.id === productId);
       if (!product) return;
       (product.components || []).forEach(c => {
-        const fullArticle = fullArticle(c.article, c.modification_code);
+        const modArticle = fullArticle(c.article, c.modification_code);
         const displayName = c.modification_name ? c.component_name + ' — ' + c.modification_name : c.component_name;
         const price = c.modification_price !== null && c.modification_price !== undefined ? parseFloat(c.modification_price) : parseFloat(c.component_price);
         this.addToCart({
           component_id: c.component_id,
           modification_id: c.modification_id || null,
-          article: fullArticle, name: displayName, price,
+          article: modArticle, name: displayName, price,
           quantity: c.quantity,
           image_path: c.component_image || '',
           manufacturer_name: mfr.name, product_name: product.name,
@@ -978,7 +978,7 @@ const EquipmentPage = {
           </div>
         </div>
         ${mods.map(m => {
-          const fullArticle = fullArticle(comp.article, m.code);
+          const modArticle = fullArticle(comp.article, m.code);
           const price = m.price_override !== null ? m.price_override : comp.price;
           return `
             <div style="background:var(--bg-main);border:1px solid var(--border);border-radius:10px;padding:10px 14px;cursor:pointer;transition:border-color 0.2s"
@@ -986,7 +986,7 @@ const EquipmentPage = {
                  onmouseenter="this.style.borderColor='var(--accent-teal)'" onmouseleave="this.style.borderColor='var(--border)'">
               <div style="display:flex;justify-content:space-between;align-items:center">
                 <div style="flex:1">
-                  <span class="font-mono" style="font-weight:700;color:var(--accent-teal)">${fullArticle}</span>
+                  <span class="font-mono" style="font-weight:700;color:var(--accent-teal)">${modArticle}</span>
                   ${m.name ? `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:2px">${esc(m.name)}</div>` : ''}
                 </div>
                 <div style="font-weight:600;margin-left:12px">${Table.formatMoney(price)}</div>

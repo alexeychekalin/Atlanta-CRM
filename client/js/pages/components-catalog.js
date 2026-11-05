@@ -378,7 +378,7 @@ const ComponentsCatalogPage = {
           </div>
           <div style="display:flex;flex-direction:column;gap:10px" id="mods-list">
             ${mods.map(m => {
-              const fullArticle = fullArticle(comp.article, m.code);
+              const modArticle = fullArticle(comp.article, m.code);
               const modPrice = m.price_override !== null ? m.price_override : comp.price;
               const images = m.images || [];
               return `
@@ -386,7 +386,7 @@ const ComponentsCatalogPage = {
                   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
                     <div style="flex:1">
                       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-                        <span style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;color:var(--accent-teal)">${fullArticle}</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;color:var(--accent-teal)">${modArticle}</span>
                         ${m.is_active === false ? '<span style="font-size:0.7rem;color:#ef4444;font-weight:600">Неактивна</span>' : ''}
                         ${m.price_override !== null ? `<span style="font-weight:600;font-size:0.85rem">${Table.formatMoneyRaw(modPrice)}</span>` : ''}
                       </div>

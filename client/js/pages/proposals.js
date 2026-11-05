@@ -458,7 +458,7 @@ const ProposalsPage = {
             </div>
           </div>
           ${mods.map(m => {
-            const fullArticle = fullArticle(comp.article, m.code);
+            const modArticle = fullArticle(comp.article, m.code);
             const price = m.price_override !== null ? m.price_override : comp.price;
             return `
               <div style="background:var(--bg-main);border:1px solid var(--border);border-radius:10px;padding:10px 14px;cursor:pointer;transition:border-color 0.2s"
@@ -466,7 +466,7 @@ const ProposalsPage = {
                    onmouseenter="this.style.borderColor='var(--accent-teal)'" onmouseleave="this.style.borderColor='var(--border)'">
                 <div style="display:flex;justify-content:space-between;align-items:center">
                   <div style="flex:1">
-                    <span class="font-mono" style="font-weight:700;color:var(--accent-teal)">${esc(fullArticle)}</span>
+                    <span class="font-mono" style="font-weight:700;color:var(--accent-teal)">${esc(modArticle)}</span>
                     ${m.name ? `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:2px">${esc(m.name)}</div>` : ''}
                   </div>
                   <div style="font-weight:600;margin-left:12px">${Table.formatMoney(price)}</div>
@@ -514,7 +514,7 @@ const ProposalsPage = {
       const mod = (detail.modifications || []).find(m => m.id === modId);
       if (!mod) return;
       const price = mod.price_override !== null ? parseFloat(mod.price_override) : parseFloat(comp.price);
-      const fullArticle = fullArticle(comp.article, mod.code);
+      const modArticle = fullArticle(comp.article, mod.code);
       const name = comp.name + ' — ' + (mod.name || mod.code);
       const container = document.getElementById('prop-items-list');
       if (!container) return;
@@ -522,7 +522,7 @@ const ProposalsPage = {
       container.insertAdjacentHTML('beforeend', this._renderItemCard({
         product_id: comp.id,
         product_name: name,
-        article: fullArticle,
+        article: modArticle,
         unit_price: price,
         quantity: 1,
         image_path: comp.image_path || '',
