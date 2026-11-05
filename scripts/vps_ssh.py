@@ -15,10 +15,13 @@
 Пароль нигде не печатается и не попадает в логи.
 """
 import os
+import pathlib
 import posixpath
 import sys
 
 import paramiko
+
+LOG = pathlib.Path(os.environ.get('VPS_LOG', '/tmp/vps-deploy.log'))
 
 HOST = os.environ['VPS_HOST']
 PORT = int(os.environ.get('VPS_PORT', '22'))
@@ -39,7 +42,15 @@ def connect():
     return client
 
 
+def emit(text):
+    sys.stdout.write(text)
+    sys.stdout.flush()
+    with LOG.open('a', encoding='utf-8') as handle:
+        handle.write(text)
+
+
 def main():
+    LOG.write_text('', encoding='utf-8')
     client = connect()
     print(f'подключено: {USER}@{HOST}:{PORT}', flush=True)
 
@@ -58,17 +69,16 @@ def main():
     exit_code = None
     while True:
         if channel.recv_ready():
-            sys.stdout.write(channel.recv(65536).decode('utf-8', 'replace'))
-            sys.stdout.flush()
+            emit(channel.recv(65536).decode('utf-8', 'replace'))
         if channel.recv_stderr_ready():
-            sys.stderr.write(channel.recv_stderr(65536).decode('utf-8', 'replace'))
-            sys.stderr.flush()
+            emit(channel.recv_stderr(65536).decode('utf-8', 'replace'))
         if channel.exit_status_ready() and not channel.recv_ready() and not channel.recv_stderr_ready():
             exit_code = channel.recv_exit_status()
             break
 
     client.close()
     print(f'\nкод выхода: {exit_code}', flush=True)
+    emit(f'\nкод выхода: {exit_code}\n')
     return exit_code
 
 
