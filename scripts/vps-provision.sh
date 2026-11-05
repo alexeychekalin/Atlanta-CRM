@@ -28,8 +28,11 @@ export DEBIAN_FRONTEND=noninteractive
 
 log() { echo -e "\n\033[1;36m━━━ $* ━━━\033[0m"; }
 
-# копия журнала на сервере — пригодится, если развёртывание оборвётся
+# копия журнала на сервере: скрипт запускается отвязанным от SSH-канала,
+# а раннер потом дочитывает этот файл короткими запросами
 exec > >(tee -a /root/vps-provision.log) 2>&1
+# маркер окончания — по нему мост понимает, что работа закончена
+trap 'rc=$?; sleep 1; echo "__PROVISION_DONE__ $rc" >> /root/vps-provision.log' EXIT
 
 [ "$EUID" -eq 0 ] || { echo "нужен root"; exit 1; }
 
@@ -68,6 +71,13 @@ else
 fi
 
 chmod +x "$APP_DIR/deploy.sh" "$APP_DIR/update.sh" 2>/dev/null || true
+
+# если прошлый запуск оборвался посреди apt — доводим пакеты до консистентного вида
+if dpkg --audit 2>/dev/null | grep -q .; then
+  echo "  обнаружены незавершённые пакеты — исправляю"
+  dpkg --configure -a || true
+fi
+rm -f /var/lib/apt/lists/lock /var/cache/apt/archives/lock 2>/dev/null || true
 
 log "Установка (deploy.sh)"
 cd "$APP_DIR"
