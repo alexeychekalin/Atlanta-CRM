@@ -18,7 +18,7 @@ const ComponentsCatalogPage = {
       <div id="tab-components" class="tab-content active">
         <div class="toolbar" style="flex-wrap:wrap;gap:8px">
           <div class="search-input" style="flex:1;min-width:200px">
-            <input type="text" id="comp-search" placeholder="Поиск по артикулу или названию...">
+            <input type="text" id="comp-search" placeholder="Поиск по артикулу, названию или модификации..." title="Ищет по артикулу и названию изделия, а также по коду, названию и полному артикулу модификации">
           </div>
           <div class="filter-group" style="display:flex;gap:8px;align-items:center">
             <select class="filter-select" id="comp-category-filter">
@@ -120,6 +120,18 @@ const ComponentsCatalogPage = {
           -webkit-box-orient:vertical;
           overflow:hidden;
         }
+        .comp-mod-hit {
+          margin-top:6px;
+          padding:3px 8px;
+          border-radius:8px;
+          background:rgba(20,184,166,0.12);
+          border:1px solid rgba(20,184,166,0.4);
+          color:var(--accent-teal);
+          font-size:0.72rem;
+          font-weight:600;
+          line-height:1.35;
+        }
+        .mod-row--hit { box-shadow:inset 3px 0 0 var(--accent-teal); }
         .comp-card-footer {
           display:flex;
           align-items:center;
@@ -241,25 +253,112 @@ const ComponentsCatalogPage = {
     }
   },
 
+  /** Латинские двойники кириллицы: артикул «А.3776.001» набирают и латинской A,
+   *  а на клавиатуре «БК-101» легко превращается в «BK-101». */
+  _foldLookalikes(value) {
+    const pairs = {
+      a: 'а', b: 'б', c: 'с', e: 'е', h: 'н', k: 'к',
+      m: 'м', o: 'о', p: 'р', t: 'т', x: 'х', y: 'у',
+    };
+    return value.replace(/[abcehkmoptxy]/g, ch => pairs[ch] || ch);
+  },
+
+  /** Без пробелов: «А. 3724 .106» и «А.3724.106». */
+  _withoutSpaces(value) {
+    return value.replace(/\s+/g, '');
+  },
+
+  /** Без разделителей артикула — точек, дефисов, слэшей: «бк101» вместо «БК-101». */
+  _withoutSeparators(value) {
+    return value.replace(/[\s.\-_/]+/g, '');
+  },
+
+  /** Приводит строку к виду, по которому сравниваем: регистр, «ё», двойники, пробелы. */
+  _normalizeSearch(value) {
+    const text = String(value === null || value === undefined ? '' : value)
+      .toLowerCase()
+      .replace(/ё/g, 'е');
+    return this._foldLookalikes(text)
+      .replace(/\s+/g, ' ')
+      .trim();
+  },
+
+  /** Запрос поиска: обычный, «слипшийся» (без пробелов) и совсем без разделителей. */
+  _buildSearchQuery(raw) {
+    const needle = this._normalizeSearch(raw);
+    if (!needle) return null;
+    return { needle, compact: this._withoutSpaces(needle), bare: this._withoutSeparators(needle) };
+  },
+
+  _searchMatch(text, query) {
+    const value = this._normalizeSearch(text);
+    if (!value) return false;
+    if (value.includes(query.needle)) return true;
+    if (query.compact !== query.needle && this._withoutSpaces(value).includes(query.compact)) return true;
+    // разделители не важны, если запрос достаточно длинный
+    return query.bare.length >= 4 && this._withoutSeparators(value).includes(query.bare);
+  },
+
+  /** Модификации, совпавшие по коду, названию или полному артикулу (А.3776.001-02.02). */
+  _matchedModifications(comp, query) {
+    return (comp.modifications || []).filter(m =>
+      this._searchMatch(m.code, query) ||
+      this._searchMatch(m.name, query) ||
+      this._searchMatch(fullArticle(comp.article, m.code), query)
+    );
+  },
+
+  /** Совпадение компонента с запросом. direct — по артикулу/названию/описанию,
+   *  mods — модификации, по которым нашлось (их показываем подсказкой в списке). */
+  _searchHit(comp, query) {
+    const direct = this._searchMatch(comp.article, query) ||
+      this._searchMatch(comp.name, query) ||
+      this._searchMatch(comp.description, query);
+    const mods = this._matchedModifications(comp, query);
+    if (!direct && mods.length === 0) return null;
+    // если изделие и так найдено по своему артикулу, все его модификации — шум
+    return { direct, mods: direct ? [] : mods };
+  },
+
+  /** Плашка «нашлось по модификации» в витрине и таблице. */
+  _modHitHtml(hit) {
+    if (!hit || !hit.mods || hit.mods.length === 0) return '';
+    const codes = hit.mods.slice(0, 2).map(m => esc(m.code)).join(', ');
+    const more = hit.mods.length > 2 ? ` +${hit.mods.length - 2}` : '';
+    const name = hit.mods.length === 1 && hit.mods[0].name
+      ? ` — ${esc(String(hit.mods[0].name).slice(0, 48))}`
+      : '';
+    return `<div class="comp-mod-hit" title="Совпадение по модификации">🔧 мод. ${codes}${more}${name}</div>`;
+  },
+
   filterAndRender() {
-    const search = (document.getElementById('comp-search')?.value || '').toLowerCase();
+    const query = this._buildSearchQuery(document.getElementById('comp-search')?.value || '');
     const categoryId = document.getElementById('comp-category-filter')?.value || '';
     const sort = document.getElementById('comp-sort')?.value || 'name';
 
     let filtered = this.allComponents;
-    if (search) {
-      filtered = filtered.filter(c =>
-        c.article.toLowerCase().includes(search) ||
-        c.name.toLowerCase().includes(search) ||
-        (c.description || '').toLowerCase().includes(search)
-      );
+    const hits = new Map();
+    if (query) {
+      filtered = filtered.filter(c => {
+        const hit = this._searchHit(c, query);
+        if (!hit) return false;
+        hits.set(c.id, hit);
+        return true;
+      });
     }
+    this._searchQuery = query;
+    this._searchHits = hits;
+
     if (categoryId) {
       filtered = filtered.filter(c => c.category_id == categoryId);
     }
 
-    // Сортировка
+    // Сортировка: сначала совпадения по артикулу/названию, потом найденные по модификациям
     filtered = [...filtered].sort((a, b) => {
+      if (query) {
+        const byArticle = (hits.get(a.id)?.direct ? 0 : 1) - (hits.get(b.id)?.direct ? 0 : 1);
+        if (byArticle !== 0) return byArticle;
+      }
       switch (sort) {
         case 'price_asc': return (parseFloat(a.price) || 0) - (parseFloat(b.price) || 0);
         case 'price_desc': return (parseFloat(b.price) || 0) - (parseFloat(a.price) || 0);
@@ -268,7 +367,10 @@ const ComponentsCatalogPage = {
       }
     });
 
-    document.getElementById('comp-count').textContent = `Найдено: ${filtered.length} компонент(ов)`;
+    const modOnly = query ? filtered.filter(c => !hits.get(c.id).direct).length : 0;
+    document.getElementById('comp-count').textContent = modOnly
+      ? `Найдено: ${filtered.length} компонент(ов), в том числе по модификациям: ${modOnly}`
+      : `Найдено: ${filtered.length} компонент(ов)`;
 
     const container = document.getElementById('components-table');
     if (filtered.length === 0) {
@@ -300,6 +402,7 @@ const ComponentsCatalogPage = {
               <div class="comp-card-article">${esc(c.article)}</div>
               <div class="comp-card-name">${esc(c.name)}</div>
               ${c.description ? `<div class="comp-card-desc">${esc(c.description)}</div>` : ''}
+              ${this._modHitHtml(this._searchHits && this._searchHits.get(c.id))}
               ${parseInt(c.modifications_count) > 0 ? `<div style="margin-top:4px"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.7rem;font-weight:600;background:var(--accent-teal);color:#fff">${c.modifications_count} мод.</span></div>` : ''}
             </div>
             <div class="comp-card-footer">
@@ -345,7 +448,7 @@ const ComponentsCatalogPage = {
                     : '<div style="width:40px;height:40px;border-radius:6px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:16px">📦</div>'}
                 </td>
                 <td class="font-mono" style="color:var(--accent-teal)">${esc(c.article)}</td>
-                <td><strong>${esc(c.name)}</strong>${c.description ? `<div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px">${esc(c.description.substring(0, 60))}</div>` : ''}${parseInt(c.modifications_count) > 0 ? `<span style="display:inline-block;margin-top:2px;padding:1px 7px;border-radius:8px;font-size:0.7rem;font-weight:600;background:var(--accent-teal);color:#fff">${c.modifications_count} мод.</span>` : ''}</td>
+                <td><strong>${esc(c.name)}</strong>${c.description ? `<div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px">${esc(c.description.substring(0, 60))}</div>` : ''}${parseInt(c.modifications_count) > 0 ? `<span style="display:inline-block;margin-top:2px;padding:1px 7px;border-radius:8px;font-size:0.7rem;font-weight:600;background:var(--accent-teal);color:#fff">${c.modifications_count} мод.</span>` : ''}${this._modHitHtml(this._searchHits && this._searchHits.get(c.id))}</td>
                 <td><span class="badge badge-in_progress">${esc(c.category_name) || '—'}</span></td>
                 <td class="text-right" style="font-weight:600">${Table.formatMoney(c.price)}</td>
                 <td>${c.is_active !== false ? '<span class="badge badge-completed">Активен</span>' : '<span class="badge badge-cancelled">Неактивен</span>'}</td>
@@ -390,6 +493,10 @@ const ComponentsCatalogPage = {
       this._modPhotos = modPhotos;
       this._modCodes = modCodes;
 
+      // если карточку открыли из поиска по модификации — подсветим найденные строки
+      const searchHit = this._searchQuery ? this._searchHit(comp, this._searchQuery) : null;
+      const hitModIds = new Set(((searchHit && searchHit.mods) || []).map(m => m.id));
+
       const modsHtml = mods.length > 0 ? `
         <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -399,14 +506,16 @@ const ComponentsCatalogPage = {
           <div style="display:flex;flex-direction:column;gap:10px" id="mods-list">
             ${mods.map(m => {
               const modArticle = fullArticle(comp.article, m.code);
+              const isHit = hitModIds.has(m.id);
               const modPrice = m.price_override !== null ? m.price_override : comp.price;
               const images = m.images || [];
               return `
-                <div style="background:var(--bg-main);border:1px solid var(--border);border-radius:10px;padding:12px 14px">
+                <div class="mod-row${isHit ? ' mod-row--hit' : ''}" style="background:${isHit ? 'rgba(20,184,166,0.10)' : 'var(--bg-main)'};border:1px solid ${isHit ? 'var(--accent-teal)' : 'var(--border)'};border-radius:10px;padding:12px 14px">
                   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
                     <div style="flex:1">
                       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
                         <span style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;color:var(--accent-teal)">${modArticle}</span>
+                        ${isHit ? '<span style="font-size:0.68rem;font-weight:700;color:var(--accent-teal);border:1px solid var(--accent-teal);border-radius:8px;padding:0 6px" title="Совпадение по поиску">совпадение</span>' : ''}
                         ${m.is_active === false ? '<span style="font-size:0.7rem;color:#ef4444;font-weight:600">Неактивна</span>' : ''}
                         ${m.price_override !== null ? `<span style="font-weight:600;font-size:0.85rem">${Table.formatMoneyRaw(modPrice)}</span>` : ''}
                       </div>
@@ -531,6 +640,14 @@ const ComponentsCatalogPage = {
           ${canEdit ? `<button class="btn btn-primary" onclick="Modal.close();ComponentsCatalogPage.openComponentModal(${comp.id})">✏️ Редактировать</button>` : ''}
         `,
       });
+
+      // найденная модификация может быть далеко в длинном списке — показываем сразу
+      if (hitModIds.size > 0 && typeof document.querySelector === 'function' && typeof setTimeout === 'function') {
+        setTimeout(() => {
+          const row = document.querySelector('.mod-row--hit');
+          if (row && typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'center' });
+        }, 60);
+      }
 
       // Загрузить документы для просмотра
       this._loadViewDocs(comp.id);

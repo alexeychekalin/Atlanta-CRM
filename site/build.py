@@ -143,6 +143,15 @@ def clean_mod_name(name):
     return name.rstrip('.')
 
 
+def full_article(article, code):
+    """Полный артикул исполнения: «А.3776.001» + «02.02» → «А.3776.001-02.02»."""
+    base = ' '.join((article or '').split())
+    suffix = ' '.join((code or '').split())
+    if not base:
+        return suffix
+    return f'{base}-{suffix}' if suffix else base
+
+
 def parse_description(text):
     """Описание из каталога → блоки страницы товара."""
     blocks = {'lead': [], 'functions': [], 'features': [], 'params': [], 'notes': []}
@@ -627,8 +636,16 @@ class Site:
         mods = len(component.get('modifications') or [])
         if mods:
             chips.append(f'<span class="chip">{mods} исполн.</span>')
+        # поиск по карточке: артикул и название изделия + коды и названия исполнений,
+        # иначе «А.3776.001-02.02» с прайса на сайте не находится
+        mods_text = []
+        for mod in component.get('modifications') or []:
+            mods_text.append(full_article(component['article'], mod.get('code')))
+            # длинные описания в поисковом атрибуте не нужны — только начало
+            mods_text.append(clean_mod_name(mod.get('name'))[:80])
         search_text = re.sub(r'\s+', ' ', ' '.join([
-            component['article'], component['name'], clean_public(component.get('description'))]))
+            component['article'], component['name'], clean_public(component.get('description')),
+            ' '.join(text for text in mods_text if text)]))
         return f'''<a class="product-card" href="{component['_url']}"
    data-search-text="{esc(search_text)}">
   <div class="product-card__media">{media}</div>
@@ -1290,7 +1307,11 @@ class Site:
 
         # поисковый индекс — на случай внешней интеграции и быстрых ссылок
         index = [{'article': item['article'], 'name': item['name'], 'url': item['_url'],
-                  'category': self.categories.get(item['category'], {}).get('name', '')}
+                  'category': self.categories.get(item['category'], {}).get('name', ''),
+                  'modifications': [{'article': full_article(item['article'], mod.get('code')),
+                                     'code': mod.get('code') or '',
+                                     'name': clean_mod_name(mod.get('name'))}
+                                    for mod in item.get('modifications') or []]}
                  for item in self.components]
         (self.out / 'search.json').write_text(
             json.dumps(index, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')

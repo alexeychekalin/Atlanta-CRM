@@ -13,7 +13,12 @@ router.get('/', auth, async (req, res) => {
       SELECT c.*, cc.name AS category_name,
         (SELECT COUNT(*) FROM component_modifications cm WHERE cm.component_id = c.id) AS modifications_count,
         (SELECT COUNT(*) FROM component_images ci WHERE ci.component_id = c.id) AS images_count,
-        (SELECT COUNT(*) FROM component_documents cd WHERE cd.component_id = c.id) AS doc_count
+        (SELECT COUNT(*) FROM component_documents cd WHERE cd.component_id = c.id) AS doc_count,
+        COALESCE((
+          SELECT json_agg(json_build_object('id', cm.id, 'code', cm.code, 'name', cm.name)
+                          ORDER BY cm.sort_order, cm.code)
+          FROM component_modifications cm WHERE cm.component_id = c.id
+        ), '[]'::json) AS modifications
       FROM components c
       LEFT JOIN component_categories cc ON c.category_id = cc.id
       WHERE 1=1
@@ -26,7 +31,14 @@ router.get('/', auth, async (req, res) => {
       params.push(category_id);
     }
     if (search) {
-      sql += ` AND (c.article ILIKE $${idx} OR c.name ILIKE $${idx})`;
+      // ищем и по модификациям: код, название и полный артикул «А.3776.001-02.02»
+      sql += ` AND (c.article ILIKE $${idx} OR c.name ILIKE $${idx}
+        OR EXISTS (
+          SELECT 1 FROM component_modifications cm
+          WHERE cm.component_id = c.id
+            AND (cm.code ILIKE $${idx} OR cm.name ILIKE $${idx}
+                 OR (c.article || '-' || cm.code) ILIKE $${idx})
+        ))`;
       params.push(`%${search}%`);
       idx++;
     }

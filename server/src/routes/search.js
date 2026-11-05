@@ -47,17 +47,37 @@ router.get('/', auth, async (req, res) => {
     }));
 
     // 3. Компоненты
+    // ищем и по исполнениям: по коду, названию и полному артикулу «А.3776.001-02.02»
     const components = canView('components') ? await db.query(
-      `SELECT c.id, c.article, c.name, c.price, cc.name AS category_name
+      `SELECT c.id, c.article, c.name, c.price, cc.name AS category_name,
+         (SELECT string_agg(hits.code, ', ') FROM (
+            SELECT cm.code FROM component_modifications cm
+            WHERE cm.component_id = c.id
+              AND (cm.code ILIKE $1 OR cm.name ILIKE $1
+                   OR (c.article || '-' || cm.code) ILIKE $1)
+            ORDER BY cm.sort_order, cm.code LIMIT 3
+          ) hits) AS mod_hits
        FROM components c
        LEFT JOIN component_categories cc ON c.category_id = cc.id
        WHERE c.name ILIKE $1 OR c.article ILIKE $1 OR c.description ILIKE $1
+         OR EXISTS (
+           SELECT 1 FROM component_modifications cm
+           WHERE cm.component_id = c.id
+             AND (cm.code ILIKE $1 OR cm.name ILIKE $1
+                  OR (c.article || '-' || cm.code) ILIKE $1)
+         )
+       ORDER BY CASE WHEN c.name ILIKE $1 OR c.article ILIKE $1 THEN 0 ELSE 1 END,
+                cc.sort_order, c.name
        LIMIT 5`, [searchTerm]) : { rows: [] };
     components.rows.forEach(r => results.push({
       type: 'component',
       icon: '🔩',
       title: `${r.article} — ${r.name}`,
-      subtitle: `${r.category_name || '—'} • ${parseFloat(r.price).toLocaleString('ru-RU')} ₽`,
+      subtitle: [
+        r.category_name || '—',
+        `${parseFloat(r.price).toLocaleString('ru-RU')} ₽`,
+        r.mod_hits ? `мод. ${r.mod_hits}` : '',
+      ].filter(Boolean).join(' • '),
       url: 'components',
       id: r.id,
     }));

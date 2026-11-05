@@ -177,3 +177,115 @@ test('галерея: фото модификации листаются отд�
   page.viewModImage(5, 0);
   assert.deepEqual(opened.images, ['/uploads/m2-1.jpg']);
 });
+
+// === Поиск по модификациям ===
+
+/** Мини-DOM: элементы, которые читает filterAndRender. */
+function makeFakeDocument(values = {}) {
+  const nodes = {
+    'comp-search': { value: values.search || '', addEventListener() {} },
+    'comp-category-filter': { value: values.category || '', addEventListener() {} },
+    'comp-sort': { value: values.sort || 'name', addEventListener() {} },
+    'comp-count': { textContent: '' },
+    'components-table': { innerHTML: '' },
+    'comp-category-chips': { innerHTML: '' },
+  };
+  return {
+    nodes,
+    getElementById: id => nodes[id] || null,
+    querySelectorAll: () => [],
+    querySelector: () => null,
+  };
+}
+
+test('поиск: находит компонент по коду модификации', () => {
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage');
+  const component = {
+    id: 1, article: 'А.3776.001', name: 'Фонарь задний', description: '', modifications: [
+      { id: 11, code: '01', name: 'с 7-контактным разъёмом' },
+      { id: 12, code: '02.02', name: 'под быстрый обжим' },
+    ],
+  };
+  const query = page._buildSearchQuery('02.02');
+  const hit = page._searchHit(component, query);
+
+  assert.ok(hit, 'компонент должен найтись по коду модификации');
+  assert.equal(hit.direct, false, 'совпадение не по основному артикулу');
+  assert.deepEqual(hit.mods.map(m => m.code), ['02.02']);
+});
+
+test('поиск: находит по полному артикулу модификации и по её названию', () => {
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage');
+  const component = {
+    id: 1, article: 'А.3776.001', name: 'Фонарь задний', description: '', modifications: [
+      { id: 11, code: '01', name: 'с 7-контактным разъёмом' },
+      { id: 12, code: '02.02', name: 'под быстрый обжим' },
+    ],
+  };
+
+  assert.deepEqual(page._searchHit(component, page._buildSearchQuery('А.3776.001-02.02')).mods.map(m => m.code), ['02.02']);
+  assert.deepEqual(page._searchHit(component, page._buildSearchQuery('быстрый обжим')).mods.map(m => m.code), ['02.02']);
+  // пробелы в артикуле не мешают
+  assert.deepEqual(page._searchHit(component, page._buildSearchQuery('а.3776.001 - 02.02')).mods.map(m => m.code), ['02.02']);
+});
+
+test('поиск: прощает латиницу и разделители в артикуле', () => {
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage');
+  const component = {
+    id: 1, article: 'БК-101', name: 'Блок коммутации', description: '', modifications: [],
+  };
+  const other = {
+    id: 2, article: 'А.3724.106', name: 'Жгут плоский', description: '', modifications: [
+      { id: 21, code: '02.01', name: 'Кабель с адаптером' },
+    ],
+  };
+
+  // латинские B и K вместо кириллических (частая опечатка при наборе)
+  assert.equal(page._searchHit(component, page._buildSearchQuery('BK-101')).direct, true);
+  // артикул набран без дефиса
+  assert.equal(page._searchHit(component, page._buildSearchQuery('бк101')).direct, true);
+  // полный артикул модификации без точек
+  assert.deepEqual(page._searchHit(other, page._buildSearchQuery('а3724.106-02.01')).mods.map(m => m.code), ['02.01']);
+});
+
+test('поиск: по основному артикулу модификации не засоряют выдачу', () => {
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage');
+  const component = {
+    id: 1, article: 'А.3776.001', name: 'Фонарь задний', description: '', modifications: [
+      { id: 11, code: '01', name: 'с 7-контактным разъёмом' },
+    ],
+  };
+  const hit = page._searchHit(component, page._buildSearchQuery('А.3776.001'));
+
+  assert.equal(hit.direct, true);
+  assert.deepEqual(hit.mods, [], 'подсказки по модификациям не нужны');
+  assert.equal(page._searchHit(component, page._buildSearchQuery('нет-такого')), null);
+});
+
+test('поиск: выдача фильтруется, сортируется и показывает совпавшую модификацию', () => {
+  const components = [
+    { id: 1, article: 'А.3776.001', name: 'Фонарь задний', description: '', price: 100, category_id: 1,
+      modifications_count: 1, modifications: [{ id: 11, code: '02.02', name: 'под быстрый обжим' }] },
+    { id: 2, article: 'А.3776.001-02.02', name: 'Фонарь с обжимом', description: '', price: 200, category_id: 1,
+      modifications_count: 0, modifications: [] },
+    { id: 3, article: 'А.3700.500', name: 'Фонарь габаритный', description: '', price: 300, category_id: 1,
+      modifications_count: 0, modifications: [] },
+  ];
+  const doc = makeFakeDocument({ search: '02.02' });
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage', {
+    globals: { document: doc },
+  });
+  page.allComponents = components;
+  page.categories = [];
+  page.filterAndRender();
+
+  assert.match(doc.nodes['comp-count'].textContent, /Найдено: 2/);
+  assert.match(doc.nodes['comp-count'].textContent, /по модификациям: 1/);
+
+  const grid = doc.nodes['components-table'].innerHTML;
+  assert.ok(!grid.includes('Фонарь габаритный'), 'несовпавшие не показываем');
+  assert.match(grid, /comp-mod-hit/, 'у найденного по модификации есть подсказка');
+  assert.match(grid, /мод\. 02\.02/);
+  // прямое совпадение по артикулу — выше найденного по модификации
+  assert.ok(grid.indexOf('Фонарь с обжимом') < grid.indexOf('Фонарь задний'));
+});

@@ -58,12 +58,27 @@
     var empty = document.querySelector('[data-empty]');
     var total = cards.length;
 
+    /* латинские двойники кириллицы: «А.3776.001» набирают и латинской A, «БК-101» → «BK-101» */
+    var FOLD = { a: 'а', b: 'б', c: 'с', e: 'е', h: 'н', k: 'к',
+                 m: 'м', o: 'о', p: 'р', t: 'т', x: 'х', y: 'у' };
+    var normalize = function (text) {
+      return String(text).toLowerCase().replace(/ё/g, 'е')
+        .replace(/[abcehkmoptxy]/g, function (ch) { return FOLD[ch] || ch; });
+    };
+    /* «бк101» и «БК-101» — одно и то же: разделители в артикулах не важны */
+    var bare = function (text) { return text.replace(/[\s.\-_/]+/g, ''); };
+    var searchText = cards.map(function (card) {
+      return normalize(card.getAttribute('data-search-text') || '');
+    });
+
     var apply = function () {
-      var query = search.value.trim().toLowerCase().replace(/ё/g, 'е');
+      var query = normalize(search.value.trim());
+      var bareQuery = bare(query);
       var shown = 0;
-      cards.forEach(function (card) {
-        var text = (card.getAttribute('data-search-text') || '').toLowerCase().replace(/ё/g, 'е');
-        var hit = !query || text.indexOf(query) !== -1;
+      cards.forEach(function (card, i) {
+        var text = searchText[i];
+        var hit = !query || text.indexOf(query) !== -1 ||
+          (bareQuery.length >= 4 && bare(text).indexOf(bareQuery) !== -1);
         card.hidden = !hit;
         if (hit) shown += 1;
       });
