@@ -1302,11 +1302,19 @@ def main():
     parser = argparse.ArgumentParser(description='Сборка сайта АТЛАНТА')
     parser.add_argument('--out', default=str(SITE / 'dist'))
     parser.add_argument('--skip-images', action='store_true', help='не пережимать фото')
+    parser.add_argument('--domain', default='', help='домен сайта, например https://atlanta.ru '
+                                                    '(перебивает site.domain из content.json)')
     args = parser.parse_args()
 
     out_dir = Path(args.out)
     content = read_json(SITE / 'content.json')
     catalog = read_json(CATALOG_JSON)
+
+    if args.domain:
+        domain = args.domain.strip().rstrip('/')
+        if '://' not in domain:
+            domain = 'https://' + domain
+        content['site']['domain'] = domain
 
     if out_dir.exists():
         shutil.rmtree(out_dir)

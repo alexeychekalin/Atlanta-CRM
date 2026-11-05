@@ -9,7 +9,9 @@ CRM для производственно-торговой компании: **�
 
 Права проверяются на сервере по матрице ролей из БД, деньги считает только сервер, пользовательские данные экранируются на клиенте, загруженные файлы проходят проверку путей и сигнатур.
 
-> Подробный аудит проекта, реестр найденных проблем и статус исправлений — в [`docs/ANALYSIS.md`](docs/ANALYSIS.md). Развёртывание на VPS — в [`DEPLOY.md`](DEPLOY.md).
+> Подробный аудит проекта, реестр найденных проблем и статус исправлений — в [`docs/ANALYSIS.md`](docs/ANALYSIS.md). Развёртывание на VPS — в [`DEPLOY.md`](DEPLOY.md), сценарий с доменом, поддоменом `crm` и HTTPS — в [`docs/deploy-vps.md`](docs/deploy-vps.md).
+>
+> Сайт завода собирается из того же каталога: `python3 site/build.py` → `site/dist` (см. [`site/README.md`](site/README.md)).
 
 ---
 
@@ -354,7 +356,17 @@ curl -s -b /tmp/cj.txt http://localhost:3000/api/drawings | head -c 400
 │   ├── dev/                         # PGlite-адаптер, демо-сид, запуск демо, preseed
 │   ├── test/                        # node:test (цены, чертежи, рендер страниц, файлы)
 │   └── uploads/                     # images, drawings, avatars, documents (в .gitignore)
-├── docs/ANALYSIS.md                 # аудит, реестр проблем и статусы
+├── site/                            # сайт завода: build.py + content.json + вёрстка
+│   └── dist/                        # собранный сайт (в .gitignore)
+├── deploy/nginx/                    # шаблоны двух хостов: сайт и crm.<домен>
+├── scripts/
+│   ├── setup-nginx.sh               # раскладка конфигов nginx, DOMAIN=...
+│   └── deploy-site.sh               # сборка сайта + rsync на сервер
+├── docs/
+│   ├── ANALYSIS.md                  # аудит, реестр проблем и статусы
+│   ├── deploy-vps.md                # сценарий: VPS, домен, поддомен crm, HTTPS
+│   ├── landing-brief.md             # бриф и решения по сайту
+│   └── landing-atlas-review.md      # разбор старого сайта atlas-wires.ru
 ├── .github/workflows/ci.yml         # lint + test на push/PR
 ├── Dockerfile, docker-compose.yml
 ├── deploy.sh, update.sh             # развёртывание на VPS
@@ -573,3 +585,5 @@ CI (`.github/workflows/ci.yml`) запускается на `push` в `main` и 
 |---|---|
 | [`docs/ANALYSIS.md`](docs/ANALYSIS.md) | Аудит кода, модель данных, реестр проблем P0–P3 и статусы исправлений |
 | [`DEPLOY.md`](DEPLOY.md) | Развёртывание на VPS: варианты наполнения базы (`WITH_CATALOG`, `SEED_DEMO`, `SKIP_PRESEED`), скрипт и ручная установка, демо на PGlite, Docker, nginx, systemd, TLS, обновление и резервное копирование |
+| [`docs/deploy-vps.md`](docs/deploy-vps.md) | Практический сценарий для одного сервера: DNS, CRM на `crm.<домен>`, сайт на основном домене, HTTPS, чек-лист проверки и разбор типовых сбоев |
+| [`site/README.md`](site/README.md) | Сайт завода: сборка из каталога CRM, правка текстов, выгрузка на сервер |

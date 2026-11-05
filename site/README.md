@@ -10,6 +10,7 @@ pip install --break-system-packages pillow   # нужен один раз, дл�
 python3 site/build.py                        # → site/dist
 python3 site/build.py --skip-images          # без пережатия фото (быстро)
 python3 site/build.py --out /var/www/atlanta # в другую папку
+python3 site/build.py --domain https://atlanta.ru   # домен без правки content.json
 ```
 
 Сборка полностью перезаписывает `site/dist`. В git он не попадает — это артефакт.
@@ -60,9 +61,17 @@ python3 site/build.py --out /var/www/atlanta # в другую папку
 
 ## Публикация
 
+Сайт живёт на основном домене, CRM — на поддомене `crm.<домен>` (схема и шаги —
+в [`docs/deploy-vps.md`](../docs/deploy-vps.md)).
+
 ```bash
-python3 site/build.py
-rsync -av --delete site/dist/ user@host:/var/www/atlanta/
+# со своей машины: собрать с нужным доменом и залить
+./scripts/deploy-site.sh root@103.80.87.197 --domain https://atlanta.ru
+
+# или вручную
+python3 site/build.py --domain https://atlanta.ru
+rsync -av --delete site/dist/ root@103.80.87.197:/var/www/atlanta/
 ```
 
-Для nginx достаточно отдавать `site/dist` как корень сайта; `404.html` — страница ошибки.
+nginx-конфиг сайта лежит шаблоном в `deploy/nginx/site.conf` и ставится командой
+`sudo DOMAIN=atlanta.ru ./scripts/setup-nginx.sh` (вместе с конфигом CRM).

@@ -268,12 +268,19 @@ step "7/8 • Настройка Nginx"
 # ─────────────────────────────────────────────
 apt install -y nginx
 
-SERVER_NAME="$DOMAIN"
-if [ "$DOMAIN" = "_" ]; then
-  SERVER_NAME="_"
-fi
-
-cat > /etc/nginx/sites-available/atlanta-crm <<NGINX
+# Два хоста: сайт завода на основном домене, CRM — на поддомене crm.<домен>.
+# Конфиги — шаблоны deploy/nginx/*.conf, раскладывает scripts/setup-nginx.sh.
+# Его же можно запустить отдельно позже, когда появится домен.
+export DOMAIN
+export SITE_ROOT="${SITE_ROOT:-/var/www/atlanta}"
+export APP_PORT="$PORT"
+if [ -x "$APP_DIR/scripts/setup-nginx.sh" ]; then
+  "$APP_DIR/scripts/setup-nginx.sh"
+else
+  # резервный вариант, если скрипт не попал в архив: один server block на CRM
+  SERVER_NAME="$DOMAIN"
+  if [ "$DOMAIN" = "_" ]; then SERVER_NAME="_"; fi
+  cat > /etc/nginx/sites-available/atlanta-crm <<NGINX
 server {
     listen 80;
     server_name $SERVER_NAME;
@@ -293,10 +300,10 @@ server {
     }
 }
 NGINX
-
-ln -sf /etc/nginx/sites-available/atlanta-crm /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
-nginx -t && systemctl restart nginx
+  ln -sf /etc/nginx/sites-available/atlanta-crm /etc/nginx/sites-enabled/
+  rm -f /etc/nginx/sites-enabled/default
+  nginx -t && systemctl restart nginx
+fi
 log "Nginx настроен"
 
 # ─────────────────────────────────────────────
@@ -305,8 +312,15 @@ step "8/8 • Настройка файрвола"
 ufw allow 22/tcp   >/dev/null 2>&1
 ufw allow 80/tcp   >/dev/null 2>&1
 ufw allow 443/tcp  >/dev/null 2>&1
-ufw --force enable >/dev/null 2>&1
-log "UFW настроен (22, 80, 443)"
+# без домена CRM живёт на :8080 — открываем только в этом режиме
+if [ "$DOMAIN" = "_" ] || [[ "$DOMAIN" =~ ^[0-9.]+$ ]]; then
+  ufw allow 8080/tcp >/dev/null 2>&1
+  ufw --force enable >/dev/null 2>&1
+  log "UFW настроен (22, 80, 443, 8080 — CRM без домена)"
+else
+  ufw --force enable >/dev/null 2>&1
+  log "UFW настроен (22, 80, 443)"
+fi
 
 # ─────────────────────────────────────────────
 # Итоги
@@ -316,7 +330,14 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║     ✅ Установка завершена успешно!       ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
 echo ""
-echo "  🌐 Сайт:     http://${DOMAIN//_/$(hostname -I | awk '{print $1}')}"
+SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+if [ "$DOMAIN" = "_" ] || [[ "$DOMAIN" =~ ^[0-9.]+$ ]]; then
+  echo "  🌐 Сайт:     http://${SERVER_IP}"
+  echo "  🖥️  CRM:      http://${SERVER_IP}:8080"
+else
+  echo "  🌐 Сайт:     http://${DOMAIN}"
+  echo "  🖥️  CRM:      http://crm.${DOMAIN}"
+fi
 echo "  📦 Директория: $APP_DIR"
 echo "  🗄️  БД:        $DB_NAME"
 echo ""
@@ -334,9 +355,9 @@ echo "    sudo systemctl restart atlanta-crm"
 echo "    sudo journalctl -u atlanta-crm -f"
 echo ""
 
-if [ "$DOMAIN" != "_" ]; then
+if [ "$DOMAIN" != "_" ] && [[ ! "$DOMAIN" =~ ^[0-9.]+$ ]]; then
   echo -e "  ${CYAN}💡 Для SSL (HTTPS):${NC}"
   echo "    sudo apt install -y certbot python3-certbot-nginx"
-  echo "    sudo certbot --nginx -d $DOMAIN"
+  echo "    sudo certbot --nginx -d $DOMAIN -d www.$DOMAIN -d crm.$DOMAIN"
   echo ""
 fi

@@ -9,6 +9,9 @@
 | Диск | 10 GB | 20 GB |
 | ОС | Ubuntu 22.04 LTS | Ubuntu 24.04 LTS |
 
+> 📘 Пошаговый сценарий «сервер + домен + сайт + поддомен crm + HTTPS»
+> с чек-листом проверки — в [`docs/deploy-vps.md`](docs/deploy-vps.md).
+
 ---
 
 ## 🧩 Варианты наполнения базы
@@ -275,13 +278,31 @@ sudo systemctl status atlanta-crm
 
 ### Шаг 10. Настройка Nginx (проксирование)
 
+Прокси на CRM и статику сайта раскладывает один скрипт — два `server`-блока:
+
 ```bash
 sudo apt install -y nginx
 
+# сайт на основном домене, CRM на поддомене crm.<домен>
+sudo DOMAIN=ваш-домен.ru ./scripts/setup-nginx.sh
+
+# CRM на произвольном поддомене
+sudo DOMAIN=ваш-домен.ru CRM_HOST=system.ваш-домен.ru ./scripts/setup-nginx.sh
+
+# без домена: сайт на :80 (по IP), CRM на :8080
+sudo ./scripts/setup-nginx.sh
+```
+
+Скрипт берёт шаблоны из `deploy/nginx/` (`site.conf`, `crm.conf`), подставляет домен
+и корень сайта, проверяет `nginx -t` и перезагружает nginx. Запускать повторно безопасно.
+
+Ручной вариант того же конфига для CRM:
+
+```bash
 sudo tee /etc/nginx/sites-available/atlanta-crm > /dev/null <<'EOF'
 server {
     listen 80;
-    server_name ваш-домен.ru;  # Или IP сервера
+    server_name crm.ваш-домен.ru;  # или IP сервера
 
     client_max_body_size 50M;
 
@@ -311,6 +332,8 @@ sudo systemctl restart nginx
 sudo ufw allow 22/tcp    # SSH
 sudo ufw allow 80/tcp    # HTTP
 sudo ufw allow 443/tcp   # HTTPS (для будущего SSL)
+# только если домена нет и CRM живёт на :8080
+sudo ufw allow 8080/tcp
 sudo ufw --force enable
 ```
 
@@ -318,7 +341,11 @@ sudo ufw --force enable
 
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d ваш-домен.ru
+sudo certbot --nginx -d ваш-домен.ru -d www.ваш-домен.ru -d crm.ваш-домен.ru
+
+# после HTTPS сессия CRM должна идти только по защищённой cookie
+sed -i 's/^COOKIE_SECURE=.*/COOKIE_SECURE=true/' /opt/atlanta-crm/server/.env
+sudo systemctl restart atlanta-crm
 ```
 
 ---
