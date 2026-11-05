@@ -273,6 +273,12 @@ const ComponentsCatalogPage = {
     return value.replace(/[\s.\-_/]+/g, '');
   },
 
+  /** Стоит ли сравнивать «без разделителей»: запрос с буквами — с двух символов,
+   *  чисто числовой — с четырёх (иначе «15» цепляет полкаталога). */
+  _bareSearchable(bare) {
+    return bare.length >= 4 || (bare.length >= 2 && /[^\d]/.test(bare));
+  },
+
   /** Приводит строку к виду, по которому сравниваем: регистр, «ё», двойники, пробелы. */
   _normalizeSearch(value) {
     const text = String(value === null || value === undefined ? '' : value)
@@ -295,8 +301,9 @@ const ComponentsCatalogPage = {
     if (!value) return false;
     if (value.includes(query.needle)) return true;
     if (query.compact !== query.needle && this._withoutSpaces(value).includes(query.compact)) return true;
-    // разделители не важны, если запрос достаточно длинный
-    return query.bare.length >= 4 && this._withoutSeparators(value).includes(query.bare);
+    // разделители не важны: «а37» находит «А.3724.106», «0201» — «02.01»;
+    // короткие числовые запросы так не ищем — «15» слишком часто встречается в артикулах
+    return this._bareSearchable(query.bare) && this._withoutSeparators(value).includes(query.bare);
   },
 
   /** Модификации, совпавшие по коду, названию или полному артикулу (А.3776.001-02.02). */

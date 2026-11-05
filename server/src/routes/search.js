@@ -5,12 +5,23 @@ const { sectionAllowed } = require('../middleware/access');
 
 const router = express.Router();
 
+// «Без разделителей»: «а3776001» и «0201» должны находить «А.3776.001» и «02.01».
+// Запрос с буквами — с двух символов, чисто числовой — с четырёх:
+// иначе «15» совпадёт почти с любым артикулом.
+function bareTerm(value) {
+  const bare = String(value || '').toLowerCase().replace(/[\s.\-_/]+/g, '');
+  if (bare.length < 2) return null;
+  if (bare.length < 4 && !/[^\d]/.test(bare)) return null;
+  return `%${bare}%`;
+}
+
 // GET /api/search?q=запрос — глобальный поиск по всем разделам
 router.get('/', auth, async (req, res) => {
   const { q } = req.query;
   if (!q || q.trim().length < 2) return res.json({ data: [] });
 
   const searchTerm = `%${q.trim()}%`;
+  const bareSearch = bareTerm(q.trim());
   const results = [];
   const canView = (section) => sectionAllowed(req.user, section, 'view');
 
@@ -54,21 +65,26 @@ router.get('/', auth, async (req, res) => {
             SELECT cm.code FROM component_modifications cm
             WHERE cm.component_id = c.id
               AND (cm.code ILIKE $1 OR cm.name ILIKE $1
-                   OR (c.article || '-' || cm.code) ILIKE $1)
+                   OR (c.article || '-' || cm.code) ILIKE $1
+                   OR ($2::text IS NOT NULL
+                       AND translate(lower(c.article || '-' || cm.code), ' .-/_', '') LIKE $2))
             ORDER BY cm.sort_order, cm.code LIMIT 3
           ) hits) AS mod_hits
        FROM components c
        LEFT JOIN component_categories cc ON c.category_id = cc.id
        WHERE c.name ILIKE $1 OR c.article ILIKE $1 OR c.description ILIKE $1
+         OR ($2::text IS NOT NULL AND translate(lower(c.article), ' .-/_', '') LIKE $2)
          OR EXISTS (
            SELECT 1 FROM component_modifications cm
            WHERE cm.component_id = c.id
              AND (cm.code ILIKE $1 OR cm.name ILIKE $1
-                  OR (c.article || '-' || cm.code) ILIKE $1)
+                  OR (c.article || '-' || cm.code) ILIKE $1
+                  OR ($2::text IS NOT NULL
+                      AND translate(lower(c.article || '-' || cm.code), ' .-/_', '') LIKE $2))
          )
        ORDER BY CASE WHEN c.name ILIKE $1 OR c.article ILIKE $1 THEN 0 ELSE 1 END,
                 cc.sort_order, c.name
-       LIMIT 5`, [searchTerm]) : { rows: [] };
+       LIMIT 5`, [searchTerm, bareSearch]) : { rows: [] };
     components.rows.forEach(r => results.push({
       type: 'component',
       icon: '🔩',

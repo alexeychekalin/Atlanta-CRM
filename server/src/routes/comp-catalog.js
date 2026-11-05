@@ -5,6 +5,16 @@ const { normalizeUploadPath } = require('../utils/files');
 
 const router = express.Router();
 
+// «Без разделителей»: «а3776001» и «0201» должны находить «А.3776.001» и «02.01».
+// Запрос с буквами — с двух символов, чисто числовой — с четырёх:
+// иначе «15» совпадёт почти с любым артикулом.
+function bareTerm(value) {
+  const bare = String(value || '').toLowerCase().replace(/[\s.\-_/]+/g, '');
+  if (bare.length < 2) return null;
+  if (bare.length < 4 && !/[^\d]/.test(bare)) return null;
+  return `%${bare}%`;
+}
+
 // GET /api/components
 router.get('/', auth, async (req, res) => {
   try {
@@ -31,16 +41,22 @@ router.get('/', auth, async (req, res) => {
       params.push(category_id);
     }
     if (search) {
-      // ищем и по модификациям: код, название и полный артикул «А.3776.001-02.02»
-      sql += ` AND (c.article ILIKE $${idx} OR c.name ILIKE $${idx}
+      // ищем и по модификациям: код, название и полный артикул «А.3776.001-02.02»;
+      // точки и дефисы можно не ставить — сравниваем ещё и без разделителей
+      const like = idx;
+      const bare = idx + 1;
+      sql += ` AND (c.article ILIKE $${like} OR c.name ILIKE $${like}
+        OR ($${bare}::text IS NOT NULL AND translate(lower(c.article), ' .-/_', '') LIKE $${bare})
         OR EXISTS (
           SELECT 1 FROM component_modifications cm
           WHERE cm.component_id = c.id
-            AND (cm.code ILIKE $${idx} OR cm.name ILIKE $${idx}
-                 OR (c.article || '-' || cm.code) ILIKE $${idx})
+            AND (cm.code ILIKE $${like} OR cm.name ILIKE $${like}
+                 OR (c.article || '-' || cm.code) ILIKE $${like}
+                 OR ($${bare}::text IS NOT NULL
+                     AND translate(lower(c.article || '-' || cm.code), ' .-/_', '') LIKE $${bare}))
         ))`;
-      params.push(`%${search}%`);
-      idx++;
+      params.push(`%${search}%`, bareTerm(search));
+      idx += 2;
     }
     if (active === 'true') {
       sql += ` AND c.is_active = true`;

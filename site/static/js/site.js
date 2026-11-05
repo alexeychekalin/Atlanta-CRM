@@ -70,15 +70,18 @@
     var searchText = cards.map(function (card) {
       return normalize(card.getAttribute('data-search-text') || '');
     });
+    var searchBare = searchText.map(bare);
 
     var apply = function () {
       var query = normalize(search.value.trim());
       var bareQuery = bare(query);
+      /* «а37» и «0201» ищем и без разделителей; короткие числовые — нет: «15» есть везде */
+      var allowBare = bareQuery.length >= 4 || (bareQuery.length >= 2 && /[^\d]/.test(bareQuery));
       var shown = 0;
       cards.forEach(function (card, i) {
         var text = searchText[i];
         var hit = !query || text.indexOf(query) !== -1 ||
-          (bareQuery.length >= 4 && bare(text).indexOf(bareQuery) !== -1);
+          (allowBare && searchBare[i].indexOf(bareQuery) !== -1);
         card.hidden = !hit;
         if (hit) shown += 1;
       });

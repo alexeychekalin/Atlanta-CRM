@@ -248,6 +248,23 @@ test('поиск: прощает латиницу и разделители в �
   assert.deepEqual(page._searchHit(other, page._buildSearchQuery('а3724.106-02.01')).mods.map(m => m.code), ['02.01']);
 });
 
+test('поиск: точку в артикуле можно не ставить', () => {
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage');
+  const component = {
+    id: 1, article: 'А.3724.106', name: 'Жгут плоский', description: '',
+    modifications: [{ id: 21, code: '02.01', name: 'Кабель с адаптером' }],
+  };
+
+  // «а37» — короткий запрос, но с буквой: точку после «А» ставить не нужно
+  assert.equal(page._searchHit(component, page._buildSearchQuery('а37')).direct, true);
+  // код исполнения без точки
+  assert.deepEqual(page._searchHit(component, page._buildSearchQuery('0201')).mods.map(m => m.code), ['02.01']);
+  // короткий числовой запрос без разделителей не расширяем — иначе «15» цепляет полкаталога
+  assert.equal(page._bareSearchable('15'), false);
+  assert.equal(page._bareSearchable('а3'), true);
+  assert.equal(page._searchHit(component, page._buildSearchQuery('15')), null);
+});
+
 test('поиск: по основному артикулу модификации не засоряют выдачу', () => {
   const { page } = loadPage('components-catalog', 'ComponentsCatalogPage');
   const component = {
