@@ -83,4 +83,12 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as error:                            # noqa: BLE001 — журнал важнее
+        import traceback
+        text = f'\nошибка подключения: {error}\n' + traceback.format_exc()
+        print(text, file=sys.stderr)
+        with LOG.open('a', encoding='utf-8') as handle:
+            handle.write(text)
+        sys.exit(1)
