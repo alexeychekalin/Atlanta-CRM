@@ -53,3 +53,6 @@ server/.catalog-enabled
 # Python
 __pycache__/
 *.pyc
+
+# Собранный сайт завода: генерируется из site/
+site/dist/
