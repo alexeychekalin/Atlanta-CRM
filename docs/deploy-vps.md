@@ -169,9 +169,13 @@ systemctl restart atlanta-crm
 ## 4. Проверка
 
 ```bash
-# на сервере
-curl -I http://127.0.0.1/                      # сайт: 200, text/html
-curl -I http://127.0.0.1/api/health            # CRM: 200 {"status":"ok"}
+# на сервере: :80 по умолчанию — сайт, CRM проверяем через Host
+curl -I http://127.0.0.1/                                            # сайт: 200, text/html
+curl -s -H "Host: crm.ваш-домен.ru" http://127.0.0.1/api/health      # CRM: {"status":"ok"}
+
+# без домена (CRM на :8080)
+curl -I http://127.0.0.1:8080/api/health
+
 systemctl status atlanta-crm --no-pager
 nginx -t
 
