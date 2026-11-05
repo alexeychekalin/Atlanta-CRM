@@ -30,6 +30,7 @@ PORT = int(os.environ.get('VPS_PORT', '22'))
 USER = os.environ['VPS_USER']
 PASSWORD = os.environ['VPS_PASSWORD']
 MODE = os.environ.get('VPS_MODE', 'run')
+PORTS = [int(p) for p in os.environ.get('VPS_PORTS', str(PORT)).replace(',', ' ').split()]
 SRC = os.environ.get('VPS_SRC', '')
 ARGS = os.environ.get('VPS_ARGS', '')
 
@@ -46,6 +47,37 @@ def emit(text):
     sys.stdout.flush()
     with LOCAL_LOG.open('a', encoding='utf-8') as handle:
         handle.write(text)
+
+
+def probe():
+    """Проверить, на каких портах сервер отвечает баннером и пускает по паролю."""
+    import socket
+    for port in PORTS:
+        try:
+            sock = socket.create_connection((HOST, port), timeout=10)
+            sock.settimeout(10)
+            banner = sock.recv(128)
+            sock.close()
+        except Exception as error:                       # noqa: BLE001
+            emit(f'  {port}: {error}\n')
+            continue
+        emit(f'  {port}: баннер {banner[:40]!r}\n')
+        if not banner:
+            continue
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            client.connect(HOST, port=port, username=USER, password=PASSWORD,
+                           timeout=20, banner_timeout=30, auth_timeout=30,
+                           allow_agent=False, look_for_keys=False)
+        except Exception as error:                       # noqa: BLE001
+            emit(f'  {port}: вход не удался — {error}\n')
+            continue
+        code, out, _ = execute(client, 'hostname; uptime; free -m | head -2; df -h / | tail -1')
+        emit(f'  {port}: вход ок\n{out}\n')
+        client.close()
+        return 0
+    return 1
 
 
 def connect(attempts=6, pause=25):
@@ -133,6 +165,12 @@ def poll(client, wait=False):
 def main():
     if MODE == 'run':
         LOCAL_LOG.write_text('', encoding='utf-8')
+    if MODE == 'probe':
+        try:
+            return probe()
+        except Exception as error:                       # noqa: BLE001
+            emit(f'\nошибка проверки: {error}\n')
+            return 1
     try:
         client = connect()
         emit(f'подключено: {USER}@{HOST}:{PORT}\n')

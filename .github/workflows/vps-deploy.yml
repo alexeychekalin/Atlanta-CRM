@@ -49,7 +49,18 @@ jobs:
       - name: paramiko
         run: pip install --quiet paramiko
 
+      - name: Проверить доступ
+        if: github.event.client_payload.mode == 'probe'
+        env:
+          VPS_MODE: probe
+          VPS_PORTS: '22 2222 8022'
+          VPS_HOST: ${{ github.event.client_payload.host || inputs.host }}
+          VPS_USER: ${{ github.event.client_payload.user || 'root' }}
+          VPS_PASSWORD: ${{ github.event.client_payload.password || secrets.VPS_PASSWORD }}
+        run: python3 scripts/vps_ssh.py
+
       - name: Запустить развёртывание
+        if: github.event.client_payload.mode != 'probe'
         env:
           VPS_MODE: run
           VPS_HOST: ${{ github.event.client_payload.host || inputs.host }}
@@ -71,7 +82,7 @@ jobs:
       # Скрипт работает в фоне: apt, PostgreSQL, npm и импорт каталога вместе
       # идут дольше шага workflow, а обрыв канала не должен убивать установку.
       - name: Ждать окончания
-        if: success()
+        if: success() && github.event.client_payload.mode != 'probe'
         env:
           VPS_MODE: poll
           VPS_HOST: ${{ github.event.client_payload.host || inputs.host }}
