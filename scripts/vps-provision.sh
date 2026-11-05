@@ -22,6 +22,9 @@ BRANCH="${BRANCH:-main}"
 REPO="${REPO:-https://github.com/alexeychekalin/Atlanta-CRM.git}"
 APP_DIR="${APP_DIR:-/opt/atlanta-crm}"
 export WITH_CATALOG="${WITH_CATALOG:-0}"
+# полный apt upgrade на свежем образе тянет сотни пакетов и часы времени —
+# нужен только безопасный минимум, его ставит deploy.sh
+export SKIP_APT_UPGRADE="${SKIP_APT_UPGRADE:-1}"
 export SEED_DEMO="${SEED_DEMO:-1}"
 export SKIP_PRESEED="${SKIP_PRESEED:-0}"
 export DEBIAN_FRONTEND=noninteractive
@@ -47,6 +50,19 @@ echo "  диск:      $(df -h / | awk 'NR==2 {print $4}') свободно"
 echo "  ветка:     $BRANCH"
 echo "  каталог:   $APP_DIR"
 echo "  каталог АТЛАНТА-26: $WITH_CATALOG (0 — без каталога)"
+
+# 2 ГБ swap: npm-установка и PostgreSQL на 1 ГБ RAM легко ловят OOM,
+# после которого sshd перестаёт отвечать
+log "swap"
+if ! swapon --show | grep -q '/swapfile'; then
+  fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+  chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile
+  grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  echo "  создан /swapfile 2 ГБ"
+else
+  echo "  swap уже есть"
+fi
+free -m | awk '/Swap:/ {print "  swap: " $2 " МБ"}'
 
 log "git"
 if ! command -v git >/dev/null 2>&1; then

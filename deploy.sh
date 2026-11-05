@@ -80,7 +80,12 @@ export DEBIAN_FRONTEND=noninteractive
 # ─────────────────────────────────────────────
 step "1/8 • Обновление системы"
 # ─────────────────────────────────────────────
-apt update && apt upgrade -y
+apt update
+if [ "${SKIP_APT_UPGRADE:-0}" != "1" ]; then
+  apt upgrade -y
+else
+  echo "  полный apt upgrade пропущен (SKIP_APT_UPGRADE=1)"
+fi
 apt install -y curl git ufw lsb-release gnupg2 ca-certificates
 log "Система обновлена"
 

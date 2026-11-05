@@ -20,6 +20,7 @@ VPS_SRC, VPS_LOG (локальная копия журнала).
 import os
 import pathlib
 import sys
+import time
 import traceback
 
 import paramiko
@@ -47,14 +48,28 @@ def emit(text):
         handle.write(text)
 
 
-def connect():
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(HOST, port=PORT, username=USER, password=PASSWORD,
-                   timeout=30, banner_timeout=30, auth_timeout=30,
-                   allow_agent=False, look_for_keys=False)
-    client.get_transport().set_keepalive(30)
-    return client
+def connect(attempts=6, pause=25):
+    """Нагруженный сервер рвёт handshake — пробуем несколько раз с паузой."""
+    last = None
+    for attempt in range(1, attempts + 1):
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            client.connect(HOST, port=PORT, username=USER, password=PASSWORD,
+                           timeout=30, banner_timeout=45, auth_timeout=45,
+                           allow_agent=False, look_for_keys=False)
+            client.get_transport().set_keepalive(30)
+            return client
+        except paramiko.AuthenticationException:
+            client.close()
+            raise                                    # пароль не тот — повторять нет смысла
+        except Exception as error:                   # noqa: BLE001
+            last = error
+            client.close()
+            emit(f'попытка {attempt}/{attempts}: {error}\n')
+            if attempt < attempts:
+                time.sleep(pause)
+    raise last
 
 
 def execute(client, command, timeout=120):
