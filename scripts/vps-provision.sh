@@ -28,6 +28,9 @@ export DEBIAN_FRONTEND=noninteractive
 
 log() { echo -e "\n\033[1;36m━━━ $* ━━━\033[0m"; }
 
+# копия журнала на сервере — пригодится, если развёртывание оборвётся
+exec > >(tee -a /root/vps-provision.log) 2>&1
+
 [ "$EUID" -eq 0 ] || { echo "нужен root"; exit 1; }
 
 export DOMAIN="${DOMAIN:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
