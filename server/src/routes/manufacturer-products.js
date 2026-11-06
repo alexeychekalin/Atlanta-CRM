@@ -62,7 +62,7 @@ router.get('/:id', auth, async (req, res) => {
       SELECT mpc.*, c.article, c.name AS component_name, c.price AS component_price,
              c.image_path AS component_image, c.category_id,
              cc.name AS category_name,
-             cm.code AS modification_code, cm.name AS modification_name,
+             cm.code AS modification_code, cm.full_article AS modification_full_article, cm.name AS modification_name,
              cm.price_override AS modification_price
       FROM manufacturer_product_components mpc
       JOIN components c ON mpc.component_id = c.id

@@ -143,8 +143,15 @@ def clean_mod_name(name):
     return name.rstrip('.')
 
 
-def full_article(article, code):
-    """Полный артикул исполнения: «А.3776.001» + «02.02» → «А.3776.001-02.02»."""
+def full_article(article, code, printed=None):
+    """Полный артикул исполнения: «А.3776.001» + «02.02» → «А.3776.001-02.02».
+
+    Если в каталоге записан печатный артикул (исполнения, где цвет входит в
+    обозначение через точку — А.3731.023.1-01.00-150), он и берётся.
+    """
+    explicit = ' '.join((printed or '').split())
+    if explicit:
+        return explicit
     base = ' '.join((article or '').split())
     suffix = ' '.join((code or '').split())
     if not base:
@@ -640,7 +647,7 @@ class Site:
         # иначе «А.3776.001-02.02» с прайса на сайте не находится
         mods_text = []
         for mod in component.get('modifications') or []:
-            mods_text.append(full_article(component['article'], mod.get('code')))
+            mods_text.append(full_article(component['article'], mod.get('code'), mod.get('full_article')))
             # длинные описания в поисковом атрибуте не нужны — только начало
             mods_text.append(clean_mod_name(mod.get('name'))[:80])
         search_text = re.sub(r'\s+', ' ', ' '.join([
@@ -999,12 +1006,12 @@ class Site:
         # если у всех исполнений в каталоге только служебная пометка — таблицу не показываем
         if mods and any(clean_mod_name(mod.get('name')) for mod in mods):
             rows = ''.join(
-                f'<tr><td>{esc(mod["code"])}</td>'
+                f'<tr><td>{esc(full_article(component["article"], mod.get("code"), mod.get("full_article")))}</td>'
                 f'<td>{esc(clean_mod_name(mod.get("name")) or "Стандартное исполнение")}</td></tr>'
                 for mod in mods)
             mods_html = f'''<div class="block"><h2>Исполнения ({len(mods)})</h2>
 <div class="mods__scroll"><table class="mods">
-<thead><tr><th>Код</th><th>Описание</th></tr></thead>
+<thead><tr><th>Артикул</th><th>Описание</th></tr></thead>
 <tbody>{rows}</tbody></table></div></div>'''
 
         related = [item for item in self.components
@@ -1308,7 +1315,7 @@ class Site:
         # поисковый индекс — на случай внешней интеграции и быстрых ссылок
         index = [{'article': item['article'], 'name': item['name'], 'url': item['_url'],
                   'category': self.categories.get(item['category'], {}).get('name', ''),
-                  'modifications': [{'article': full_article(item['article'], mod.get('code')),
+                  'modifications': [{'article': full_article(item['article'], mod.get('code'), mod.get('full_article')),
                                      'code': mod.get('code') or '',
                                      'name': clean_mod_name(mod.get('name'))}
                                     for mod in item.get('modifications') or []]}

@@ -132,14 +132,23 @@ async function ensureModifications(runner, componentId, entry) {
       [componentId, mod.code]
     );
     if (existing.rows.length > 0) {
-      items.push({ id: existing.rows[0].id, mod });
+      const id = existing.rows[0].id;
+      // артикул исполнения мог появиться в каталоге позже — дозаполняем пустой
+      if (mod.full_article) {
+        await runner.query(
+          `UPDATE component_modifications SET full_article = $2
+           WHERE id = $1 AND (full_article IS NULL OR full_article = '')`,
+          [id, mod.full_article]
+        );
+      }
+      items.push({ id, mod });
       continue;
     }
 
     const inserted = await runner.query(
-      `INSERT INTO component_modifications (component_id, code, name, sort_order)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [componentId, mod.code, mod.name || null, i]
+      `INSERT INTO component_modifications (component_id, code, name, full_article, sort_order)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [componentId, mod.code, mod.name || null, mod.full_article || null, i]
     );
     items.push({ id: inserted.rows[0].id, mod });
     created += 1;
@@ -229,13 +238,22 @@ async function retireLegacyFlats(runner, entries) {
       families.set(fullArticle(entry.article, mod.code), entry.article);
       // артикул из прежнего каталога, если код исполнения записан иначе
       if (mod.legacy_article) families.set(mod.legacy_article, entry.article);
+      if (mod.full_article) families.set(mod.full_article, entry.article);
+    }
+    // артикулы, которые каталог прямо объявляет частью этого изделия:
+    // «А.3731.027-01» → «А.3731.027» (поле supersedes в catalog.json)
+    for (const old of entry.supersedes || []) {
+      families.set(old, entry.article);
     }
   }
   if (families.size === 0) return { removed: 0, disabled: 0 };
 
   const bases = new Set(entries.map(entry => entry.article));
+  // плоские артикулы жгутов и артикулы, объявленные в supersedes
+  const oldArticles = [...families.keys()];
   const rows = await runner.query(
-    "SELECT id, article FROM components WHERE article LIKE 'А.3724.%'"
+    'SELECT id, article FROM components WHERE article LIKE $1 OR article = ANY($2::text[])',
+    ['А.3724.%', oldArticles]
   );
 
   let removed = 0;
@@ -260,7 +278,7 @@ async function retireLegacyFlats(runner, entries) {
 /** Артикулы, которые появятся в системе: базовые и полные (для лога и тестов). */
 function expandArticles(entry) {
   const mods = Array.isArray(entry.modifications) ? entry.modifications : [];
-  return [entry.article, ...mods.map(mod => fullArticle(entry.article, mod.code))];
+  return [entry.article, ...mods.map(mod => fullArticle(entry.article, mod.code, mod.full_article))];
 }
 
 async function run(db = require('../db')) {

@@ -303,7 +303,7 @@ router.post('/calculations', auth, async (req, res) => {
 
     const bomRes = await db.query(`
       SELECT dc.*, c.price, c.name AS component_name, c.article,
-             cm.code AS modification_code, cm.price_override AS modification_price
+             cm.code AS modification_code, cm.full_article AS modification_full_article, cm.price_override AS modification_price
         FROM drawing_components dc
         JOIN components c ON dc.component_id = c.id
         LEFT JOIN component_modifications cm ON cm.id = dc.modification_id
@@ -319,7 +319,7 @@ router.post('/calculations', auth, async (req, res) => {
       const markupRub = round2(item.item_markup_rub);
       return {
         component_id: item.component_id,
-        article: fullArticle(item.article, item.modification_code),
+        article: fullArticle(item.article, item.modification_code, item.modification_full_article),
         name: item.component_name,
         price: round2(price),
         quantity,
@@ -405,7 +405,7 @@ router.get('/:id', auth, async (req, res) => {
       db.query(`
         SELECT dc.*, c.article, c.name AS component_name, c.price, c.image_path,
                cc.name AS category_name,
-               cm.code AS modification_code, cm.name AS modification_name,
+               cm.code AS modification_code, cm.full_article AS modification_full_article, cm.name AS modification_name,
                cm.price_override AS modification_price
         FROM drawing_components dc
         JOIN components c ON dc.component_id = c.id
@@ -835,7 +835,7 @@ router.post('/:id/calculate', auth, async (req, res) => {
 
     const bomRes = await db.query(`
       SELECT dc.*, c.price, c.name AS component_name, c.article,
-             cm.code AS modification_code, cm.name AS modification_name, cm.price_override AS modification_price
+             cm.code AS modification_code, cm.full_article AS modification_full_article, cm.name AS modification_name, cm.price_override AS modification_price
       FROM drawing_components dc
       JOIN components c ON dc.component_id = c.id
       LEFT JOIN component_modifications cm ON dc.modification_id = cm.id
@@ -853,7 +853,7 @@ router.post('/:id/calculate', auth, async (req, res) => {
 
       return {
         component_name: item.component_name,
-        article: fullArticle(item.article, item.modification_code),
+        article: fullArticle(item.article, item.modification_code, item.modification_full_article),
         modification_name: item.modification_name || null,
         price: effectivePrice,
         quantity: parseFloat(item.quantity),

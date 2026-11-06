@@ -4,8 +4,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { readConfig, placeImage, expandArticles, fillEmptyFields, CATALOG_JSON, FILES_DIR } =
-  require('../src/db/catalog');
+const { readConfig, placeImage, expandArticles, fillEmptyFields, retireLegacyFlats,
+  CATALOG_JSON, FILES_DIR } = require('../src/db/catalog');
 const { fullArticle } = require('../src/utils/article');
 
 test('артикул: код модификации приклеивается через дефис', () => {
@@ -49,10 +49,10 @@ test('каталог: артикулы уникальны, коды модифи
     const codes = (entry.modifications || []).map(m => m.code.toLowerCase());
     assert.equal(new Set(codes).size, codes.length, `${entry.article}: повторяются коды модификаций`);
 
-    // код не должен дублировать базу: полный артикул собирается в одном месте
-    for (const code of codes) {
-      const full = fullArticle(entry.article, code);
-      assert.ok(full.startsWith(entry.article + '-'), `${entry.article}: код ${code} даёт ${full}`);
+    // полный артикул собирается в одном месте: самим артикулом или полем full_article
+    for (const mod of entry.modifications || []) {
+      const full = fullArticle(entry.article, mod.code, mod.full_article);
+      assert.ok(full.startsWith(entry.article), `${entry.article}: код ${mod.code} даёт ${full}`);
     }
   }
 });
@@ -86,7 +86,8 @@ test('каталог: у позиций есть галерея, обложка 
 
   assert.ok(gallery.length >= 50, `позиций с галереей: ${gallery.length}`);
   for (const entry of gallery) {
-    assert.ok(entry.images.length <= 10, `${entry.article}: больше десяти фото в галерее`);
+    // у семейства с несколькими исполнениями фото больше, чем у одной позиции
+    assert.ok(entry.images.length <= 20, `${entry.article}: больше двадцати фото в галерее`);
     assert.equal(new Set(entry.images).size, entry.images.length,
       `${entry.article}: в галерее повторяются файлы`);
     assert.ok(entry.image, `${entry.article}: нет обложки при непустой галерее`);
@@ -184,6 +185,74 @@ test('каталог: прежние плоские артикулы жгуто�
     assert.ok(texts.some(text => text.includes(article)),
       `${article}: потерян при разбиении на семейства`);
   }
+});
+
+test('каталог: изделие с цветными исполнениями — одна позиция, прежние артикулы в supersedes', () => {
+  const { components } = readConfig();
+  const byArticle = new Map(components.map(c => [c.article, c]));
+
+  // А.3731.027 — изделие, А.3731.027-01/-02/-03 — его исполнения по цвету
+  const family = byArticle.get('А.3731.027');
+  assert.ok(family, 'нет изделия А.3731.027');
+  assert.deepEqual(family.supersedes, ['А.3731.027-01', 'А.3731.027-02', 'А.3731.027-03']);
+  assert.equal(family.modifications.length, 78, 'исполнений А.3731.027');
+  for (const code of ['01.01', '02.45', '03.85']) {
+    assert.ok(family.modifications.some(m => m.code === code), `А.3731.027: нет исполнения ${code}`);
+  }
+
+  for (const article of family.supersedes) {
+    assert.ok(!byArticle.has(article), `${article}: остался отдельной позицией`);
+  }
+
+  // печатный артикул не всегда собирается как «изделие-код»: он в full_article
+  const arm = byArticle.get('А.3731.023');
+  assert.ok(arm, 'нет изделия А.3731.023');
+  const printed = arm.modifications.find(m => m.full_article === 'А.3731.023.3-03.06-150');
+  assert.ok(printed, 'А.3731.023.3-03.06-150: исполнение потерялось');
+  assert.equal(fullArticle(arm.article, printed.code, printed.full_article), 'А.3731.023.3-03.06-150');
+  assert.ok(expandArticles(arm).includes('А.3731.023.3-03.06-150'),
+    'поиск по печатному артикулу не находит изделие');
+
+  for (const entry of components) {
+    for (const mod of entry.modifications || []) {
+      const full = fullArticle(entry.article, mod.code, mod.full_article);
+      assert.ok(full.includes(entry.article), `${entry.article}: ${mod.code} даёт ${full}`);
+    }
+  }
+});
+
+test('каталог: supersedes гасит прежние плоские артикулы, не трогая изделие', async () => {
+  const statements = [];
+  const runner = {
+    query: async (sql, params) => {
+      statements.push({ sql, params });
+      if (/SELECT id, article FROM components/.test(sql)) {
+        return { rows: [
+          { id: 1, article: 'А.3731.027-01' },   // свободен — удаляем
+          { id: 2, article: 'А.3731.027-03' },   // стоит в чертеже — выключаем
+          { id: 3, article: 'А.3731.027' },      // само изделие — не трогаем
+        ] };
+      }
+      if (/SELECT 1 FROM/.test(sql)) {
+        return { rows: params[0] === 2 ? [{ exists: 1 }] : [] };
+      }
+      return { rows: [], rowCount: 1 };
+    },
+  };
+
+  const entries = [{
+    article: 'А.3731.027',
+    supersedes: ['А.3731.027-01', 'А.3731.027-03'],
+    modifications: [{ code: '01.01' }],
+  }];
+  assert.deepEqual(await retireLegacyFlats(runner, entries), { removed: 1, disabled: 1 });
+
+  const deleted = statements.filter(s => /^DELETE FROM components/.test(s.sql)).map(s => s.params[0]);
+  const disabled = statements.filter(s => /is_active = false/.test(s.sql)).map(s => s.params[0]);
+  assert.deepEqual(deleted, [1]);
+  assert.deepEqual(disabled, [2], 'позиция из чертежа остаётся в базе, но выключенной');
+  assert.ok(!statements.some(s => s.params && s.params[0] === 3),
+    'базовый артикул изделия трогать нельзя');
 });
 
 test('каталог: описание расширяется, ручная правка не затирается', async () => {

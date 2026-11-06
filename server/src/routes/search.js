@@ -65,9 +65,9 @@ router.get('/', auth, async (req, res) => {
             SELECT cm.code FROM component_modifications cm
             WHERE cm.component_id = c.id
               AND (cm.code ILIKE $1 OR cm.name ILIKE $1
-                   OR (c.article || '-' || cm.code) ILIKE $1
+                   OR COALESCE(cm.full_article, c.article || '-' || cm.code) ILIKE $1
                    OR ($2::text IS NOT NULL
-                       AND translate(lower(c.article || '-' || cm.code), ' .-/_', '') LIKE $2))
+                       AND translate(lower(COALESCE(cm.full_article, c.article || '-' || cm.code)), ' .-/_', '') LIKE $2))
             ORDER BY cm.sort_order, cm.code LIMIT 3
           ) hits) AS mod_hits
        FROM components c
@@ -78,9 +78,9 @@ router.get('/', auth, async (req, res) => {
            SELECT 1 FROM component_modifications cm
            WHERE cm.component_id = c.id
              AND (cm.code ILIKE $1 OR cm.name ILIKE $1
-                  OR (c.article || '-' || cm.code) ILIKE $1
+                  OR COALESCE(cm.full_article, c.article || '-' || cm.code) ILIKE $1
                   OR ($2::text IS NOT NULL
-                      AND translate(lower(c.article || '-' || cm.code), ' .-/_', '') LIKE $2))
+                      AND translate(lower(COALESCE(cm.full_article, c.article || '-' || cm.code)), ' .-/_', '') LIKE $2))
          )
        ORDER BY CASE WHEN c.name ILIKE $1 OR c.article ILIKE $1 THEN 0 ELSE 1 END,
                 cc.sort_order, c.name

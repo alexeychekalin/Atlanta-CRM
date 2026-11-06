@@ -177,6 +177,9 @@ CREATE TABLE IF NOT EXISTS component_modifications (
   component_id INT NOT NULL REFERENCES components(id) ON DELETE CASCADE,
   code VARCHAR(100) NOT NULL,
   name TEXT,
+  -- печатный артикул исполнения, если он не собирается из артикула изделия
+  -- и кода через дефис (например А.3731.023.1-01.00-150)
+  full_article VARCHAR(150),
   price_override NUMERIC(12,2),
   description TEXT,
   sort_order INT DEFAULT 0,

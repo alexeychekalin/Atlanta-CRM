@@ -689,7 +689,7 @@ const OrdersPage = {
           </div>
         </div>
         ${mods.map(m => {
-          const modArticle = fullArticle(comp.article, m.code);
+          const modArticle = fullArticle(comp.article, m.code, m.full_article);
           const price = m.price_override !== null ? m.price_override : comp.price;
           return `
             <div style="background:var(--bg-main);border:1px solid var(--border);border-radius:10px;padding:10px 14px;cursor:pointer;transition:border-color 0.2s"
@@ -741,7 +741,7 @@ const OrdersPage = {
       const mod = (detail.modifications || []).find(m => m.id === modId);
       if (!mod) return;
       const price = mod.price_override !== null ? parseFloat(mod.price_override) : parseFloat(comp.price);
-      const modArticle = fullArticle(comp.article, mod.code);
+      const modArticle = fullArticle(comp.article, mod.code, mod.full_article);
       const name = comp.name + ' — ' + (mod.name || mod.code);
       const container = document.getElementById('order-items-list');
       if (!container) return;

@@ -306,3 +306,52 @@ test('поиск: выдача фильтруется, сортируется и
   // прямое совпадение по артикулу — выше найденного по модификации
   assert.ok(grid.indexOf('Фонарь с обжимом') < grid.indexOf('Фонарь задний'));
 });
+
+test('фильтры: в чипсах категорий видно, сколько позиций найдено', () => {
+  const components = [
+    { id: 1, article: 'А.3776.001', name: 'Фонарь задний', description: '', price: 100,
+      category_id: 1, category_name: 'Фонари задние', modifications: [] },
+    { id: 2, article: 'А.3700.500', name: 'Фонарь габаритный', description: '', price: 300,
+      category_id: 1, category_name: 'Фонари задние', modifications: [] },
+    { id: 3, article: 'БК-101', name: 'Блок коммутации', description: '', price: 400,
+      category_id: 2, category_name: 'Блоки', modifications: [] },
+  ];
+  const doc = makeFakeDocument();
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage', {
+    globals: { document: doc },
+  });
+  page.allComponents = components;
+  page.categories = [{ id: 1, name: 'Фонари задние' }, { id: 2, name: 'Блоки' }, { id: 3, name: 'Разъёмы' }];
+  page.filterAndRender();
+
+  const chips = doc.nodes['comp-category-chips'].innerHTML;
+  assert.match(chips, /Все \(3\)/);
+  assert.match(chips, /Фонари задние \(2\)/);
+  assert.match(chips, /Блоки \(1\)/);
+  assert.match(chips, /Разъёмы \(0\)/);
+  // пустая категория приглушена: видно, что фильтр никуда не ведёт
+  assert.match(chips, /chip-filter\s+chip-filter--empty"[^>]*>Разъёмы/);
+  assert.ok(!/chip-filter\s+chip-filter--empty"[^>]*>Блоки/.test(chips),
+    'непустая категория не должна считаться пустой');
+});
+
+test('фильтры: счётчики пересчитываются с учётом поиска', () => {
+  const components = [
+    { id: 1, article: 'А.3776.001', name: 'Фонарь задний', description: '', price: 100,
+      category_id: 1, category_name: 'Фонари задние', modifications: [] },
+    { id: 2, article: 'БК-101', name: 'Блок коммутации', description: '', price: 400,
+      category_id: 2, category_name: 'Блоки', modifications: [] },
+  ];
+  const doc = makeFakeDocument({ search: 'А.3776' });
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage', {
+    globals: { document: doc },
+  });
+  page.allComponents = components;
+  page.categories = [{ id: 1, name: 'Фонари задние' }, { id: 2, name: 'Блоки' }];
+  page.filterAndRender();
+
+  const chips = doc.nodes['comp-category-chips'].innerHTML;
+  assert.match(chips, /Все \(1\)/);
+  assert.match(chips, /Фонари задние \(1\)/);
+  assert.match(chips, /Блоки \(0\)/);
+});

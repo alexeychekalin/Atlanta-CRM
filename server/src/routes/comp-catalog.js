@@ -25,7 +25,8 @@ router.get('/', auth, async (req, res) => {
         (SELECT COUNT(*) FROM component_images ci WHERE ci.component_id = c.id) AS images_count,
         (SELECT COUNT(*) FROM component_documents cd WHERE cd.component_id = c.id) AS doc_count,
         COALESCE((
-          SELECT json_agg(json_build_object('id', cm.id, 'code', cm.code, 'name', cm.name)
+          SELECT json_agg(json_build_object('id', cm.id, 'code', cm.code, 'name', cm.name,
+                                            'full_article', cm.full_article)
                           ORDER BY cm.sort_order, cm.code)
           FROM component_modifications cm WHERE cm.component_id = c.id
         ), '[]'::json) AS modifications
@@ -51,9 +52,9 @@ router.get('/', auth, async (req, res) => {
           SELECT 1 FROM component_modifications cm
           WHERE cm.component_id = c.id
             AND (cm.code ILIKE $${like} OR cm.name ILIKE $${like}
-                 OR (c.article || '-' || cm.code) ILIKE $${like}
+                 OR COALESCE(cm.full_article, c.article || '-' || cm.code) ILIKE $${like}
                  OR ($${bare}::text IS NOT NULL
-                     AND translate(lower(c.article || '-' || cm.code), ' .-/_', '') LIKE $${bare}))
+                     AND translate(lower(COALESCE(cm.full_article, c.article || '-' || cm.code)), ' .-/_', '') LIKE $${bare}))
         ))`;
       params.push(`%${search}%`, bareTerm(search));
       idx += 2;

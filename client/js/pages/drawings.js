@@ -855,7 +855,7 @@ const DrawingsPage = {
                       return `
                         <tr>
                           <td style="color:var(--text-muted)">${idx + 1}</td>
-                          <td><span class="font-mono" style="color:var(--accent-teal);font-size:0.8rem">${esc(fullArticle(c.article, c.modification_code) || '—')}</span></td>
+                          <td><span class="font-mono" style="color:var(--accent-teal);font-size:0.8rem">${esc(fullArticle(c.article, c.modification_code, c.modification_full_article) || '—')}</span></td>
                           <td><strong>${esc(c.component_name)}</strong>${c.modification_name ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:1px">${esc(c.modification_name)}</div>` : ''}</td>
                           <td><span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary)">${esc(c.category_name) || '—'}</span></td>
                           <td class="text-right">${Table.formatMoney(c.modification_price !== null && c.modification_price !== undefined ? c.modification_price : c.price)}</td>

@@ -275,7 +275,7 @@ router.post('/:id/convert', auth, async (req, res) => {
         // Загружаем компоненты чертежа для полных метаданных
         const dcRes = await pgClient.query(
           `SELECT dc.*, c.name as component_name, c.article, c.price, c.image_path,
-                  cm.code AS modification_code, cm.name AS modification_name, cm.price_override AS modification_price
+                  cm.code AS modification_code, cm.full_article AS modification_full_article, cm.name AS modification_name, cm.price_override AS modification_price
            FROM drawing_components dc
            LEFT JOIN components c ON c.id = dc.component_id
            LEFT JOIN component_modifications cm ON cm.id = dc.modification_id
@@ -295,7 +295,7 @@ router.post('/:id/convert', auth, async (req, res) => {
           const lineTotal = baseTotal + markupPctAmount + markupRub;
           return {
             name: c.component_name || 'Компонент',
-            article: fullArticle(c.article, c.modification_code),
+            article: fullArticle(c.article, c.modification_code, c.modification_full_article),
             modification_name: c.modification_name || null,
             price: effectivePrice,
             quantity: qty,

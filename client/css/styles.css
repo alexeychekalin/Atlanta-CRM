@@ -1231,6 +1231,127 @@ body.lightbox-open {
 }
 
 /* =============================================
+   SEARCH CLEAR — кнопка «×» в полях поиска
+   ============================================= */
+.search-clear-wrap {
+  position: relative;
+  display: inline-block;
+  min-width: 0;
+  vertical-align: middle;
+}
+.search-clear-wrap > input { width: 100%; }
+
+.search-clear {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-secondary, rgba(148, 163, 184, 0.22));
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  z-index: 2;
+}
+.search-clear:hover {
+  background: var(--accent-teal);
+  color: #fff;
+}
+.search-clear[hidden] { display: none; }
+
+/* место под кнопку, чтобы текст не заезжал под неё */
+input.search-clear-host,
+.search-input input.search-clear-host,
+.global-search-input.search-clear-host {
+  padding-right: 36px;
+}
+
+/* в глобальном поиске подсказка Ctrl+K уступает место «×» */
+.global-search-input-wrap.has-search-value .global-search-kbd { display: none; }
+
+/* =============================================
+   CHIP FILTER — быстрые фильтры категорий
+   В скобках — сколько позиций найдено при текущем поиске.
+   ============================================= */
+.chip-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.chip-filter:hover {
+  border-color: var(--accent-teal);
+  color: var(--text-primary);
+}
+.chip-filter:focus-visible {
+  outline: 2px solid var(--accent-teal);
+  outline-offset: 2px;
+}
+.chip-filter.active {
+  background: var(--gradient-primary);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: var(--shadow-glow-teal);
+}
+
+/* по текущему поиску в категории пусто — фильтр никуда не ведёт */
+.chip-filter--empty {
+  opacity: 0.55;
+  border-style: dashed;
+}
+.chip-filter--empty:hover { opacity: 0.85; }
+.chip-filter--empty.active {
+  opacity: 1;
+  border-style: solid;
+}
+
+@media (max-width: 767px) {
+  .chip-filter {
+    padding: 5px 10px;
+    font-size: 0.75rem;
+  }
+}
+
+/* =============================================
+   COPYABLE — артикул копируется кликом
+   ============================================= */
+.copyable {
+  cursor: copy;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+.copyable:hover {
+  background: rgba(45, 212, 191, 0.14);
+  color: var(--accent-teal);
+}
+.copyable.is-copied {
+  background: rgba(34, 197, 94, 0.22);
+  color: #22c55e;
+}
+.copyable.is-copy-failed {
+  background: rgba(239, 68, 68, 0.18);
+  color: #ef4444;
+}
+
+/* =============================================
    TOAST NOTIFICATIONS
    ============================================= */
 .toast-container {

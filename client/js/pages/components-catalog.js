@@ -224,11 +224,17 @@ const ComponentsCatalogPage = {
 
   renderCategoryChips() {
     const container = document.getElementById('comp-category-chips');
+    if (!container) return;
     const activeId = document.getElementById('comp-category-filter')?.value || '';
+    const counts = this._categoryCounts instanceof Map ? this._categoryCounts : null;
+    const countOf = (id) => (counts ? (counts.get(id) || 0) : null);
+    const total = counts ? this._categoryTotal : null;
+
+    // количество считаем по текущему поиску: видно, куда ведёт каждый фильтр
     container.innerHTML = `
-      <button class="chip-filter ${!activeId ? 'active' : ''}" onclick="ComponentsCatalogPage.filterByChip('')">Все</button>
+      <button class="chip-filter ${!activeId ? 'active' : ''}" onclick="ComponentsCatalogPage.filterByChip('')">Все${total === null ? '' : ` (${total})`}</button>
       ${this.categories.map(c => `
-        <button class="chip-filter ${activeId == c.id ? 'active' : ''}" onclick="ComponentsCatalogPage.filterByChip('${c.id}')">${esc(c.name)}</button>
+        <button class="chip-filter ${activeId == c.id ? 'active' : ''}${counts && !countOf(c.id) ? ' chip-filter--empty' : ''}" onclick="ComponentsCatalogPage.filterByChip('${c.id}')">${esc(c.name)}${counts ? ` (${countOf(c.id)})` : ''}</button>
       `).join('')}
     `;
   },
@@ -311,7 +317,7 @@ const ComponentsCatalogPage = {
     return (comp.modifications || []).filter(m =>
       this._searchMatch(m.code, query) ||
       this._searchMatch(m.name, query) ||
-      this._searchMatch(fullArticle(comp.article, m.code), query)
+      this._searchMatch(fullArticle(comp.article, m.code, m.full_article), query)
     );
   },
 
@@ -355,6 +361,13 @@ const ComponentsCatalogPage = {
     }
     this._searchQuery = query;
     this._searchHits = hits;
+
+    // сколько позиций в каждой категории при текущем поиске (для чипсов)
+    const counts = new Map();
+    filtered.forEach(c => counts.set(c.category_id, (counts.get(c.category_id) || 0) + 1));
+    this._categoryCounts = counts;
+    this._categoryTotal = filtered.length;
+    this.renderCategoryChips();
 
     if (categoryId) {
       filtered = filtered.filter(c => c.category_id == categoryId);
@@ -406,7 +419,7 @@ const ComponentsCatalogPage = {
               <div class="comp-card-status" style="background:${c.is_active !== false ? '#22c55e' : '#ef4444'}"></div>
             </div>
             <div class="comp-card-body">
-              <div class="comp-card-article">${esc(c.article)}</div>
+              <div class="comp-card-article"><span class="copyable" data-copy="${esc(c.article)}" title="Скопировать артикул">${esc(c.article)}</span></div>
               <div class="comp-card-name">${esc(c.name)}</div>
               ${c.description ? `<div class="comp-card-desc">${esc(c.description)}</div>` : ''}
               ${this._modHitHtml(this._searchHits && this._searchHits.get(c.id))}
@@ -454,7 +467,7 @@ const ComponentsCatalogPage = {
                     ? `<img src="${esc(c.image_path)}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">`
                     : '<div style="width:40px;height:40px;border-radius:6px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:16px">📦</div>'}
                 </td>
-                <td class="font-mono" style="color:var(--accent-teal)">${esc(c.article)}</td>
+                <td class="font-mono" style="color:var(--accent-teal)"><span class="copyable" data-copy="${esc(c.article)}" title="Скопировать артикул">${esc(c.article)}</span></td>
                 <td><strong>${esc(c.name)}</strong>${c.description ? `<div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px">${esc(c.description.substring(0, 60))}</div>` : ''}${parseInt(c.modifications_count) > 0 ? `<span style="display:inline-block;margin-top:2px;padding:1px 7px;border-radius:8px;font-size:0.7rem;font-weight:600;background:var(--accent-teal);color:#fff">${c.modifications_count} мод.</span>` : ''}${this._modHitHtml(this._searchHits && this._searchHits.get(c.id))}</td>
                 <td><span class="badge badge-in_progress">${esc(c.category_name) || '—'}</span></td>
                 <td class="text-right" style="font-weight:600">${Table.formatMoney(c.price)}</td>
@@ -512,7 +525,7 @@ const ComponentsCatalogPage = {
           </div>
           <div style="display:flex;flex-direction:column;gap:10px" id="mods-list">
             ${mods.map(m => {
-              const modArticle = fullArticle(comp.article, m.code);
+              const modArticle = fullArticle(comp.article, m.code, m.full_article);
               const isHit = hitModIds.has(m.id);
               const modPrice = m.price_override !== null ? m.price_override : comp.price;
               const images = m.images || [];
@@ -521,7 +534,7 @@ const ComponentsCatalogPage = {
                   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
                     <div style="flex:1">
                       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-                        <span style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;color:var(--accent-teal)">${modArticle}</span>
+                        <span class="copyable" style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;color:var(--accent-teal)" data-copy="${esc(modArticle)}" title="Скопировать артикул">${modArticle}</span>
                         ${isHit ? '<span style="font-size:0.68rem;font-weight:700;color:var(--accent-teal);border:1px solid var(--accent-teal);border-radius:8px;padding:0 6px" title="Совпадение по поиску">совпадение</span>' : ''}
                         ${m.is_active === false ? '<span style="font-size:0.7rem;color:#ef4444;font-weight:600">Неактивна</span>' : ''}
                         ${m.price_override !== null ? `<span style="font-weight:600;font-size:0.85rem">${Table.formatMoneyRaw(modPrice)}</span>` : ''}
@@ -602,7 +615,7 @@ const ComponentsCatalogPage = {
             ${galleryHtml ? `<div>${galleryHtml}</div>` : ''}
             <div>
               <div style="margin-bottom:16px">
-                <div style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;color:var(--accent-teal);margin-bottom:4px">${esc(comp.article)}</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;color:var(--accent-teal);margin-bottom:4px"><span class="copyable" data-copy="${esc(comp.article)}" title="Скопировать артикул">${esc(comp.article)}</span></div>
                 <div style="font-size:1.3rem;font-weight:700;margin-bottom:8px">${esc(comp.name)}</div>
                 ${comp.category_name ? `<span class="badge badge-in_progress" style="font-size:0.8rem">${esc(comp.category_name)}</span>` : ''}
               </div>
@@ -989,6 +1002,12 @@ const ComponentsCatalogPage = {
             <label>Описание</label>
             <textarea class="form-control" id="mod-name" rows="3" placeholder="Описание модификации">${isEdit ? (mod.name || '') : ''}</textarea>
           </div>
+          <div class="form-group">
+            <label>Полный артикул</label>
+            <input type="text" class="form-control" id="mod-full-article" value="${isEdit ? esc(mod.full_article || '') : ''}"
+                   placeholder="Пусто — артикул изделия и код через дефис">
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px">Заполняйте, только если печатный артикул отличается: А.3731.023.1-01.00-150</div>
+          </div>
           <div class="form-row">
             <div class="form-group">
               <label>Порядок сортировки</label>
@@ -1014,6 +1033,7 @@ const ComponentsCatalogPage = {
     const data = {
       code: document.getElementById('mod-code').value.trim(),
       name: document.getElementById('mod-name').value.trim(),
+      full_article: document.getElementById('mod-full-article').value.trim(),
       price_override: priceVal !== '' ? parseFloat(priceVal) : null,
       sort_order: parseInt(document.getElementById('mod-sort').value) || 0,
       is_active: document.getElementById('mod-active').checked,
