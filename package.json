@@ -8,6 +8,10 @@
     "dev": "cd server && npm run dev",
     "db:init": "cd server && npm run db:init",
     "db:migrate": "cd server && npm run db:migrate",
+    "db:catalog": "cd server && npm run db:catalog",
+    "db:data": "cd server && npm run db:data",
+    "db:preseed": "cd server && npm run db:preseed",
+    "db:init:full": "cd server && npm run db:init:full",
     "postinstall": "cd server && npm install",
     "test": "cd server && npm test",
     "lint": "cd server && npm run lint"

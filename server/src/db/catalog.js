@@ -23,6 +23,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { fullArticle } = require('../utils/article');
+const { describeDbError } = require('../utils/db-error');
 
 const CATALOG_DIR = path.join(__dirname, 'catalog');
 const FILES_DIR = path.join(CATALOG_DIR, 'files');
@@ -230,6 +231,21 @@ async function isReferenced(runner, componentId) {
   return false;
 }
 
+/** Импорт пишет full_article: без миграции лучше остановиться сразу и понятно. */
+async function assertSchema(runner) {
+  try {
+    await runner.query('SELECT full_article FROM component_modifications WHERE false');
+  } catch (err) {
+    if (/full_article/i.test(err.message || '')) {
+      throw new Error(
+        'в таблице component_modifications нет колонки full_article — сначала примените миграции ' +
+        '(npm run db:migrate), затем повторите импорт каталога'
+      );
+    }
+    throw err;
+  }
+}
+
 async function retireLegacyFlats(runner, entries) {
   const families = new Map();
   for (const entry of entries) {
@@ -287,6 +303,8 @@ async function run(db = require('../db')) {
     console.log('ℹ️  Каталог: нет данных в src/db/catalog/catalog.json');
     return;
   }
+
+  await assertSchema(db);
 
   console.log(`\n📦 Импорт каталога: ${categories.length} категорий, ${components.length} позиций`);
 
@@ -356,7 +374,7 @@ async function run(db = require('../db')) {
   );
   if (legacy.removed > 0 || legacy.disabled > 0) {
     console.log(
-      `↪️  Плоские артикулы жгутов: удалено ${legacy.removed}, ` +
+      `↪️  Прежние артикулы (жгуты, семейства фонарей): удалено ${legacy.removed}, ` +
       `погашено (есть ссылки) ${legacy.disabled}`
     );
   }
@@ -371,7 +389,7 @@ if (require.main === module) {
   const db = require('../db');
   run(db)
     .catch((err) => {
-      console.error('❌ Ошибка импорта каталога:', err.message);
+      console.error('❌ Ошибка импорта каталога:', describeDbError(err));
       process.exitCode = 1;
     })
     .finally(async () => {
@@ -390,6 +408,7 @@ module.exports = {
   expandArticles,
   ensureModifications,
   ensureComponentImages,
+  assertSchema,
   retireLegacyFlats,
   fillEmptyFields,
   CATALOG_JSON,

@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { readConfig, placeImage, expandArticles, fillEmptyFields, retireLegacyFlats,
+const { readConfig, placeImage, expandArticles, fillEmptyFields, retireLegacyFlats, assertSchema,
   CATALOG_JSON, FILES_DIR } = require('../src/db/catalog');
 const { fullArticle } = require('../src/utils/article');
 
@@ -255,6 +255,19 @@ test('каталог: supersedes гасит прежние плоские арт
     'базовый артикул изделия трогать нельзя');
 });
 
+test('каталог: без миграции импорт говорит, что делать, а не падает по позициям', async () => {
+  const stale = {
+    query: async () => {
+      throw new Error('column "full_article" of relation "component_modifications" does not exist');
+    },
+  };
+  await assert.rejects(() => assertSchema(stale), /npm run db:migrate/);
+
+  // схема на месте — проверка молчит
+  const fresh = { query: async () => ({ rows: [] }) };
+  await assertSchema(fresh);
+});
+
 test('каталог: описание расширяется, ручная правка не затирается', async () => {
   const queries = [];
   const runner = {
@@ -285,4 +298,14 @@ test('каталог: описание расширяется, ручная пр
       { description: extended }, null),
     false
   );
+});
+
+test('ошибки БД: пустой message от pg превращается в понятную причину', () => {
+  const { describeDbError } = require('../src/utils/db-error');
+
+  const refused = Object.assign(new Error(''), { code: 'ECONNREFUSED' });
+  assert.match(describeDbError(refused), /PostgreSQL не отвечает/);
+  assert.match(describeDbError({ code: '28P01' }), /пароль/);
+  assert.equal(describeDbError(new Error('column "x" does not exist')), 'column "x" does not exist');
+  assert.equal(describeDbError(null), 'неизвестная ошибка');
 });

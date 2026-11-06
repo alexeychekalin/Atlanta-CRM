@@ -23,6 +23,7 @@
  */
 const preseed = require('./preseed');
 const catalog = require('./catalog');
+const { describeDbError } = require('../utils/db-error');
 
 /**
  * Что загружать. Без переменных окружения — всё: ручной запуск
@@ -92,7 +93,7 @@ if (require.main === module) {
   const db = require('../db');
   run(db)
     .catch((err) => {
-      console.error('❌ Ошибка наполнения базы:', err.message);
+      console.error('❌ Ошибка наполнения базы:', describeDbError(err));
       process.exitCode = 1;
     })
     .finally(async () => {

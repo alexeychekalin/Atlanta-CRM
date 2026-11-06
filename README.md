@@ -428,6 +428,10 @@ npm run db:catalog    # только каталог компонентов (по
 npm run db:schema     # schema.sql через psql (чистая установка вручную)
 ```
 
+Те же команды работают из корня проекта (`npm run db:migrate`, `npm run db:catalog`, `npm run db:data` — они
+переходят в `server/`). Порядок важен: сначала миграции, потом данные — импорт каталога пишет колонку
+`component_modifications.full_article`, и без миграции он останавливается с подсказкой, что запустить.
+
 Как работает `db:migrate`:
 
 1. Создаёт `schema_migrations`, если её нет.
