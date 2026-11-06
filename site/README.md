@@ -1,0 +1,77 @@
+# Сайт завода «Атланта»
+
+Статический сайт завода: генерируется из каталога CRM, хостится где угодно
+(nginx, любой статический хостинг), без CMS и базы данных.
+
+## Сборка
+
+```bash
+pip install --break-system-packages pillow   # нужен один раз, для пережатия фото
+python3 site/build.py                        # → site/dist
+python3 site/build.py --skip-images          # без пережатия фото (быстро)
+python3 site/build.py --out /var/www/atlanta # в другую папку
+python3 site/build.py --domain https://atlanta.ru   # домен без правки content.json
+```
+
+Сборка полностью перезаписывает `site/dist`. В git он не попадает — это артефакт.
+
+## Откуда данные
+
+| Что | Откуда |
+| --- | --- |
+| Каталог: разделы, позиции, исполнения, характеристики | `server/src/db/catalog/catalog.json` |
+| Фотографии | `server/src/db/catalog/files/` |
+| Все тексты сайта: главная, преимущества, FAQ, контакты, условия | `site/content.json` |
+| Вёрстка | `site/static/css/site.css`, `site/static/js/site.js`, `site/static/img/logo.svg` |
+
+Цены в каталоге (`price = 0`) не публикуются: на сайте везде «цена по запросу».
+
+## Что обновляется автоматически
+
+Правки в `catalog.json` (новые позиции, исполнения, описания, фото) подхватываются
+следующей сборкой: карточки, разделы, `sitemap.xml`, `search.json`, счётчики на главной.
+
+## Что правится руками
+
+- `content.json` → `site.domain` — домен. От него строятся канонические ссылки, Open Graph,
+  `sitemap.xml` и `robots.txt`. Поставьте реальный домен перед публикацией.
+- `content.json` → `site.requisites` — ИНН/ОГРН для футера (пока пусто — строка не выводится).
+- `content.json` → `site.form_endpoint` — URL приёмника заявок. Пока пусто: форма
+  открывает письмо в почтовом клиенте (mailto на адрес из первого офиса).
+- `content.json` → `contacts` — телефоны, почты, адрес производства.
+- Тексты блоков главной, FAQ, сертификаты, условия работы.
+
+## Структура
+
+```
+/                                    главная
+/catalog/                            все 214 позиций с поиском (в том числе по исполнениям)
+/catalog/<раздел>/                   11 разделов
+/catalog/<раздел>/<артикул>/         214 карточек
+/about/ /certificates/ /delivery/ /contacts/ /privacy/ /404.html
+/sitemap.xml /robots.txt /search.json
+```
+
+## Служебные пометки каталога
+
+В описаниях из CRM встречаются внутренние пометки («Потребители: …»,
+«Вариантов подключения: N», «На странице каталога несколько вариантов…»).
+Их срезает `clean_public()` в `build.py` — на сайт они не попадают.
+Если в каталоге появится новая служебная строка, добавьте шаблон в `INTERNAL`.
+
+## Публикация
+
+Сайт живёт на основном домене, CRM — на поддомене `crm.<домен>` (схема и шаги —
+в [`docs/deploy-vps.md`](../docs/deploy-vps.md)).
+
+```bash
+# со своей машины: собрать с нужным доменом и залить
+./scripts/deploy-site.sh root@103.80.87.197 --domain https://atlanta.ru
+
+# или вручную
+python3 site/build.py --domain https://atlanta.ru
+rsync -av --delete site/dist/ root@103.80.87.197:/var/www/atlanta/
+```
+
+nginx-конфиг сайта лежит шаблоном в `deploy/nginx/site.conf` и ставится командой
+`sudo DOMAIN=atlanta.ru ./scripts/setup-nginx.sh` (вместе с конфигом CRM).

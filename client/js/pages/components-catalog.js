@@ -18,7 +18,7 @@ const ComponentsCatalogPage = {
       <div id="tab-components" class="tab-content active">
         <div class="toolbar" style="flex-wrap:wrap;gap:8px">
           <div class="search-input" style="flex:1;min-width:200px">
-            <input type="text" id="comp-search" placeholder="Поиск по артикулу или названию...">
+            <input type="text" id="comp-search" placeholder="Поиск по артикулу, названию или модификации..." title="Ищет по артикулу и названию изделия, а также по коду, названию и полному артикулу модификации">
           </div>
           <div class="filter-group" style="display:flex;gap:8px;align-items:center">
             <select class="filter-select" id="comp-category-filter">
@@ -120,6 +120,18 @@ const ComponentsCatalogPage = {
           -webkit-box-orient:vertical;
           overflow:hidden;
         }
+        .comp-mod-hit {
+          margin-top:6px;
+          padding:3px 8px;
+          border-radius:8px;
+          background:rgba(20,184,166,0.12);
+          border:1px solid rgba(20,184,166,0.4);
+          color:var(--accent-teal);
+          font-size:0.72rem;
+          font-weight:600;
+          line-height:1.35;
+        }
+        .mod-row--hit { box-shadow:inset 3px 0 0 var(--accent-teal); }
         .comp-card-footer {
           display:flex;
           align-items:center;
@@ -212,11 +224,17 @@ const ComponentsCatalogPage = {
 
   renderCategoryChips() {
     const container = document.getElementById('comp-category-chips');
+    if (!container) return;
     const activeId = document.getElementById('comp-category-filter')?.value || '';
+    const counts = this._categoryCounts instanceof Map ? this._categoryCounts : null;
+    const countOf = (id) => (counts ? (counts.get(id) || 0) : null);
+    const total = counts ? this._categoryTotal : null;
+
+    // количество считаем по текущему поиску: видно, куда ведёт каждый фильтр
     container.innerHTML = `
-      <button class="chip-filter ${!activeId ? 'active' : ''}" onclick="ComponentsCatalogPage.filterByChip('')">Все</button>
+      <button class="chip-filter ${!activeId ? 'active' : ''}" onclick="ComponentsCatalogPage.filterByChip('')">Все${total === null ? '' : ` (${total})`}</button>
       ${this.categories.map(c => `
-        <button class="chip-filter ${activeId == c.id ? 'active' : ''}" onclick="ComponentsCatalogPage.filterByChip('${c.id}')">${c.name}</button>
+        <button class="chip-filter ${activeId == c.id ? 'active' : ''}${counts && !countOf(c.id) ? ' chip-filter--empty' : ''}" onclick="ComponentsCatalogPage.filterByChip('${c.id}')">${esc(c.name)}${counts ? ` (${countOf(c.id)})` : ''}</button>
       `).join('')}
     `;
   },
@@ -241,25 +259,126 @@ const ComponentsCatalogPage = {
     }
   },
 
+  /** Латинские двойники кириллицы: артикул «А.3776.001» набирают и латинской A,
+   *  а на клавиатуре «БК-101» легко превращается в «BK-101». */
+  _foldLookalikes(value) {
+    const pairs = {
+      a: 'а', b: 'б', c: 'с', e: 'е', h: 'н', k: 'к',
+      m: 'м', o: 'о', p: 'р', t: 'т', x: 'х', y: 'у',
+    };
+    return value.replace(/[abcehkmoptxy]/g, ch => pairs[ch] || ch);
+  },
+
+  /** Без пробелов: «А. 3724 .106» и «А.3724.106». */
+  _withoutSpaces(value) {
+    return value.replace(/\s+/g, '');
+  },
+
+  /** Без разделителей артикула — точек, дефисов, слэшей: «бк101» вместо «БК-101». */
+  _withoutSeparators(value) {
+    return value.replace(/[\s.\-_/]+/g, '');
+  },
+
+  /** Стоит ли сравнивать «без разделителей»: запрос с буквами — с двух символов,
+   *  чисто числовой — с четырёх (иначе «15» цепляет полкаталога). */
+  _bareSearchable(bare) {
+    return bare.length >= 4 || (bare.length >= 2 && /[^\d]/.test(bare));
+  },
+
+  /** Приводит строку к виду, по которому сравниваем: регистр, «ё», двойники, пробелы. */
+  _normalizeSearch(value) {
+    const text = String(value === null || value === undefined ? '' : value)
+      .toLowerCase()
+      .replace(/ё/g, 'е');
+    return this._foldLookalikes(text)
+      .replace(/\s+/g, ' ')
+      .trim();
+  },
+
+  /** Запрос поиска: обычный, «слипшийся» (без пробелов) и совсем без разделителей. */
+  _buildSearchQuery(raw) {
+    const needle = this._normalizeSearch(raw);
+    if (!needle) return null;
+    return { needle, compact: this._withoutSpaces(needle), bare: this._withoutSeparators(needle) };
+  },
+
+  _searchMatch(text, query) {
+    const value = this._normalizeSearch(text);
+    if (!value) return false;
+    if (value.includes(query.needle)) return true;
+    if (query.compact !== query.needle && this._withoutSpaces(value).includes(query.compact)) return true;
+    // разделители не важны: «а37» находит «А.3724.106», «0201» — «02.01»;
+    // короткие числовые запросы так не ищем — «15» слишком часто встречается в артикулах
+    return this._bareSearchable(query.bare) && this._withoutSeparators(value).includes(query.bare);
+  },
+
+  /** Модификации, совпавшие по коду, названию или полному артикулу (А.3776.001-02.02). */
+  _matchedModifications(comp, query) {
+    return (comp.modifications || []).filter(m =>
+      this._searchMatch(m.code, query) ||
+      this._searchMatch(m.name, query) ||
+      this._searchMatch(fullArticle(comp.article, m.code, m.full_article), query)
+    );
+  },
+
+  /** Совпадение компонента с запросом. direct — по артикулу/названию/описанию,
+   *  mods — модификации, по которым нашлось (их показываем подсказкой в списке). */
+  _searchHit(comp, query) {
+    const direct = this._searchMatch(comp.article, query) ||
+      this._searchMatch(comp.name, query) ||
+      this._searchMatch(comp.description, query);
+    const mods = this._matchedModifications(comp, query);
+    if (!direct && mods.length === 0) return null;
+    // если изделие и так найдено по своему артикулу, все его модификации — шум
+    return { direct, mods: direct ? [] : mods };
+  },
+
+  /** Плашка «нашлось по модификации» в витрине и таблице. */
+  _modHitHtml(hit) {
+    if (!hit || !hit.mods || hit.mods.length === 0) return '';
+    const codes = hit.mods.slice(0, 2).map(m => esc(m.code)).join(', ');
+    const more = hit.mods.length > 2 ? ` +${hit.mods.length - 2}` : '';
+    const name = hit.mods.length === 1 && hit.mods[0].name
+      ? ` — ${esc(String(hit.mods[0].name).slice(0, 48))}`
+      : '';
+    return `<div class="comp-mod-hit" title="Совпадение по модификации">🔧 мод. ${codes}${more}${name}</div>`;
+  },
+
   filterAndRender() {
-    const search = (document.getElementById('comp-search')?.value || '').toLowerCase();
+    const query = this._buildSearchQuery(document.getElementById('comp-search')?.value || '');
     const categoryId = document.getElementById('comp-category-filter')?.value || '';
     const sort = document.getElementById('comp-sort')?.value || 'name';
 
     let filtered = this.allComponents;
-    if (search) {
-      filtered = filtered.filter(c =>
-        c.article.toLowerCase().includes(search) ||
-        c.name.toLowerCase().includes(search) ||
-        (c.description || '').toLowerCase().includes(search)
-      );
+    const hits = new Map();
+    if (query) {
+      filtered = filtered.filter(c => {
+        const hit = this._searchHit(c, query);
+        if (!hit) return false;
+        hits.set(c.id, hit);
+        return true;
+      });
     }
+    this._searchQuery = query;
+    this._searchHits = hits;
+
+    // сколько позиций в каждой категории при текущем поиске (для чипсов)
+    const counts = new Map();
+    filtered.forEach(c => counts.set(c.category_id, (counts.get(c.category_id) || 0) + 1));
+    this._categoryCounts = counts;
+    this._categoryTotal = filtered.length;
+    this.renderCategoryChips();
+
     if (categoryId) {
       filtered = filtered.filter(c => c.category_id == categoryId);
     }
 
-    // Сортировка
+    // Сортировка: сначала совпадения по артикулу/названию, потом найденные по модификациям
     filtered = [...filtered].sort((a, b) => {
+      if (query) {
+        const byArticle = (hits.get(a.id)?.direct ? 0 : 1) - (hits.get(b.id)?.direct ? 0 : 1);
+        if (byArticle !== 0) return byArticle;
+      }
       switch (sort) {
         case 'price_asc': return (parseFloat(a.price) || 0) - (parseFloat(b.price) || 0);
         case 'price_desc': return (parseFloat(b.price) || 0) - (parseFloat(a.price) || 0);
@@ -268,7 +387,10 @@ const ComponentsCatalogPage = {
       }
     });
 
-    document.getElementById('comp-count').textContent = `Найдено: ${filtered.length} компонент(ов)`;
+    const modOnly = query ? filtered.filter(c => !hits.get(c.id).direct).length : 0;
+    document.getElementById('comp-count').textContent = modOnly
+      ? `Найдено: ${filtered.length} компонент(ов), в том числе по модификациям: ${modOnly}`
+      : `Найдено: ${filtered.length} компонент(ов)`;
 
     const container = document.getElementById('components-table');
     if (filtered.length === 0) {
@@ -291,15 +413,16 @@ const ComponentsCatalogPage = {
           <div class="comp-card" onclick="ComponentsCatalogPage.viewComponent(${c.id})">
             <div class="comp-card-img">
               ${c.image_path
-                ? `<img src="${c.image_path}" alt="${c.name}" loading="lazy">`
+                ? `<img src="${esc(c.image_path)}" alt="${esc(c.name)}" loading="lazy">`
                 : '<div class="comp-placeholder">📦</div>'}
-              ${c.category_name ? `<div class="comp-card-category">${c.category_name}</div>` : ''}
+              ${c.category_name ? `<div class="comp-card-category">${esc(c.category_name)}</div>` : ''}
               <div class="comp-card-status" style="background:${c.is_active !== false ? '#22c55e' : '#ef4444'}"></div>
             </div>
             <div class="comp-card-body">
-              <div class="comp-card-article">${c.article}</div>
-              <div class="comp-card-name">${c.name}</div>
-              ${c.description ? `<div class="comp-card-desc">${c.description}</div>` : ''}
+              <div class="comp-card-article"><span class="copyable" data-copy="${esc(c.article)}" title="Скопировать артикул">${esc(c.article)}</span></div>
+              <div class="comp-card-name">${esc(c.name)}</div>
+              ${c.description ? `<div class="comp-card-desc">${esc(c.description)}</div>` : ''}
+              ${this._modHitHtml(this._searchHits && this._searchHits.get(c.id))}
               ${parseInt(c.modifications_count) > 0 ? `<div style="margin-top:4px"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.7rem;font-weight:600;background:var(--accent-teal);color:#fff">${c.modifications_count} мод.</span></div>` : ''}
             </div>
             <div class="comp-card-footer">
@@ -341,12 +464,12 @@ const ComponentsCatalogPage = {
               <tr style="cursor:pointer" onclick="ComponentsCatalogPage.viewComponent(${c.id})">
                 <td>
                   ${c.image_path
-                    ? `<img src="${c.image_path}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">`
+                    ? `<img src="${esc(c.image_path)}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">`
                     : '<div style="width:40px;height:40px;border-radius:6px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:16px">📦</div>'}
                 </td>
-                <td class="font-mono" style="color:var(--accent-teal)">${c.article}</td>
-                <td><strong>${c.name}</strong>${c.description ? `<div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px">${c.description.substring(0, 60)}</div>` : ''}${parseInt(c.modifications_count) > 0 ? `<span style="display:inline-block;margin-top:2px;padding:1px 7px;border-radius:8px;font-size:0.7rem;font-weight:600;background:var(--accent-teal);color:#fff">${c.modifications_count} мод.</span>` : ''}</td>
-                <td><span class="badge badge-in_progress">${c.category_name || '—'}</span></td>
+                <td class="font-mono" style="color:var(--accent-teal)"><span class="copyable" data-copy="${esc(c.article)}" title="Скопировать артикул">${esc(c.article)}</span></td>
+                <td><strong>${esc(c.name)}</strong>${c.description ? `<div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px">${esc(c.description.substring(0, 60))}</div>` : ''}${parseInt(c.modifications_count) > 0 ? `<span style="display:inline-block;margin-top:2px;padding:1px 7px;border-radius:8px;font-size:0.7rem;font-weight:600;background:var(--accent-teal);color:#fff">${c.modifications_count} мод.</span>` : ''}${this._modHitHtml(this._searchHits && this._searchHits.get(c.id))}</td>
+                <td><span class="badge badge-in_progress">${esc(c.category_name) || '—'}</span></td>
                 <td class="text-right" style="font-weight:600">${Table.formatMoney(c.price)}</td>
                 <td>${c.is_active !== false ? '<span class="badge badge-completed">Активен</span>' : '<span class="badge badge-cancelled">Неактивен</span>'}</td>
                 ${hasActions ? `<td class="text-right" onclick="event.stopPropagation()">
@@ -370,6 +493,30 @@ const ComponentsCatalogPage = {
       const canEdit = API.can('components', 'edit');
       const mods = comp.modifications || [];
 
+      // Фото карточки для просмотра: обложка первой, дальше галерея без повторов.
+      // Список живёт до следующего открытия карточки — его листает Lightbox.
+      const photos = [];
+      if (comp.image_path) photos.push(comp.image_path);
+      (comp.images || []).forEach(img => {
+        if (img.image_path && !photos.includes(img.image_path)) photos.push(img.image_path);
+      });
+      this._photos = photos;
+      this._photoTitle = comp.name;
+
+      // Фото модификаций: у каждой свой набор для листания
+      const modPhotos = {};
+      const modCodes = {};
+      mods.forEach(m => {
+        modPhotos[m.id] = (m.images || []).map(img => img.image_path).filter(Boolean);
+        modCodes[m.id] = m.code;
+      });
+      this._modPhotos = modPhotos;
+      this._modCodes = modCodes;
+
+      // если карточку открыли из поиска по модификации — подсветим найденные строки
+      const searchHit = this._searchQuery ? this._searchHit(comp, this._searchQuery) : null;
+      const hitModIds = new Set(((searchHit && searchHit.mods) || []).map(m => m.id));
+
       const modsHtml = mods.length > 0 ? `
         <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -378,15 +525,17 @@ const ComponentsCatalogPage = {
           </div>
           <div style="display:flex;flex-direction:column;gap:10px" id="mods-list">
             ${mods.map(m => {
-              const fullArticle = comp.article + '.' + m.code;
+              const modArticle = fullArticle(comp.article, m.code, m.full_article);
+              const isHit = hitModIds.has(m.id);
               const modPrice = m.price_override !== null ? m.price_override : comp.price;
               const images = m.images || [];
               return `
-                <div style="background:var(--bg-main);border:1px solid var(--border);border-radius:10px;padding:12px 14px">
+                <div class="mod-row${isHit ? ' mod-row--hit' : ''}" style="background:${isHit ? 'rgba(20,184,166,0.10)' : 'var(--bg-main)'};border:1px solid ${isHit ? 'var(--accent-teal)' : 'var(--border)'};border-radius:10px;padding:12px 14px">
                   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
                     <div style="flex:1">
                       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-                        <span style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;color:var(--accent-teal)">${fullArticle}</span>
+                        <span class="copyable" style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;color:var(--accent-teal)" data-copy="${esc(modArticle)}" title="Скопировать артикул">${modArticle}</span>
+                        ${isHit ? '<span style="font-size:0.68rem;font-weight:700;color:var(--accent-teal);border:1px solid var(--accent-teal);border-radius:8px;padding:0 6px" title="Совпадение по поиску">совпадение</span>' : ''}
                         ${m.is_active === false ? '<span style="font-size:0.7rem;color:#ef4444;font-weight:600">Неактивна</span>' : ''}
                         ${m.price_override !== null ? `<span style="font-weight:600;font-size:0.85rem">${Table.formatMoneyRaw(modPrice)}</span>` : ''}
                       </div>
@@ -401,8 +550,8 @@ const ComponentsCatalogPage = {
                   </div>
                   ${images.length > 0 ? `
                     <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-                      ${images.map(img => `
-                        <div style="position:relative;width:80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid var(--border);cursor:pointer" onclick="event.stopPropagation();ComponentsCatalogPage.viewModImage('${img.image_path}')">
+                      ${images.map((img, imgIndex) => `
+                        <div style="position:relative;width:80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid var(--border);cursor:pointer" onclick="event.stopPropagation();ComponentsCatalogPage.viewModImage(${m.id}, ${imgIndex})">
                           <img src="${img.image_path}" style="width:100%;height:100%;object-fit:cover">
                           ${canEdit ? `<button style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center" onclick="event.stopPropagation();ComponentsCatalogPage.deleteModImage(${id}, ${m.id}, ${img.id})">×</button>` : ''}
                         </div>
@@ -429,21 +578,46 @@ const ComponentsCatalogPage = {
         </div>
       ` : '');
 
+      const gallery = comp.images || [];
+      const galleryHtml = (comp.image_path || gallery.length > 0) ? `
+        <div style="margin-bottom:16px">
+          ${comp.image_path ? `
+            <div style="border-radius:12px;overflow:hidden;border:1px solid var(--border);max-height:350px;margin-bottom:8px;cursor:zoom-in"
+                 onclick="ComponentsCatalogPage.viewComponentImage(0)">
+              <img src="${esc(comp.image_path)}" alt="${esc(comp.name)}" style="width:100%;height:100%;object-fit:cover">
+            </div>
+          ` : ''}
+          ${gallery.length > 0 ? `
+            <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:6px">Фото изделия (${gallery.length})</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              ${gallery.map(img => `
+                <div style="position:relative;width:76px;height:76px;border-radius:8px;overflow:hidden;border:1px solid ${img.image_path === comp.image_path ? 'var(--accent-teal)' : 'var(--border)'};cursor:pointer"
+                     onclick="ComponentsCatalogPage.viewComponentImage(${photos.indexOf(img.image_path)})">
+                  <img src="${esc(img.image_path)}" style="width:100%;height:100%;object-fit:cover">
+                  ${canEdit ? `<button style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center"
+                     onclick="event.stopPropagation();ComponentsCatalogPage.deleteComponentImage(${id}, ${img.id})" title="Убрать фото">×</button>` : ''}
+                  ${canEdit && img.image_path !== comp.image_path ? `<button style="position:absolute;left:2px;bottom:2px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:4px;font-size:9px;padding:1px 4px;cursor:pointer"
+                     onclick="event.stopPropagation();ComponentsCatalogPage.setCoverImage(${id}, ${img.id})" title="Сделать обложкой">обложка</button>` : ''}
+                </div>
+              `).join('')}
+              ${canEdit ? `<div style="width:76px;height:76px;border-radius:8px;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);font-size:20px"
+                     onclick="event.stopPropagation();ComponentsCatalogPage.uploadComponentImage(${id})" title="Добавить фото">+</div>` : ''}
+            </div>
+          ` : (canEdit ? `<button class="btn btn-sm btn-secondary" onclick="ComponentsCatalogPage.uploadComponentImage(${id})">📷 Добавить фото</button>` : '')}
+        </div>
+      ` : '';
+
       Modal.open({
         title: comp.name,
         wide: true,
         body: `
           <div style="display:grid;grid-template-columns:${comp.image_path ? '1fr 1fr' : '1fr'};gap:20px">
-            ${comp.image_path ? `
-              <div style="border-radius:12px;overflow:hidden;border:1px solid var(--border);max-height:350px">
-                <img src="${comp.image_path}" alt="${comp.name}" style="width:100%;height:100%;object-fit:cover">
-              </div>
-            ` : ''}
+            ${galleryHtml ? `<div>${galleryHtml}</div>` : ''}
             <div>
               <div style="margin-bottom:16px">
-                <div style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;color:var(--accent-teal);margin-bottom:4px">${comp.article}</div>
-                <div style="font-size:1.3rem;font-weight:700;margin-bottom:8px">${comp.name}</div>
-                ${comp.category_name ? `<span class="badge badge-in_progress" style="font-size:0.8rem">${comp.category_name}</span>` : ''}
+                <div style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;color:var(--accent-teal);margin-bottom:4px"><span class="copyable" data-copy="${esc(comp.article)}" title="Скопировать артикул">${esc(comp.article)}</span></div>
+                <div style="font-size:1.3rem;font-weight:700;margin-bottom:8px">${esc(comp.name)}</div>
+                ${comp.category_name ? `<span class="badge badge-in_progress" style="font-size:0.8rem">${esc(comp.category_name)}</span>` : ''}
               </div>
               <div style="background:var(--bg-main);border-radius:10px;padding:16px;border:1px solid var(--border);margin-bottom:12px">
                 <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px">Базовая цена</div>
@@ -452,7 +626,7 @@ const ComponentsCatalogPage = {
               ${comp.description ? `
                 <div style="margin-bottom:12px">
                   <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">Описание</div>
-                  <div style="font-size:0.9rem;line-height:1.5">${comp.description}</div>
+                  <div style="font-size:0.9rem;line-height:1.5;white-space:pre-line">${esc(comp.description)}</div>
                 </div>
               ` : ''}
               ${comp.comment ? `
@@ -464,7 +638,7 @@ const ComponentsCatalogPage = {
               ${comp.gisp_url ? `
                 <div style="margin-bottom:12px">
                   <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">ГИСП</div>
-                  <a href="${comp.gisp_url}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:#1d4ed822;color:#3b82f6;border-radius:8px;font-size:0.85rem;font-weight:600;text-decoration:none;border:1px solid #3b82f644;transition:all 0.2s" onmouseover="this.style.background='#1d4ed833'" onmouseout="this.style.background='#1d4ed822'">🏢 Открыть в ГИСП ↗</a>
+                  <a href="${safeUrl(comp.gisp_url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:#1d4ed822;color:#3b82f6;border-radius:8px;font-size:0.85rem;font-weight:600;text-decoration:none;border:1px solid #3b82f644;transition:all 0.2s" onmouseover="this.style.background='#1d4ed833'" onmouseout="this.style.background='#1d4ed822'">🏢 Открыть в ГИСП ↗</a>
                 </div>
               ` : ''}
               <div style="display:flex;gap:12px;font-size:0.82rem;color:var(--text-muted)">
@@ -476,7 +650,7 @@ const ComponentsCatalogPage = {
           <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
               <div style="font-size:1rem;font-weight:700">📎 Документы</div>
-              <button class="btn btn-sm btn-secondary" onclick="window.open('/api/components/${comp.id}/documents/download-all?token='+API.getToken(),'_blank')" title="Скачать все документы ZIP">📦 Скачать ZIP</button>
+              <button class="btn btn-sm btn-secondary" onclick="window.open('/api/components/${comp.id}/documents/download-all','_blank')" title="Скачать все документы ZIP">📦 Скачать ZIP</button>
             </div>
             <div id="view-comp-docs" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div style="color:var(--text-muted);font-size:0.82rem;grid-column:1/-1">Загрузка...</div></div>
           </div>
@@ -486,6 +660,14 @@ const ComponentsCatalogPage = {
           ${canEdit ? `<button class="btn btn-primary" onclick="Modal.close();ComponentsCatalogPage.openComponentModal(${comp.id})">✏️ Редактировать</button>` : ''}
         `,
       });
+
+      // найденная модификация может быть далеко в длинном списке — показываем сразу
+      if (hitModIds.size > 0 && typeof document.querySelector === 'function' && typeof setTimeout === 'function') {
+        setTimeout(() => {
+          const row = document.querySelector('.mod-row--hit');
+          if (row && typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'center' });
+        }, 60);
+      }
 
       // Загрузить документы для просмотра
       this._loadViewDocs(comp.id);
@@ -543,7 +725,7 @@ const ComponentsCatalogPage = {
       if (select) {
         const val = select.value;
         select.innerHTML = '<option value="">Все категории</option>' +
-          this.categories.map(c => `<option value="${c.id}" ${val == c.id ? 'selected' : ''}>${c.name}</option>`).join('');
+          this.categories.map(c => `<option value="${c.id}" ${val == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
       }
     } catch (err) {
       console.error(err);
@@ -569,7 +751,7 @@ const ComponentsCatalogPage = {
             <tbody>
               ${this.categories.map(c => `
                 <tr ${canEdit ? `style="cursor:pointer" onclick="ComponentsCatalogPage.openCategoryModal(${c.id})" title="Редактировать категорию"` : ''}>
-                  <td><strong>${c.name}</strong></td>
+                  <td><strong>${esc(c.name)}</strong></td>
                   <td class="text-right">${c.sort_order}</td>
                   ${hasActions ? `<td class="text-right" onclick="event.stopPropagation()">
                     <div class="table-actions" style="justify-content:flex-end">
@@ -820,6 +1002,12 @@ const ComponentsCatalogPage = {
             <label>Описание</label>
             <textarea class="form-control" id="mod-name" rows="3" placeholder="Описание модификации">${isEdit ? (mod.name || '') : ''}</textarea>
           </div>
+          <div class="form-group">
+            <label>Полный артикул</label>
+            <input type="text" class="form-control" id="mod-full-article" value="${isEdit ? esc(mod.full_article || '') : ''}"
+                   placeholder="Пусто — артикул изделия и код через дефис">
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px">Заполняйте, только если печатный артикул отличается: А.3731.023.1-01.00-150</div>
+          </div>
           <div class="form-row">
             <div class="form-group">
               <label>Порядок сортировки</label>
@@ -845,6 +1033,7 @@ const ComponentsCatalogPage = {
     const data = {
       code: document.getElementById('mod-code').value.trim(),
       name: document.getElementById('mod-name').value.trim(),
+      full_article: document.getElementById('mod-full-article').value.trim(),
       price_override: priceVal !== '' ? parseFloat(priceVal) : null,
       sort_order: parseInt(document.getElementById('mod-sort').value) || 0,
       is_active: document.getElementById('mod-active').checked,
@@ -913,13 +1102,68 @@ const ComponentsCatalogPage = {
     } catch (err) { Toast.error(err.message); }
   },
 
-  viewModImage(imagePath) {
-    Modal.open({
-      title: 'Фото модификации',
-      wide: true,
-      body: `<div style="text-align:center"><img src="${imagePath}" style="max-width:100%;max-height:70vh;border-radius:8px"></div>`,
-      footer: '<button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>',
+  /** Просмотр фото модификации: листаются все фото этой модификации. */
+  viewModImage(modId, index = 0) {
+    const images = (this._modPhotos && this._modPhotos[modId]) || [];
+    if (!images.length) return;
+    const code = this._modCodes && this._modCodes[modId];
+    Lightbox.open({
+      images,
+      index,
+      title: code ? `Фото модификации ${code}` : 'Фото модификации',
     });
+  },
+
+  // === ГАЛЕРЕЯ ПОЗИЦИИ ===
+  uploadComponentImage(componentId) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = true;
+    input.addEventListener('change', async (e) => {
+      const files = e.target.files;
+      if (!files.length) return;
+      for (const file of files) {
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          const res = await API.upload('/upload/image', formData);
+          await API.post(`/components/${componentId}/images`, { image_path: res.path });
+        } catch (err) {
+          Toast.error(`Ошибка загрузки ${file.name}: ${err.message}`);
+        }
+      }
+      Toast.success('Фото добавлены');
+      this.viewComponent(componentId);
+      this.loadAllComponents().then(() => this.filterAndRender());
+    });
+    input.click();
+  },
+
+  /** Просмотр фото изделия: листаются все фото карточки, карточка не закрывается. */
+  viewComponentImage(index = 0) {
+    const images = this._photos || [];
+    if (!images.length) return;
+    Lightbox.open({ images, index, title: this._photoTitle || 'Фото изделия' });
+  },
+
+  async setCoverImage(componentId, imageId) {
+    try {
+      await API.put(`/components/${componentId}/images/${imageId}/cover`, {});
+      Toast.success('Обложка обновлена');
+      this.viewComponent(componentId);
+      this.loadAllComponents().then(() => this.filterAndRender());
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  async deleteComponentImage(componentId, imageId) {
+    if (!await ConfirmDialog.delete('Убрать фото из галереи?')) return;
+    try {
+      await API.del(`/components/${componentId}/images/${imageId}`);
+      Toast.success('Фото убрано');
+      this.viewComponent(componentId);
+      this.loadAllComponents().then(() => this.filterAndRender());
+    } catch (err) { Toast.error(err.message); }
   },
 
   // === ДОКУМЕНТЫ КОМПОНЕНТОВ ===

@@ -59,21 +59,21 @@ const ClientsPage = {
               ${clients.map(c => {
                 const avatar = c.avatar_path 
                   ? `<img src="${c.avatar_path}" style="width:32px;height:32px;object-fit:cover;border-radius:50%">`
-                  : `<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#14b8a6,#3b82f6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:0.8rem">${(c.name||'?').charAt(0).toUpperCase()}</div>`;
+                  : `<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#14b8a6,#3b82f6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:0.8rem">${esc((c.name||'?').charAt(0).toUpperCase())}</div>`;
                 const statusBadge = c.status_name 
-                  ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;background:${c.status_color}15;color:${c.status_color};font-size:0.75rem;font-weight:600;border:1px solid ${c.status_color}30;white-space:nowrap"><span style="width:6px;height:6px;border-radius:50%;background:${c.status_color}"></span>${c.status_name}</span>`
+                  ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;background:${esc(c.status_color)}15;color:${esc(c.status_color)};font-size:0.75rem;font-weight:600;border:1px solid ${esc(c.status_color)}30;white-space:nowrap"><span style="width:6px;height:6px;border-radius:50%;background:${esc(c.status_color)}"></span>${esc(c.status_name)}</span>`
                   : '<span style="color:var(--text-muted);font-size:0.8rem">—</span>';
                 return `
                 <tr style="cursor:pointer" onclick="App.navigateTo('client-profile',${c.id})" title="Открыть карточку клиента">
                   <td>${avatar}</td>
-                  <td><a href="#" onclick="event.stopPropagation();App.navigateTo('client-profile',${c.id});return false" class="client-link"><strong>${c.name}</strong></a></td>
+                  <td><a href="#" onclick="event.stopPropagation();App.navigateTo('client-profile',${c.id});return false" class="client-link"><strong>${esc(c.name)}</strong></a></td>
                   <td>${statusBadge}</td>
                   <td>${c.pricing_level_name
-                    ? `<span style="padding:2px 8px;border-radius:12px;background:var(--accent-teal)15;color:var(--accent-teal);font-size:0.75rem;font-weight:600;border:1px solid var(--accent-teal)30;white-space:nowrap">${c.pricing_level_name}</span>`
+                    ? `<span style="padding:2px 8px;border-radius:12px;background:var(--accent-teal)15;color:var(--accent-teal);font-size:0.75rem;font-weight:600;border:1px solid var(--accent-teal)30;white-space:nowrap">${esc(c.pricing_level_name)}</span>`
                     : '<span style="color:var(--accent-red);font-size:0.75rem">⚠️</span>'}</td>
-                  <td>${c.phone || '—'}</td>
-                  <td>${c.email || '—'}</td>
-                  <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${c.address || '—'}</td>
+                  <td>${esc(c.phone) || '—'}</td>
+                  <td>${esc(c.email) || '—'}</td>
+                  <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(c.address) || '—'}</td>
                   ${hasActions ? `
                     <td class="text-right" onclick="event.stopPropagation()">
                       <div class="table-actions" style="justify-content:flex-end">
@@ -121,31 +121,31 @@ const ClientsPage = {
         <form id="client-form">
           <div class="form-group">
             <label>Название *</label>
-            <input type="text" class="form-control" id="client-name" value="${isEdit ? client.name : ''}" required>
+            <input type="text" class="form-control" id="client-name" value="${isEdit ? esc(client.name) : ''}" required>
           </div>
           <div class="form-row">
             <div class="form-group">
               <label>Телефон</label>
-              <input type="text" class="form-control" id="client-phone" value="${isEdit ? (client.phone || '') : ''}">
+              <input type="text" class="form-control" id="client-phone" value="${isEdit ? (esc(client.phone) || '') : ''}">
             </div>
             <div class="form-group">
               <label>Email</label>
-              <input type="email" class="form-control" id="client-email" value="${isEdit ? (client.email || '') : ''}">
+              <input type="email" class="form-control" id="client-email" value="${isEdit ? (esc(client.email) || '') : ''}">
             </div>
           </div>
           <div class="form-group">
             <label>Адрес</label>
-            <input type="text" class="form-control" id="client-address" value="${isEdit ? (client.address || '') : ''}">
+            <input type="text" class="form-control" id="client-address" value="${isEdit ? (esc(client.address) || '') : ''}">
           </div>
           <div class="form-group">
             <label>Примечание</label>
-            <textarea class="form-control" id="client-notes" rows="2">${isEdit ? (client.notes || '') : ''}</textarea>
+            <textarea class="form-control" id="client-notes" rows="2">${isEdit ? (esc(client.notes) || '') : ''}</textarea>
           </div>
           <div class="form-group">
             <label>💰 Уровень цен *</label>
             <select class="form-control" id="client-pricing-level" required>
               <option value="">Выберите уровень</option>
-              ${(this._pricingLevels || []).map(l => `<option value="${l.id}" ${isEdit && client.pricing_level_id == l.id ? 'selected' : ''}>${l.name} (${l.markup_pct > 0 ? '+' : ''}${l.markup_pct}%)</option>`).join('')}
+              ${(this._pricingLevels || []).map(l => `<option value="${l.id}" ${isEdit && client.pricing_level_id == l.id ? 'selected' : ''}>${esc(l.name)} (${l.markup_pct > 0 ? '+' : ''}${l.markup_pct}%)</option>`).join('')}
             </select>
           </div>
 
@@ -153,16 +153,16 @@ const ClientsPage = {
             <div style="font-weight:600;font-size:0.9rem;margin-bottom:10px;color:var(--text-secondary)">📦 Данные доставки</div>
             <div class="form-group">
               <label>Адрес доставки / терминал ТК</label>
-              <input type="text" class="form-control" id="client-delivery-address" value="${isEdit ? (client.delivery_address || '') : ''}" placeholder="Адрес доставки или терминал транспортной компании">
+              <input type="text" class="form-control" id="client-delivery-address" value="${isEdit ? (esc(client.delivery_address) || '') : ''}" placeholder="Адрес доставки или терминал транспортной компании">
             </div>
             <div class="form-row">
               <div class="form-group">
                 <label>ФИО контактного лица</label>
-                <input type="text" class="form-control" id="client-delivery-name" value="${isEdit ? (client.delivery_contact_name || '') : ''}" placeholder="Иванов Иван Иванович">
+                <input type="text" class="form-control" id="client-delivery-name" value="${isEdit ? (esc(client.delivery_contact_name) || '') : ''}" placeholder="Иванов Иван Иванович">
               </div>
               <div class="form-group">
                 <label>Контактный телефон</label>
-                <input type="text" class="form-control" id="client-delivery-phone" value="${isEdit ? (client.delivery_contact_phone || '') : ''}" placeholder="+7 (999) 123-45-67">
+                <input type="text" class="form-control" id="client-delivery-phone" value="${isEdit ? (esc(client.delivery_contact_phone) || '') : ''}" placeholder="+7 (999) 123-45-67">
               </div>
             </div>
           </div>
@@ -178,24 +178,24 @@ const ClientsPage = {
               <input type="hidden" id="client-type" value="${isEdit ? (client.client_type || 'ooo') : 'ooo'}">
             </div>
             <div class="form-row">
-              <div class="form-group"><label>ИНН</label><input type="text" class="form-control" id="client-inn" value="${isEdit ? (client.inn || '') : ''}" placeholder="ИНН"></div>
-              <div class="form-group" id="cl-kpp-wrap"><label>КПП</label><input type="text" class="form-control" id="client-kpp" value="${isEdit ? (client.kpp || '') : ''}" placeholder="КПП"></div>
+              <div class="form-group"><label>ИНН</label><input type="text" class="form-control" id="client-inn" value="${isEdit ? (esc(client.inn) || '') : ''}" placeholder="ИНН"></div>
+              <div class="form-group" id="cl-kpp-wrap"><label>КПП</label><input type="text" class="form-control" id="client-kpp" value="${isEdit ? (esc(client.kpp) || '') : ''}" placeholder="КПП"></div>
             </div>
             <div class="form-row">
-              <div class="form-group" id="cl-ogrn-wrap"><label>ОГРН</label><input type="text" class="form-control" id="client-ogrn" value="${isEdit ? (client.ogrn || '') : ''}" placeholder="ОГРН (13 цифр)"></div>
-              <div class="form-group" id="cl-ogrnip-wrap"><label>ОГРНИП</label><input type="text" class="form-control" id="client-ogrnip" value="${isEdit ? (client.ogrnip || '') : ''}" placeholder="ОГРНИП (15 цифр)"></div>
+              <div class="form-group" id="cl-ogrn-wrap"><label>ОГРН</label><input type="text" class="form-control" id="client-ogrn" value="${isEdit ? (esc(client.ogrn) || '') : ''}" placeholder="ОГРН (13 цифр)"></div>
+              <div class="form-group" id="cl-ogrnip-wrap"><label>ОГРНИП</label><input type="text" class="form-control" id="client-ogrnip" value="${isEdit ? (esc(client.ogrnip) || '') : ''}" placeholder="ОГРНИП (15 цифр)"></div>
             </div>
-            <div class="form-group"><label>Юридический адрес</label><input type="text" class="form-control" id="client-legal-address" value="${isEdit ? (client.legal_address || '') : ''}" placeholder="Юридический адрес"></div>
-            <div class="form-group" id="cl-postal-wrap"><label>Почтовый адрес</label><input type="text" class="form-control" id="client-postal-address" value="${isEdit ? (client.postal_address || '') : ''}" placeholder="Почтовый адрес"></div>
+            <div class="form-group"><label>Юридический адрес</label><input type="text" class="form-control" id="client-legal-address" value="${isEdit ? (esc(client.legal_address) || '') : ''}" placeholder="Юридический адрес"></div>
+            <div class="form-group" id="cl-postal-wrap"><label>Почтовый адрес</label><input type="text" class="form-control" id="client-postal-address" value="${isEdit ? (esc(client.postal_address) || '') : ''}" placeholder="Почтовый адрес"></div>
             <div class="form-row">
-              <div class="form-group"><label>Р/С (номер счёта)</label><input type="text" class="form-control" id="client-bank-account" value="${isEdit ? (client.bank_account || '') : ''}" placeholder="40702810..."></div>
-              <div class="form-group"><label>К/С</label><input type="text" class="form-control" id="client-corr-account" value="${isEdit ? (client.corr_account || '') : ''}" placeholder="30101810..."></div>
+              <div class="form-group"><label>Р/С (номер счёта)</label><input type="text" class="form-control" id="client-bank-account" value="${isEdit ? (esc(client.bank_account) || '') : ''}" placeholder="40702810..."></div>
+              <div class="form-group"><label>К/С</label><input type="text" class="form-control" id="client-corr-account" value="${isEdit ? (esc(client.corr_account) || '') : ''}" placeholder="30101810..."></div>
             </div>
             <div class="form-row">
-              <div class="form-group"><label>Банк</label><input type="text" class="form-control" id="client-bank-name" value="${isEdit ? (client.bank_name || '') : ''}" placeholder="Название банка"></div>
-              <div class="form-group"><label>БИК</label><input type="text" class="form-control" id="client-bik" value="${isEdit ? (client.bik || '') : ''}" placeholder="БИК (9 цифр)"></div>
+              <div class="form-group"><label>Банк</label><input type="text" class="form-control" id="client-bank-name" value="${isEdit ? (esc(client.bank_name) || '') : ''}" placeholder="Название банка"></div>
+              <div class="form-group"><label>БИК</label><input type="text" class="form-control" id="client-bik" value="${isEdit ? (esc(client.bik) || '') : ''}" placeholder="БИК (9 цифр)"></div>
             </div>
-            <div class="form-group" id="cl-director-wrap"><label>Генеральный директор</label><input type="text" class="form-control" id="client-director" value="${isEdit ? (client.director || '') : ''}" placeholder="Фамилия И.О."></div>
+            <div class="form-group" id="cl-director-wrap"><label>Генеральный директор</label><input type="text" class="form-control" id="client-director" value="${isEdit ? (esc(client.director) || '') : ''}" placeholder="Фамилия И.О."></div>
           </div>
         </form>
       `,

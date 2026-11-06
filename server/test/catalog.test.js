@@ -1,0 +1,311 @@
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const { readConfig, placeImage, expandArticles, fillEmptyFields, retireLegacyFlats, assertSchema,
+  CATALOG_JSON, FILES_DIR } = require('../src/db/catalog');
+const { fullArticle } = require('../src/utils/article');
+
+test('артикул: код модификации приклеивается через дефис', () => {
+  assert.equal(fullArticle('А.3776.001', '01'), 'А.3776.001-01');
+  assert.equal(fullArticle('А.3776.001', '02.02'), 'А.3776.001-02.02');
+  assert.equal(fullArticle('А.3776.001.1-Б', '01'), 'А.3776.001.1-Б-01');
+  assert.equal(fullArticle('А.3776.001.1-БЖ', '02.02'), 'А.3776.001.1-БЖ-02.02');
+
+  // комплект — готовый артикул, кода нет
+  assert.equal(fullArticle('А.3776.005Л-01/А.3731.007', null), 'А.3776.005Л-01/А.3731.007');
+  // базы нет — возвращаем код как есть, чтобы не получить «-01»
+  assert.equal(fullArticle('', '01'), '01');
+  assert.equal(fullArticle(null, null), '');
+});
+
+test('каталог: файл данных есть и корректно разбирается', () => {
+  assert.ok(fs.existsSync(CATALOG_JSON), 'нет src/db/catalog/catalog.json');
+
+  const { categories, components } = readConfig();
+  assert.ok(categories.length > 0, 'нет категорий');
+  assert.ok(components.length > 0, 'нет позиций каталога');
+
+  const keys = new Set(categories.map(c => c.key));
+  for (const entry of components) {
+    assert.ok(entry.article, 'позиция без артикула');
+    assert.ok(entry.name, `${entry.article}: без названия`);
+    assert.ok(keys.has(entry.category), `${entry.article}: неизвестная категория «${entry.category}»`);
+    assert.ok(Number.isInteger(entry.source_page), `${entry.article}: не указана страница каталога`);
+    assert.ok(entry.description && entry.description.length > 20, `${entry.article}: пустое описание`);
+  }
+});
+
+test('каталог: артикулы уникальны, коды модификаций не повторяются', () => {
+  const { components } = readConfig();
+
+  const articles = components.map(c => c.article);
+  const duplicates = articles.filter((a, i) => articles.indexOf(a) !== i);
+  assert.deepEqual(duplicates, [], 'в каталоге повторяются артикулы');
+
+  for (const entry of components) {
+    const codes = (entry.modifications || []).map(m => m.code.toLowerCase());
+    assert.equal(new Set(codes).size, codes.length, `${entry.article}: повторяются коды модификаций`);
+
+    // полный артикул собирается в одном месте: самим артикулом или полем full_article
+    for (const mod of entry.modifications || []) {
+      const full = fullArticle(entry.article, mod.code, mod.full_article);
+      assert.ok(full.startsWith(entry.article), `${entry.article}: код ${mod.code} даёт ${full}`);
+    }
+  }
+});
+
+test('каталог: полные артикулы совпадают с печатными в каталоге', () => {
+  const { components } = readConfig();
+  const byArticle = new Map(components.map(c => [c.article, c]));
+
+  // А.3776.001 (01) и (02.02) → А.3776.001-01 и А.3776.001-02.02
+  assert.deepEqual(
+    expandArticles(byArticle.get('А.3776.001')),
+    ['А.3776.001', 'А.3776.001-01', 'А.3776.001-02.02']
+  );
+
+  // цвет рассеивателя остаётся в базе
+  assert.deepEqual(
+    expandArticles(byArticle.get('А.3776.001.1-Б')),
+    ['А.3776.001.1-Б', 'А.3776.001.1-Б-01', 'А.3776.001.1-Б-02.02']
+  );
+
+  // комплект — один артикул со слэшем, без модификаций
+  const set = byArticle.get('А.3776.005Л-01/А.3731.007');
+  assert.ok(set, 'нет комплекта А.3776.005Л-01/А.3731.007');
+  assert.deepEqual(set.modifications, []);
+  assert.equal(fullArticle(set.article, undefined), 'А.3776.005Л-01/А.3731.007');
+});
+
+test('каталог: у позиций есть галерея, обложка берётся из неё', () => {
+  const { components } = readConfig();
+  const gallery = components.filter(entry => (entry.images || []).length > 0);
+
+  assert.ok(gallery.length >= 50, `позиций с галереей: ${gallery.length}`);
+  for (const entry of gallery) {
+    // у семейства с несколькими исполнениями фото больше, чем у одной позиции
+    assert.ok(entry.images.length <= 20, `${entry.article}: больше двадцати фото в галерее`);
+    assert.equal(new Set(entry.images).size, entry.images.length,
+      `${entry.article}: в галерее повторяются файлы`);
+    assert.ok(entry.image, `${entry.article}: нет обложки при непустой галерее`);
+    assert.ok(entry.images.includes(entry.image),
+      `${entry.article}: обложка ${entry.image} не входит в галерею`);
+  }
+});
+
+test('каталог: фото лежат в репозитории и открываются браузером', () => {
+  const { components } = readConfig();
+  const signatures = {
+    jpg: Buffer.from([0xff, 0xd8, 0xff]),
+    jpeg: Buffer.from([0xff, 0xd8, 0xff]),
+    png: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+    webp: Buffer.from('RIFF'),
+  };
+
+  const images = [];
+  for (const entry of components) {
+    if (entry.image) images.push([entry.article, entry.image]);
+    for (const image of entry.images || []) images.push([entry.article, image]);
+    for (const mod of entry.modifications || []) {
+      for (const image of mod.images || []) images.push([`${entry.article}-${mod.code}`, image]);
+    }
+  }
+
+  for (const [article, name] of images) {
+    const file = path.join(FILES_DIR, name);
+    assert.ok(fs.existsSync(file), `${article}: нет файла ${name}`);
+
+    const ext = path.extname(name).slice(1).toLowerCase();
+    const signature = signatures[ext];
+    assert.ok(signature, `${article}: неподдерживаемый формат ${ext}`);
+
+    const head = fs.readFileSync(file).subarray(0, signature.length);
+    assert.ok(head.equals(signature), `${article}: ${name} не похож на ${ext.toUpperCase()}`);
+  }
+});
+
+test('каталог: фото копируется под стабильным именем и не дублируется', () => {
+  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'atlanta-catalog-'));
+  const { components } = readConfig();
+  const entry = components.find(c => c.image);
+
+  const first = placeImage(entry.image, target);
+  const second = placeImage(entry.image, target);
+
+  assert.equal(first.url, second.url, 'имя файла должно зависеть от содержимого');
+  assert.match(first.url, /^\/uploads\/images\/catalog_[0-9a-f]{16}\.(jpg|jpeg|png|webp)$/);
+  assert.equal(first.size, fs.statSync(path.join(FILES_DIR, entry.image)).size);
+  assert.deepEqual(fs.readdirSync(target), [path.basename(first.url)]);
+
+  fs.rmSync(target, { recursive: true, force: true });
+});
+
+test('каталог: у жгутов базовый артикул семейства, исполнения — модификации', () => {
+  const { components } = readConfig();
+  const harness = components.filter(c => c.category === 'harness');
+  assert.ok(harness.length >= 120, `семейств жгутов: ${harness.length}`);
+
+  let executions = 0;
+  for (const entry of harness) {
+    // А.3724.304 — семейство, А.3724.304-03.01 — исполнение внутри него
+    assert.match(entry.article, /^А\.3724\.(МД-\d{3}\.\d{5}-\d{2}-\d{2}|\d{3})$/,
+      `${entry.article}: база семейства должна быть без кода исполнения`);
+
+    for (const mod of entry.modifications) {
+      assert.ok(mod.name && mod.name.length > 3,
+        `${entry.article}-${mod.code}: пустое описание исполнения`);
+    }
+    executions += entry.modifications.length;
+  }
+
+  assert.ok(executions >= 580, `исполнений жгутов: ${executions}`);
+});
+
+test('каталог: прежние плоские артикулы жгутов стали исполнениями', () => {
+  const { components } = readConfig();
+  const legacy = [
+    'А.3724.106-03', 'А.3724.209-03', 'А.3724.217-02', 'А.3724.304-03.01',
+    'А.3724.401-04', 'А.3724.401-12.01', 'А.3724.502-02.01', 'А.3724.504-01',
+    'А.3724.504-02', 'А.3724.602-02',
+  ];
+
+  const texts = [];
+  for (const entry of components.filter(c => c.category === 'harness')) {
+    texts.push(entry.article);
+    for (const mod of entry.modifications) {
+      texts.push(fullArticle(entry.article, mod.code));
+      texts.push(mod.name);
+    }
+  }
+
+  for (const article of legacy) {
+    assert.ok(texts.some(text => text.includes(article)),
+      `${article}: потерян при разбиении на семейства`);
+  }
+});
+
+test('каталог: изделие с цветными исполнениями — одна позиция, прежние артикулы в supersedes', () => {
+  const { components } = readConfig();
+  const byArticle = new Map(components.map(c => [c.article, c]));
+
+  // А.3731.027 — изделие, А.3731.027-01/-02/-03 — его исполнения по цвету
+  const family = byArticle.get('А.3731.027');
+  assert.ok(family, 'нет изделия А.3731.027');
+  assert.deepEqual(family.supersedes, ['А.3731.027-01', 'А.3731.027-02', 'А.3731.027-03']);
+  assert.equal(family.modifications.length, 78, 'исполнений А.3731.027');
+  for (const code of ['01.01', '02.45', '03.85']) {
+    assert.ok(family.modifications.some(m => m.code === code), `А.3731.027: нет исполнения ${code}`);
+  }
+
+  for (const article of family.supersedes) {
+    assert.ok(!byArticle.has(article), `${article}: остался отдельной позицией`);
+  }
+
+  // печатный артикул не всегда собирается как «изделие-код»: он в full_article
+  const arm = byArticle.get('А.3731.023');
+  assert.ok(arm, 'нет изделия А.3731.023');
+  const printed = arm.modifications.find(m => m.full_article === 'А.3731.023.3-03.06-150');
+  assert.ok(printed, 'А.3731.023.3-03.06-150: исполнение потерялось');
+  assert.equal(fullArticle(arm.article, printed.code, printed.full_article), 'А.3731.023.3-03.06-150');
+  assert.ok(expandArticles(arm).includes('А.3731.023.3-03.06-150'),
+    'поиск по печатному артикулу не находит изделие');
+
+  for (const entry of components) {
+    for (const mod of entry.modifications || []) {
+      const full = fullArticle(entry.article, mod.code, mod.full_article);
+      assert.ok(full.includes(entry.article), `${entry.article}: ${mod.code} даёт ${full}`);
+    }
+  }
+});
+
+test('каталог: supersedes гасит прежние плоские артикулы, не трогая изделие', async () => {
+  const statements = [];
+  const runner = {
+    query: async (sql, params) => {
+      statements.push({ sql, params });
+      if (/SELECT id, article FROM components/.test(sql)) {
+        return { rows: [
+          { id: 1, article: 'А.3731.027-01' },   // свободен — удаляем
+          { id: 2, article: 'А.3731.027-03' },   // стоит в чертеже — выключаем
+          { id: 3, article: 'А.3731.027' },      // само изделие — не трогаем
+        ] };
+      }
+      if (/SELECT 1 FROM/.test(sql)) {
+        return { rows: params[0] === 2 ? [{ exists: 1 }] : [] };
+      }
+      return { rows: [], rowCount: 1 };
+    },
+  };
+
+  const entries = [{
+    article: 'А.3731.027',
+    supersedes: ['А.3731.027-01', 'А.3731.027-03'],
+    modifications: [{ code: '01.01' }],
+  }];
+  assert.deepEqual(await retireLegacyFlats(runner, entries), { removed: 1, disabled: 1 });
+
+  const deleted = statements.filter(s => /^DELETE FROM components/.test(s.sql)).map(s => s.params[0]);
+  const disabled = statements.filter(s => /is_active = false/.test(s.sql)).map(s => s.params[0]);
+  assert.deepEqual(deleted, [1]);
+  assert.deepEqual(disabled, [2], 'позиция из чертежа остаётся в базе, но выключенной');
+  assert.ok(!statements.some(s => s.params && s.params[0] === 3),
+    'базовый артикул изделия трогать нельзя');
+});
+
+test('каталог: без миграции импорт говорит, что делать, а не падает по позициям', async () => {
+  const stale = {
+    query: async () => {
+      throw new Error('column "full_article" of relation "component_modifications" does not exist');
+    },
+  };
+  await assert.rejects(() => assertSchema(stale), /npm run db:migrate/);
+
+  // схема на месте — проверка молчит
+  const fresh = { query: async () => ({ rows: [] }) };
+  await assertSchema(fresh);
+});
+
+test('каталог: описание расширяется, ручная правка не затирается', async () => {
+  const queries = [];
+  const runner = {
+    query: async (sql, params) => {
+      queries.push({ sql, params });
+      return { rows: [], rowCount: 1 };
+    },
+  };
+
+  const base = 'Фонарь габаритный. Функции: габаритный огонь.';
+  const extended = `${base}\nОсобенности: Биполярный; Европейский сертификат E28.`;
+
+  // пустое описание — заполняем
+  await fillEmptyFields(runner, 1, { description: null, image_path: null }, { description: base }, null);
+  assert.ok(queries.at(-1).sql.includes('description'), 'описание не заполнено');
+  assert.match(queries.at(-1).sql, /UPDATE components SET/);
+
+  // каталожное описание продолжает текущее — обновляем
+  assert.equal(
+    await fillEmptyFields(runner, 1, { description: base, image_path: null },
+      { description: extended }, null),
+    true
+  );
+
+  // пользователь дописал своё — каталожная версия не затирает правку
+  assert.equal(
+    await fillEmptyFields(runner, 1, { description: `${base} Наш комментарий.`, image_path: null },
+      { description: extended }, null),
+    false
+  );
+});
+
+test('ошибки БД: пустой message от pg превращается в понятную причину', () => {
+  const { describeDbError } = require('../src/utils/db-error');
+
+  const refused = Object.assign(new Error(''), { code: 'ECONNREFUSED' });
+  assert.match(describeDbError(refused), /PostgreSQL не отвечает/);
+  assert.match(describeDbError({ code: '28P01' }), /пароль/);
+  assert.equal(describeDbError(new Error('column "x" does not exist')), 'column "x" does not exist');
+  assert.equal(describeDbError(null), 'неизвестная ошибка');
+});

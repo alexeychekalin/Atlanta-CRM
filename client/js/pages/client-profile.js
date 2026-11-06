@@ -4,6 +4,8 @@ const ClientProfilePage = {
   client: null,
   stats: null,
   workStatuses: [],
+  // Состояние блока «Реквизиты» запоминаем между открытиями карточки
+  REQUISITES_KEY: 'atlanta_crm_requisites_open',
 
   eventTypes: {
     call: { icon: '📞', label: 'Звонок', color: '#3b82f6' },
@@ -41,15 +43,15 @@ const ClientProfilePage = {
     const canEdit = API.can('clients', 'edit');
 
     const avatarContent = c.avatar_path 
-      ? `<img src="${c.avatar_path}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+      ? `<img src="${esc(c.avatar_path)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
       : (c.name || '?').charAt(0).toUpperCase();
 
     const statusBadge = c.status_name 
-      ? `<span class="badge" style="background:${c.status_color}20;color:${c.status_color};border:1px solid ${c.status_color}40;font-size:0.8rem;padding:4px 12px;border-radius:20px">${c.status_name}</span>`
+      ? `<span class="badge" style="background:${esc(c.status_color)}20;color:${esc(c.status_color)};border:1px solid ${esc(c.status_color)}40;font-size:0.8rem;padding:4px 12px;border-radius:20px">${esc(c.status_name)}</span>`
       : '<span style="color:var(--text-muted);font-size:0.85rem">Статус не задан</span>';
 
     const pricingBadge = c.pricing_level_name
-      ? `<span class="badge" style="background:var(--accent-teal)15;color:var(--accent-teal);border:1px solid var(--accent-teal)40;font-size:0.8rem;padding:4px 12px;border-radius:20px">💰 ${c.pricing_level_name} (${c.pricing_markup_pct > 0 ? '+' : ''}${c.pricing_markup_pct}%)</span>`
+      ? `<span class="badge" style="background:var(--accent-teal)15;color:var(--accent-teal);border:1px solid var(--accent-teal)40;font-size:0.8rem;padding:4px 12px;border-radius:20px">💰 ${esc(c.pricing_level_name)} (${c.pricing_markup_pct > 0 ? '+' : ''}${c.pricing_markup_pct}%)</span>`
       : '<span class="badge" style="background:var(--accent-red)15;color:var(--accent-red);border:1px solid var(--accent-red)40;font-size:0.8rem;padding:4px 12px;border-radius:20px">⚠️ Уровень цен не задан</span>';
 
     content.innerHTML = `
@@ -67,43 +69,49 @@ const ClientProfilePage = {
         </div>
         <div class="profile-info">
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <h2 class="profile-name" style="margin:0">${c.name}</h2>
+            <h2 class="profile-name" style="margin:0">${esc(c.name)}</h2>
             <div id="client-status-badge" style="cursor:${canEdit ? 'pointer' : 'default'}" ${canEdit ? 'onclick="ClientProfilePage.openStatusPicker()"' : ''}>
               ${statusBadge}
             </div>
             <div>${pricingBadge}</div>
           </div>
           <div class="profile-contacts" style="margin-top:6px">
-            ${c.phone ? `<span class="profile-contact-item"><a href="tel:${c.phone}" style="color:inherit;text-decoration:none">📞 ${c.phone}</a></span>` : ''}
-            ${c.email ? `<span class="profile-contact-item"><a href="mailto:${c.email}" style="color:inherit;text-decoration:none">✉️ ${c.email}</a></span>` : ''}
-            ${c.address ? `<span class="profile-contact-item">📍 ${c.address}</span>` : ''}
-            ${c.telegram ? `<span class="profile-contact-item"><a href="https://t.me/${c.telegram.replace('@','')}" target="_blank" style="color:#29b6f6;text-decoration:none;font-weight:500" title="Telegram">✈️ ${c.telegram}</a></span>` : ''}
-            ${c.max_messenger ? `<span class="profile-contact-item"><a href="${c.max_messenger}" target="_blank" style="color:#7c4dff;text-decoration:none;font-weight:500" title="MAX">💬 MAX</a></span>` : ''}
+            ${c.phone ? `<span class="profile-contact-item"><a href="tel:${esc(c.phone)}" style="color:inherit;text-decoration:none">📞 ${esc(c.phone)}</a></span>` : ''}
+            ${c.email ? `<span class="profile-contact-item"><a href="mailto:${esc(c.email)}" style="color:inherit;text-decoration:none">✉️ ${esc(c.email)}</a></span>` : ''}
+            ${this.siteHref(c.site) ? `<span class="profile-contact-item"><a href="${this.siteHref(c.site)}" target="_blank" rel="noopener" style="color:var(--accent-teal);text-decoration:none;font-weight:500" title="Сайт клиента">🌐 ${esc(c.site)}</a></span>` : ''}
+            ${c.address ? `<span class="profile-contact-item">📍 ${esc(c.address)}</span>` : ''}
+            ${c.telegram ? `<span class="profile-contact-item"><a href="https://t.me/${esc(String(c.telegram).replace('@','').replace(/[^A-Za-z0-9_]/g,''))}" target="_blank" rel="noopener" style="color:#29b6f6;text-decoration:none;font-weight:500" title="Telegram">✈️ ${esc(c.telegram)}</a></span>` : ''}
+            ${c.max_messenger ? `<span class="profile-contact-item">${safeUrl(c.max_messenger) ? `<a href="${safeUrl(c.max_messenger)}" target="_blank" rel="noopener" style="color:#7c4dff;text-decoration:none;font-weight:500" title="MAX">💬 MAX</a>` : ''}</span>` : ''}
           </div>
           ${(c.delivery_address || c.delivery_contact_name || c.delivery_contact_phone) ? `
             <div style="margin-top:10px;padding:10px 14px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border)">
               <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;font-weight:600">📦 Данные доставки</div>
               <div class="profile-contacts" style="margin-top:2px">
-                ${c.delivery_address ? `<span class="profile-contact-item">🏢 ${c.delivery_address}</span>` : ''}
-                ${c.delivery_contact_name ? `<span class="profile-contact-item">👤 ${c.delivery_contact_name}</span>` : ''}
-                ${c.delivery_contact_phone ? `<span class="profile-contact-item">📱 ${c.delivery_contact_phone}</span>` : ''}
+                ${c.delivery_address ? `<span class="profile-contact-item">🏢 ${esc(c.delivery_address)}</span>` : ''}
+                ${c.delivery_contact_name ? `<span class="profile-contact-item">👤 ${esc(c.delivery_contact_name)}</span>` : ''}
+                ${c.delivery_contact_phone ? `<span class="profile-contact-item">📱 ${esc(c.delivery_contact_phone)}</span>` : ''}
               </div>
             </div>
           ` : ''}
           ${(c.inn || c.kpp || c.legal_address || c.bank_details || c.ogrnip || c.ogrn || c.bank_account) ? `
             <div style="margin-top:10px;padding:10px 14px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border)">
-              <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;font-weight:600">🏛️ Реквизиты ${c.client_type === 'ip' ? '<span style="color:#f59e0b">(ИП)</span>' : '<span style="color:#3b82f6">(ООО)</span>'}</div>
-              <div class="profile-contacts" style="margin-top:2px">
-                ${c.inn ? `<span class="profile-contact-item">ИНН ${c.inn}${c.kpp ? ' / КПП ' + c.kpp : ''}</span>` : ''}
-                ${c.ogrn ? `<span class="profile-contact-item">ОГРН ${c.ogrn}</span>` : ''}
-                ${c.ogrnip ? `<span class="profile-contact-item">ОГРНИП ${c.ogrnip}</span>` : ''}
-                ${c.legal_address ? `<span class="profile-contact-item">📍 Юр. адрес: ${c.legal_address}</span>` : ''}
-                ${c.postal_address ? `<span class="profile-contact-item">📮 Почт. адрес: ${c.postal_address}</span>` : ''}
-                ${c.bank_account ? `<span class="profile-contact-item">💳 Р/С: ${c.bank_account}</span>` : ''}
-                ${c.corr_account ? `<span class="profile-contact-item">К/С: ${c.corr_account}</span>` : ''}
-                ${c.bank_name ? `<span class="profile-contact-item">🏦 ${c.bank_name}${c.bik ? ', БИК: ' + c.bik : ''}</span>` : ''}
-                ${c.director ? `<span class="profile-contact-item">👤 ${c.client_type === 'ip' ? '' : 'Ген. директор: '}${c.director}</span>` : ''}
-                ${c.bank_details ? `<span class="profile-contact-item" style="color:var(--text-muted);font-size:0.78rem">📋 ${c.bank_details}</span>` : ''}
+              <div onclick="ClientProfilePage.toggleRequisites()" style="display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer;user-select:none" title="Показать или скрыть реквизиты">
+                <div style="font-size:0.78rem;color:var(--text-muted);font-weight:600">
+                  🏛️ Реквизиты ${c.client_type === 'ip' ? '<span style="color:#f59e0b">(ИП)</span>' : '<span style="color:#3b82f6">(ООО)</span>'}${c.inn ? `<span style="color:var(--text-secondary);font-weight:500"> · ИНН ${esc(c.inn)}</span>` : ''}
+                </div>
+                <span id="requisites-toggle-label" style="font-size:0.78rem;color:var(--accent-teal)">Развернуть ▾</span>
+              </div>
+              <div id="client-requisites-body" class="profile-contacts" style="display:none;margin-top:8px">
+                ${c.inn ? `<span class="profile-contact-item">ИНН ${esc(c.inn)}${c.kpp ? ' / КПП ' + esc(c.kpp) : ''}</span>` : ''}
+                ${c.ogrn ? `<span class="profile-contact-item">ОГРН ${esc(c.ogrn)}</span>` : ''}
+                ${c.ogrnip ? `<span class="profile-contact-item">ОГРНИП ${esc(c.ogrnip)}</span>` : ''}
+                ${c.legal_address ? `<span class="profile-contact-item">📍 Юр. адрес: ${esc(c.legal_address)}</span>` : ''}
+                ${c.postal_address ? `<span class="profile-contact-item">📮 Почт. адрес: ${esc(c.postal_address)}</span>` : ''}
+                ${c.bank_account ? `<span class="profile-contact-item">💳 Р/С: ${esc(c.bank_account)}</span>` : ''}
+                ${c.corr_account ? `<span class="profile-contact-item">К/С: ${esc(c.corr_account)}</span>` : ''}
+                ${c.bank_name ? `<span class="profile-contact-item">🏦 ${esc(c.bank_name)}${c.bik ? ', БИК: ' + esc(c.bik) : ''}</span>` : ''}
+                ${c.director ? `<span class="profile-contact-item">👤 ${c.client_type === 'ip' ? '' : 'Ген. директор: '}${esc(c.director)}</span>` : ''}
+                ${c.bank_details ? `<span class="profile-contact-item" style="color:var(--text-muted);font-size:0.78rem">📋 ${esc(c.bank_details)}</span>` : ''}
               </div>
             </div>
           ` : ''}
@@ -146,6 +154,7 @@ const ClientProfilePage = {
         <button class="tab-btn" data-tab="calculations" onclick="ClientProfilePage.switchTab('calculations')">Расчёты</button>
         <button class="tab-btn" data-tab="timeline" onclick="ClientProfilePage.switchTab('timeline')">Таймлайн</button>
         <button class="tab-btn" data-tab="documents" onclick="ClientProfilePage.switchTab('documents')">Документы</button>
+        ${this.filesTabButton()}
       </div>
 
       <div id="profile-tab-content"></div>
@@ -153,6 +162,9 @@ const ClientProfilePage = {
       <!-- Скрытый input для загрузки аватара -->
       <input type="file" id="avatar-upload-input" accept=".jpg,.jpeg,.png,.webp" style="display:none">
     `;
+
+    // Реквизиты по умолчанию свёрнуты — состояние помним в localStorage
+    this.applyRequisitesState();
 
     // Привязка загрузки аватара
     document.getElementById('avatar-upload-input').addEventListener('change', async (e) => {
@@ -168,6 +180,52 @@ const ClientProfilePage = {
     });
 
     this.switchTab('orders');
+  },
+
+  // === Админская вкладка «Файлы» ===
+  // Видна только роли admin и прижата к правому краю полосы вкладок.
+  filesTabButton() {
+    if (!API.isAdmin()) return '';
+    return '<button class="tab-btn tab-btn-admin" data-tab="files" onclick="ClientProfilePage.switchTab(\'files\')" title="Доступно только администратору">📁 Файлы</button>';
+  },
+
+  // === Реквизиты: свёрнутый блок ===
+  requisitesOpen() {
+    try {
+      return localStorage.getItem(this.REQUISITES_KEY) === '1';
+    } catch {
+      return false;
+    }
+  },
+
+  applyRequisitesState() {
+    this.toggleRequisites(this.requisitesOpen());
+  },
+
+  toggleRequisites(force) {
+    const body = document.getElementById('client-requisites-body');
+    const label = document.getElementById('requisites-toggle-label');
+    if (!body) return;
+    const open = force === undefined ? body.style.display === 'none' : !!force;
+    body.style.display = open ? '' : 'none';
+    if (label) label.textContent = open ? 'Свернуть ▴' : 'Развернуть ▾';
+    try {
+      localStorage.setItem(this.REQUISITES_KEY, open ? '1' : '0');
+    } catch {
+      /* приватный режим — просто не запоминаем */
+    }
+  },
+
+  // === Сайт клиента ===
+  // Принимает «example.ru», «www.example.ru», «https://example.ru».
+  siteHref(site) {
+    const raw = String(site || '').trim();
+    if (!raw) return '';
+    // Любая схема, кроме http(s), запрещена: javascript:, data:, file: и т.п.
+    const scheme = raw.match(/^([a-z][a-z0-9+.-]*):/i);
+    if (scheme && !/^https?$/i.test(scheme[1])) return '';
+    const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw.replace(/^\/+/, '')}`;
+    return safeUrl(withScheme);
   },
 
   // === Загрузка аватара ===
@@ -228,6 +286,7 @@ const ClientProfilePage = {
       case 'calculations': this.loadCalculations(container); break;
       case 'timeline': this.loadTimeline(container); break;
       case 'documents': this.loadDocuments(container); break;
+      case 'files': this.loadClientFiles(container); break;
     }
   },
 
@@ -263,7 +322,7 @@ const ClientProfilePage = {
                       <div style="display:flex;gap:4px">
                         <button class="action-btn" title="Просмотр" onclick="ProposalsPage.viewProposal(${p.id})">👁️</button>
                         <button class="action-btn" title="Скачать PDF" onclick="ProposalsPage.downloadPDF(${p.id})">📄</button>
-                        ${p.status !== 'converted' ? `<button class="action-btn" title="Перевести в заказ" onclick="ProposalsPage.convertToOrder(${p.id})">📦</button>` : ''}
+                        ${!p.order_id && API.can('proposals', 'edit') ? `<button class="action-btn" title="Перевести в заказ" onclick="ProposalsPage.convertToOrder(${p.id})">📦</button>` : ''}
                       </div>
                     </td>
                   </tr>
@@ -340,11 +399,11 @@ const ClientProfilePage = {
                 return `
                   <tr style="cursor:pointer" onclick="ClientProfilePage.viewOrder(${o.id})" title="Нажмите для просмотра">
                     <td><strong>${o.order_number}</strong></td>
-                    <td>${o.invoice_number || '<span class="text-muted">—</span>'}</td>
+                    <td>${esc(o.invoice_number) || '<span class="text-muted">—</span>'}</td>
                     <td class="text-right" style="font-weight:600">${Table.formatMoney(o.total)}</td>
                     <td>${new Date(o.order_date).toLocaleDateString('ru-RU')}</td>
                     <td>${o.payment_date ? `<span style="color:var(--accent-green,#22c55e);font-weight:500">${new Date(o.payment_date).toLocaleDateString('ru-RU')}</span>` : '<span class="text-muted">—</span>'}</td>
-                    <td>${o.tracking_number ? `<span style="font-family:var(--font-mono,monospace);font-size:0.83rem">${o.tracking_number}</span>` : '<span class="text-muted">—</span>'}</td>
+                    <td>${o.tracking_number ? `<span style="font-family:var(--font-mono,monospace);font-size:0.83rem">${esc(o.tracking_number)}</span>` : '<span class="text-muted">—</span>'}</td>
                     <td>
                       ${isPaid 
                         ? '<span class="badge" style="background:#22c55e20;color:#22c55e;border:1px solid #22c55e40">✅ Оплачен</span>'
@@ -353,7 +412,7 @@ const ClientProfilePage = {
                     </td>
                     <td class="text-right" onclick="event.stopPropagation()">
                       ${o.invoice_path 
-                        ? `<a href="${o.invoice_path}" target="_blank" class="btn btn-secondary btn-sm">📄 Открыть</a>`
+                        ? `<a href="${esc(o.invoice_path)}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">📄 Открыть</a>`
                         : '<span class="text-muted" style="font-size:0.8rem">—</span>'
                       }
                     </td>
@@ -488,7 +547,7 @@ const ClientProfilePage = {
         `,
         footer: `
           <button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>
-          ${API.isAdmin() ? `<button class="btn btn-primary" onclick="Modal.close(); App.navigateTo('orders');">📋 Перейти к заказам</button>` : ''}
+          ${API.can('orders', 'view') ? `<button class="btn btn-primary" onclick="Modal.close(); App.navigateTo('orders');">📋 Перейти к заказам</button>` : ''}
         `,
       });
     } catch (err) { Toast.error(err.message); }
@@ -496,13 +555,14 @@ const ClientProfilePage = {
 
   // =================== ЧЕРТЕЖИ (единый вид) ===================
   async loadDrawings(container) {
-    const isAdmin = API.isAdmin();
+    const canEdit = API.can('drawings', 'edit');
+    const canDelete = API.can('drawings', 'delete');
     try {
       const res = await API.get(`/clients/${this.clientId}/documents/drawings`);
       const drawings = res.data;
 
       container.innerHTML = `
-        ${isAdmin ? `
+        ${canEdit ? `
           <div class="toolbar">
             <div></div>
             <button class="btn btn-primary btn-sm" onclick="ClientProfilePage.uploadDrawing()">📎 Загрузить чертёж</button>
@@ -523,7 +583,8 @@ const ClientProfilePage = {
               <tbody>
                 ${drawings.map(d => {
                   const hasCalc = parseInt(d.components_count) > 0 || d.fixed_price;
-                  const cost = parseFloat(d.base_cost) || 0;
+                  const isCalculated = d.is_calculated === true;
+                  const cost = parseFloat(d.total_cost ?? d.base_cost) || 0;
                   const dateStr = d.created_at ? new Date(d.created_at).toLocaleDateString('ru-RU') : '—';
                   return `
                   <tr>
@@ -531,21 +592,24 @@ const ClientProfilePage = {
                       <div style="display:flex;align-items:center;gap:8px">
                         <span style="font-size:1.1rem">${d.file_path ? this.getFileIcon(d.file_type) : '📐'}</span>
                         <div>
-                          <div style="font-weight:600">${d.name}</div>
-                          ${d.description ? `<div style="font-size:0.78rem;color:var(--text-muted)">${d.description}</div>` : ''}
-                          ${hasCalc ? `<span class="badge" style="background:var(--accent-teal);color:#fff;font-size:0.7rem;margin-top:2px">📊 Расчёт</span>` : ''}
+                          <div style="font-weight:600">${esc(d.name)}</div>
+                          ${d.description ? `<div style="font-size:0.78rem;color:var(--text-muted)">${esc(d.description)}</div>` : ''}
+                          ${isCalculated
+                            ? `<span class="badge" style="background:var(--accent-teal);color:#fff;font-size:0.7rem;margin-top:2px">✅ рассчитан</span>`
+                            : (hasCalc ? `<span class="badge" style="background:var(--bg-tertiary);color:var(--text-muted);font-size:0.7rem;margin-top:2px">без расчёта</span>` : '')}
                         </div>
                       </div>
                     </td>
                     <td class="text-right" style="font-weight:600;${hasCalc ? 'color:var(--accent-teal)' : ''}">${hasCalc ? Table.formatMoney(cost) : '—'}</td>
                     <td class="text-muted" style="font-size:0.83rem">${dateStr}</td>
-                    <td class="text-muted" style="font-size:0.83rem">${d.author_name || '—'}</td>
+                    <td class="text-muted" style="font-size:0.83rem">${esc(d.author_name) || '—'}</td>
                     <td class="text-right">
                       <div class="table-actions" style="justify-content:flex-end">
-                        ${d.file_path ? `<a href="${d.file_path}" target="_blank" class="btn btn-icon btn-sm" title="Открыть файл" onclick="event.stopPropagation()">📎</a>` : ''}
-                        ${hasCalc ? `<button class="btn btn-icon btn-sm" onclick="App.navigateTo('calculator/${d.id}')" title="Открыть в калькуляторе">🧮</button>` : ''}
+                        ${d.file_path ? `<a href="${esc(d.file_path)}" target="_blank" rel="noopener" class="btn btn-icon btn-sm" title="Открыть файл" onclick="event.stopPropagation()">📎</a>` : ''}
+                        ${canEdit ? `<button class="btn btn-icon btn-sm" onclick="DrawingsPage.renameDrawing(${d.id})" title="Переименовать">✏️</button>` : ''}
+                        ${hasCalc ? `<button class="btn btn-icon btn-sm" onclick="App.navigateTo('calculator?drawing=${d.id}&client=${ClientProfilePage.clientId}')" title="Открыть в калькуляторе">🧮</button>` : ''}
                         ${!hasCalc ? `<button class="btn btn-secondary btn-sm" onclick="App.navigateTo('calculator?drawing=${d.id}&client=${ClientProfilePage.clientId}')">📊 Рассчитать</button>` : ''}
-                        ${isAdmin ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteDrawing(${d.id})" title="Удалить">✕</button>` : ''}
+                        ${canDelete ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteDrawing(${d.id})" title="В архив">📥</button>` : ''}
                       </div>
                     </td>
                   </tr>
@@ -561,32 +625,72 @@ const ClientProfilePage = {
   // =================== РАСЧЁТЫ ===================
   async loadCalculations(container) {
     try {
-      const res = await API.get(`/clients/${this.clientId}/documents/calculations`);
-      const calcs = res.data;
-      if (calcs.length === 0) { container.innerHTML = Table.emptyState('Нет расчётов из калькулятора'); return; }
+      const [calcsRes, journalRes] = await Promise.all([
+        API.get(`/clients/${this.clientId}/documents/calculations`),
+        API.get(`/clients/${this.clientId}/documents/calculation-journal`),
+      ]);
+      const calcs = calcsRes.data;
+      const journal = journalRes.data;
+
+      const journalHtml = journal.length === 0
+        ? Table.emptyState('Журнал расчётов пуст')
+        : `
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead><tr><th>Дата</th><th>Чертёж</th><th>Принципал</th><th class="text-right">Сумма BOM</th><th class="text-right">Уровень</th><th class="text-right">Итого</th><th>Автор</th></tr></thead>
+              <tbody>
+                ${journal.map(j => `
+                  <tr>
+                    <td class="text-muted" style="font-size:0.83rem">${new Date(j.created_at).toLocaleString('ru-RU')}</td>
+                    <td>
+                      <strong>${esc(j.drawing_name)}</strong>
+                      ${j.drawing_archived_at ? '<span class="badge" style="background:var(--bg-tertiary);color:var(--text-muted);margin-left:6px">архив</span>' : ''}
+                      ${j.drawing_id ? `<a href="#" onclick="event.preventDefault();App.navigateTo('calculator?drawing=${j.drawing_id}&client=${this.clientId}')" style="margin-left:8px;color:var(--accent-teal);font-size:0.8rem">открыть</a>` : ''}
+                    </td>
+                    <td>${esc(j.principal_name) || '—'}</td>
+                    <td class="text-right">${Table.formatMoney(j.subtotal)}</td>
+                    <td class="text-right">${parseFloat(j.level_markup_pct) > 0 ? '+' : ''}${parseFloat(j.level_markup_pct) || 0}%</td>
+                    <td class="text-right" style="font-weight:600;color:var(--accent-teal)">${Table.formatMoney(j.total)}</td>
+                    <td class="text-muted" style="font-size:0.83rem">${esc(j.author_name) || '—'}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>`;
+
+      const templatesHtml = calcs.length === 0
+        ? Table.emptyState('Нет чертежей с составом')
+        : `
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead><tr><th>Шаблон</th><th class="text-center">Компонентов</th><th class="text-right">Цена для клиента</th><th>Дата</th><th>Автор</th><th class="text-right"></th></tr></thead>
+              <tbody>
+                ${calcs.map(c => `
+                  <tr style="cursor:pointer" onclick="ClientProfilePage.viewCalculation(${c.id})" title="Нажмите для просмотра чертежа">
+                    <td>
+                      <strong>${esc(c.name)}</strong>
+                      ${c.file_path ? `<a href="${esc(c.file_path)}" target="_blank" onclick="event.stopPropagation()" style="font-size:0.8rem;color:var(--accent-teal);margin-left:8px">📎</a>` : ''}
+                    </td>
+                    <td class="text-center"><span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary)">${c.components_count || 0} шт.</span></td>
+                    <td class="text-right" style="font-weight:600">${Table.formatMoney(c.total_cost)}</td>
+                    <td>${new Date(c.created_at).toLocaleDateString('ru-RU')}</td>
+                    <td>${esc(c.author_name) || '—'}</td>
+                    <td class="text-right" onclick="event.stopPropagation()">
+                      <button class="btn btn-secondary btn-sm" onclick="ClientProfilePage.viewCalculation(${c.id})">👁 Просмотр</button>
+                      <button class="btn btn-secondary btn-sm" onclick="App.navigateTo('calculator?drawing=${c.id}&client=${this.clientId}')" title="Открыть в калькуляторе">🧮</button>
+                    </td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>`;
 
       container.innerHTML = `
-        <div class="table-wrapper">
-          <table class="data-table">
-            <thead><tr><th>Шаблон</th><th class="text-center">Компонентов</th><th class="text-right">Базовая стоимость</th><th>Дата</th><th>Автор</th><th class="text-right"></th></tr></thead>
-            <tbody>
-              ${calcs.map(c => `
-                <tr style="cursor:pointer" onclick="ClientProfilePage.viewCalculation(${c.id})" title="Нажмите для просмотра чертежа">
-                  <td>
-                    <strong>${c.name}</strong>
-                    ${c.file_path ? `<a href="${c.file_path}" target="_blank" onclick="event.stopPropagation()" style="font-size:0.8rem;color:var(--accent-teal);margin-left:8px">📎</a>` : ''}
-                  </td>
-                  <td class="text-center"><span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary)">${c.components_count || 0} шт.</span></td>
-                  <td class="text-right" style="font-weight:600">${Table.formatMoney(c.base_cost)}</td>
-                  <td>${new Date(c.created_at).toLocaleDateString('ru-RU')}</td>
-                  <td>${c.author_name || '—'}</td>
-                  <td class="text-right" onclick="event.stopPropagation()">
-                    <button class="btn btn-secondary btn-sm" onclick="ClientProfilePage.viewCalculation(${c.id})">👁 Просмотр</button>
-                  </td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
+        <div class="card mb-2">
+          <div class="card-header"><div class="card-title">🧾 Журнал расчётов</div></div>
+          ${journalHtml}
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">📐 Чертежи с составом (шаблоны)</div></div>
+          ${templatesHtml}
         </div>
       `;
     } catch (err) { container.innerHTML = `<div class="empty-state"><div class="empty-state-text">${err.message}</div></div>`; }
@@ -688,7 +792,7 @@ const ClientProfilePage = {
         `,
         footer: `
           <button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>
-          ${API.isAdmin() ? `<button class="btn btn-primary" onclick="Modal.close(); App.navigateTo('calculator', ${drawingId});">📐 Открыть в калькуляторе</button>` : ''}
+          ${API.can('calculator', 'view') ? `<button class="btn btn-primary" onclick="Modal.close(); App.navigateTo('calculator?drawing=${drawingId}&client=${this.clientId}');">📐 Открыть в калькуляторе</button>` : ''}
         `,
       });
     } catch (err) { Toast.error(err.message); }
@@ -696,13 +800,14 @@ const ClientProfilePage = {
 
   // =================== ТАЙМЛАЙН ===================
   async loadTimeline(container) {
-    const isAdmin = API.isAdmin();
+    const canEdit = API.can('clients', 'edit');
+    const canDelete = API.can('clients', 'delete');
     try {
       const res = await API.get(`/clients/${this.clientId}/timeline`);
       const events = res.data;
 
       container.innerHTML = `
-        ${isAdmin ? `
+        ${canEdit ? `
           <div class="toolbar">
             <div></div>
             <button class="btn btn-primary btn-sm" onclick="ClientProfilePage.openTimelineModal()">+ Добавить событие</button>
@@ -717,18 +822,18 @@ const ClientProfilePage = {
                   <div class="timeline-marker" style="background:${type.color}">${type.icon}</div>
                   <div class="timeline-content">
                     <div class="timeline-header">
-                      <span class="timeline-title">${e.title}</span>
+                      <span class="timeline-title">${esc(e.title)}</span>
                       <span class="timeline-date">${new Date(e.event_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                      ${isAdmin ? `
+                      ${(canEdit || canDelete) ? `
                         <div class="timeline-actions">
-                          <button class="btn btn-icon btn-sm" onclick="ClientProfilePage.openTimelineModal(${e.id})" title="Ред.">✏️</button>
-                          <button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteTimelineEvent(${e.id})" title="Удалить">✕</button>
+                          ${canEdit ? `<button class="btn btn-icon btn-sm" onclick="ClientProfilePage.openTimelineModal(${e.id})" title="Ред.">✏️</button>` : ''}
+                          ${canDelete ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteTimelineEvent(${e.id})" title="Удалить">✕</button>` : ''}
                         </div>
                       ` : ''}
                     </div>
                     <div class="timeline-badge" style="background:${type.color}20;color:${type.color}">${type.label}</div>
-                    ${e.description ? `<div class="timeline-desc">${e.description}</div>` : ''}
-                    ${e.author_name ? `<div class="timeline-author">${e.author_name}</div>` : ''}
+                    ${e.description ? `<div class="timeline-desc">${esc(e.description)}</div>` : ''}
+                    ${e.author_name ? `<div class="timeline-author">${esc(e.author_name)}</div>` : ''}
                   </div>
                 </div>
               `;
@@ -772,21 +877,21 @@ const ClientProfilePage = {
                   <tr>
                     <td style="font-weight:600">
                       <div style="display:flex;align-items:center;gap:8px">
-                        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:0.75rem;flex-shrink:0">${(c.full_name || '?').charAt(0).toUpperCase()}</div>
-                        ${c.full_name}
+                        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:0.75rem;flex-shrink:0">${esc((c.full_name || '?').charAt(0).toUpperCase())}</div>
+                        ${esc(c.full_name)}
                       </div>
                     </td>
-                    <td>${c.position || '<span class="text-muted">—</span>'}</td>
-                    <td>${c.phone ? `<a href="tel:${c.phone}" style="color:var(--accent-teal)" onclick="event.stopPropagation()">${c.phone}</a>` : '<span class="text-muted">—</span>'}</td>
-                    <td>${c.email ? `<a href="mailto:${c.email}" style="color:var(--accent-teal)" onclick="event.stopPropagation()">${c.email}</a>` : '<span class="text-muted">—</span>'}</td>
+                    <td>${esc(c.position) || '<span class="text-muted">—</span>'}</td>
+                    <td>${c.phone ? `<a href="tel:${esc(c.phone)}" style="color:var(--accent-teal)" onclick="event.stopPropagation()">${esc(c.phone)}</a>` : '<span class="text-muted">—</span>'}</td>
+                    <td>${c.email ? `<a href="mailto:${esc(c.email)}" style="color:var(--accent-teal)" onclick="event.stopPropagation()">${esc(c.email)}</a>` : '<span class="text-muted">—</span>'}</td>
                     <td>
                       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-                        ${c.telegram ? `<a href="https://t.me/${c.telegram.replace('@','')}" target="_blank" style="color:#29b6f6;text-decoration:none;font-size:0.85rem" onclick="event.stopPropagation()" title="Telegram">✈️ ${c.telegram}</a>` : ''}
-                        ${c.max_messenger ? `<a href="${c.max_messenger}" target="_blank" style="color:#7c4dff;text-decoration:none;font-size:0.85rem" onclick="event.stopPropagation()" title="MAX">💬 MAX</a>` : ''}
+                        ${c.telegram ? `<a href="https://t.me/${esc(String(c.telegram).replace('@','').replace(/[^A-Za-z0-9_]/g,''))}" target="_blank" rel="noopener" style="color:#29b6f6;text-decoration:none;font-size:0.85rem" onclick="event.stopPropagation()" title="Telegram">✈️ ${esc(c.telegram)}</a>` : ''}
+                        ${c.max_messenger ? `${safeUrl(c.max_messenger) ? `<a href="${safeUrl(c.max_messenger)}" target="_blank" rel="noopener" style="color:#7c4dff;text-decoration:none;font-size:0.85rem" onclick="event.stopPropagation()" title="MAX">💬 MAX</a>` : ''}` : ''}
                         ${!c.telegram && !c.max_messenger ? '<span class="text-muted">—</span>' : ''}
                       </div>
                     </td>
-                    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);font-size:0.85rem">${c.notes || ''}</td>
+                    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);font-size:0.85rem">${esc(c.notes)}</td>
                     ${canEdit ? `
                       <td class="text-right">
                         <div class="table-actions" style="justify-content:flex-end">
@@ -872,13 +977,14 @@ const ClientProfilePage = {
 
   // =================== ДОКУМЕНТЫ ===================
   async loadDocuments(container) {
-    const isAdmin = API.isAdmin();
+    const canEdit = API.can('clients', 'edit');
+    const canDelete = API.can('clients', 'delete');
     try {
       const res = await API.get(`/clients/${this.clientId}/documents`);
       const docs = res.data;
 
       container.innerHTML = `
-        ${isAdmin ? `
+        ${canEdit ? `
           <div class="toolbar">
             <div></div>
             <button class="btn btn-primary btn-sm" onclick="ClientProfilePage.uploadDocument()">📎 Загрузить документ</button>
@@ -890,13 +996,13 @@ const ClientProfilePage = {
               <div class="file-card">
                 <div class="file-icon">${this.getFileIcon(d.file_type)}</div>
                 <div class="file-info">
-                  <div class="file-name">${d.name}</div>
-                  ${d.description ? `<div class="file-desc">${d.description}</div>` : ''}
-                  <div class="file-meta">${new Date(d.created_at).toLocaleDateString('ru-RU')} · ${d.uploaded_by_name || ''}</div>
+                  <div class="file-name">${esc(d.name)}</div>
+                  ${d.description ? `<div class="file-desc">${esc(d.description)}</div>` : ''}
+                  <div class="file-meta">${new Date(d.created_at).toLocaleDateString('ru-RU')} · ${esc(d.uploaded_by_name)}</div>
                 </div>
                 <div class="file-actions">
-                  <a href="${d.file_path}" target="_blank" class="btn btn-secondary btn-sm">Открыть</a>
-                  ${isAdmin ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteDocument(${d.id})">✕</button>` : ''}
+                  <a href="${esc(d.file_path)}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">Открыть</a>
+                  ${canDelete ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteDocument(${d.id})">✕</button>` : ''}
                 </div>
               </div>
             `).join('')}
@@ -904,6 +1010,175 @@ const ClientProfilePage = {
         `}
       `;
     } catch (err) { container.innerHTML = `<div class="empty-state"><div class="empty-state-text">${err.message}</div></div>`; }
+  },
+
+  // =================== ФАЙЛЫ (ТОЛЬКО АДМИН) ===================
+  // Произвольные вложения в карточку клиента: документы, таблицы, архивы, чертежи.
+  // Таблица client_files и API /clients/:id/files доступны только роли admin.
+  async loadClientFiles(container) {
+    if (!API.isAdmin()) {
+      container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🔒</div><div class="empty-state-text">Раздел доступен только администратору</div></div>`;
+      return;
+    }
+    try {
+      const res = await API.get(`/clients/${this.clientId}/files`);
+      const files = res.data || [];
+      const totalSize = files.reduce((sum, f) => sum + (Number(f.file_size) || 0), 0);
+
+      container.innerHTML = `
+        <div class="toolbar" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+          <div style="font-size:0.85rem;color:var(--text-secondary)">
+            📁 Файлы клиента <span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary)">только для администратора</span>
+            ${files.length ? `<span style="color:var(--text-muted)"> · ${files.length} шт. · ${this._formatSize(totalSize)}</span>` : ''}
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="ClientProfilePage.uploadClientFile()">📎 Загрузить файл</button>
+        </div>
+        ${files.length === 0 ? Table.emptyState('Файлов пока нет — загрузите документ, таблицу, архив или чертёж') : `
+          <div class="file-grid">
+            ${files.map(f => `
+              <div class="file-card">
+                <div class="file-icon">${this.getFileIcon(f.file_type)}</div>
+                <div class="file-info">
+                  <div class="file-name">${esc(f.name)}</div>
+                  ${f.comment ? `<div class="file-desc">${esc(f.comment)}</div>` : ''}
+                  <div class="file-meta">
+                    ${new Date(f.created_at).toLocaleDateString('ru-RU')}
+                    ${f.file_size ? ` · ${this._formatSize(f.file_size)}` : ''}
+                    ${f.uploaded_by_name ? ` · ${esc(f.uploaded_by_name)}` : ''}
+                  </div>
+                </div>
+                <div class="file-actions">
+                  <a href="${esc(f.file_path)}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">Открыть</a>
+                  <button class="btn btn-icon btn-sm" title="Переименовать" onclick="ClientProfilePage.renameClientFile(${f.id})">✏️</button>
+                  <button class="btn btn-icon btn-sm btn-danger" title="Удалить" onclick="ClientProfilePage.deleteClientFile(${f.id})">✕</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `}
+      `;
+    } catch (err) {
+      container.innerHTML = `<div class="empty-state"><div class="empty-state-text">${esc(err.message)}</div></div>`;
+    }
+  },
+
+  _formatSize(bytes) {
+    const value = Number(bytes) || 0;
+    if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} МБ`;
+    if (value >= 1024) return `${Math.round(value / 1024)} КБ`;
+    return `${value} Б`;
+  },
+
+  uploadClientFile() {
+    Modal.open({
+      title: 'Загрузить файл в карточку клиента',
+      body: `
+        <div class="form-group">
+          <label>Файл *</label>
+          <input type="file" class="form-control" id="cf-file"
+                 accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.tif,.tiff,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.zip,.rar,.7z,.txt,.csv,.md,.dwg,.dxf">
+          <div class="form-hint" style="margin-top:4px">Документы, таблицы, изображения, архивы и чертежи до 50 МБ. HTML, SVG и исполняемые файлы не принимаются.</div>
+        </div>
+        <div class="form-group">
+          <label>Название *</label>
+          <input type="text" class="form-control" id="cf-name" placeholder="Подставится из имени файла">
+        </div>
+        <div class="form-group">
+          <label>Комментарий</label>
+          <textarea class="form-control" id="cf-comment" rows="2" placeholder="Что это за файл, версия, примечания"></textarea>
+        </div>
+      `,
+      footer: `
+        <button class="btn btn-secondary" onclick="Modal.close()">Отмена</button>
+        <button class="btn btn-primary" id="cf-submit" onclick="ClientProfilePage.saveClientFileUpload()">Загрузить</button>
+      `,
+    });
+
+    const input = document.getElementById('cf-file');
+    if (input) {
+      input.addEventListener('change', () => {
+        const nameInput = document.getElementById('cf-name');
+        if (input.files[0] && nameInput && !nameInput.value.trim()) {
+          nameInput.value = input.files[0].name.replace(/\.[^.]+$/, '');
+        }
+      });
+    }
+  },
+
+  async saveClientFileUpload() {
+    const input = document.getElementById('cf-file');
+    const file = input && input.files ? input.files[0] : null;
+    const name = document.getElementById('cf-name').value.trim() || (file ? file.name : '');
+    const comment = document.getElementById('cf-comment').value.trim();
+    if (!file) { Toast.error('Выберите файл'); return; }
+    if (!name) { Toast.error('Укажите название'); return; }
+
+    const button = document.getElementById('cf-submit');
+    if (button) { button.disabled = true; button.textContent = 'Загрузка...'; }
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const uploaded = await API.upload('/upload/client-file', formData);
+      await API.post(`/clients/${this.clientId}/files`, {
+        name,
+        comment,
+        file_path: uploaded.path,
+        file_type: uploaded.file_type || (uploaded.path.split('.').pop() || ''),
+        file_size: uploaded.size,
+      });
+      Toast.success('Файл загружен');
+      Modal.close();
+      this.switchTab('files');
+    } catch (err) {
+      Toast.error(err.message);
+      if (button) { button.disabled = false; button.textContent = 'Загрузить'; }
+    }
+  },
+
+  async renameClientFile(fileId) {
+    try {
+      const res = await API.get(`/clients/${this.clientId}/files`);
+      const file = (res.data || []).find(f => String(f.id) === String(fileId));
+      if (!file) { Toast.error('Файл не найден'); return; }
+      Modal.open({
+        title: 'Переименовать файл',
+        body: `
+          <div class="form-group">
+            <label>Название *</label>
+            <input type="text" class="form-control" id="cf-rename-name" value="${esc(file.name)}">
+          </div>
+          <div class="form-group">
+            <label>Комментарий</label>
+            <textarea class="form-control" id="cf-rename-comment" rows="2">${esc(file.comment || '')}</textarea>
+          </div>
+        `,
+        footer: `
+          <button class="btn btn-secondary" onclick="ClientProfilePage.switchTab('files')">Отмена</button>
+          <button class="btn btn-primary" onclick="ClientProfilePage.saveClientFileRename(${file.id})">Сохранить</button>
+        `,
+      });
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  async saveClientFileRename(fileId) {
+    const name = document.getElementById('cf-rename-name').value.trim();
+    const comment = document.getElementById('cf-rename-comment').value.trim();
+    if (!name) { Toast.error('Укажите название'); return; }
+    try {
+      await API.request('PATCH', `/clients/${this.clientId}/files/${fileId}`, { name, comment });
+      Toast.success('Файл обновлён');
+      Modal.close();
+      this.switchTab('files');
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  async deleteClientFile(fileId) {
+    if (!await ConfirmDialog.delete('Удалить файл? Действие необратимо.')) return;
+    try {
+      await API.del(`/clients/${this.clientId}/files/${fileId}`);
+      Toast.success('Файл удалён');
+      this.switchTab('files');
+    } catch (err) { Toast.error(err.message); }
   },
 
   // =================== МОДАЛКИ ===================
@@ -938,6 +1213,7 @@ const ClientProfilePage = {
           <div class="form-group"><label>✈️ Telegram</label><input type="text" class="form-control" id="prof-telegram" value="${c.telegram || ''}" placeholder="@username или username"></div>
           <div class="form-group"><label>💬 MAX</label><input type="text" class="form-control" id="prof-max-messenger" value="${c.max_messenger || ''}" placeholder="https://max.ru/u/..."></div>
         </div>
+        <div class="form-group"><label>🌐 Сайт</label><input type="text" class="form-control" id="prof-site" value="${esc(c.site || '')}" placeholder="example.ru или https://example.ru"></div>
         <div class="form-group"><label>Адрес</label><input type="text" class="form-control" id="prof-address" value="${c.address || ''}"></div>
         <div class="form-group">
           <label>Статус</label>
@@ -1026,6 +1302,7 @@ const ClientProfilePage = {
       bank_details: document.getElementById('prof-bank-details').value.trim(),
       telegram: document.getElementById('prof-telegram').value.trim(),
       max_messenger: document.getElementById('prof-max-messenger').value.trim(),
+      site: document.getElementById('prof-site').value.trim(),
       client_type: document.getElementById('prof-client-type').value,
       ogrn: document.getElementById('prof-ogrn').value.trim(),
       postal_address: document.getElementById('prof-postal-address').value.trim(),
@@ -1075,7 +1352,7 @@ const ClientProfilePage = {
   },
 
   async loadApprovals(container) {
-    const canEdit = API.isAdmin();
+    const canEdit = API.can('clients', 'edit');
     try {
       const res = await API.get(`/clients/${this.clientId}/approvals`);
       const approvals = res.data;
@@ -1094,7 +1371,7 @@ const ClientProfilePage = {
                    onmouseout="this.style.borderColor='var(--border)'">
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
                   <div style="display:flex;align-items:center;gap:10px">
-                    <span style="font-weight:600;font-size:0.95rem">${a.title}</span>
+                    <span style="font-weight:600;font-size:0.95rem">${esc(a.title)}</span>
                     ${this._statusBadge(a.status)}
                   </div>
                   <div style="display:flex;align-items:center;gap:12px;font-size:0.8rem;color:var(--text-muted)">
@@ -1103,7 +1380,7 @@ const ClientProfilePage = {
                     <span>${new Date(a.updated_at).toLocaleDateString('ru-RU')}</span>
                   </div>
                 </div>
-                ${a.description ? `<div style="margin-top:6px;font-size:0.83rem;color:var(--text-secondary)">${a.description}</div>` : ''}
+                ${a.description ? `<div style="margin-top:6px;font-size:0.83rem;color:var(--text-secondary)">${esc(a.description)}</div>` : ''}
               </div>
             `).join('')}
           </div>
@@ -1150,7 +1427,7 @@ const ClientProfilePage = {
     try {
       const data = await API.get(`/clients/${this.clientId}/approvals/${id}`);
       const a = data;
-      const canEdit = API.isAdmin();
+      const canEdit = API.can('clients', 'edit');
       const lastVersion = a.versions.length > 0 ? a.versions[a.versions.length - 1] : null;
 
       const statusOptions = Object.entries(this._approvalStatuses)
@@ -1229,11 +1506,13 @@ const ClientProfilePage = {
                   ${statusOptions}
                 </select>
                 <button class="btn btn-primary btn-sm" onclick="ClientProfilePage.changeApprovalStatus(${a.id})">Сменить</button>
-                ${a.status === 'approved' && lastVersion ? `<button class="btn btn-sm" style="background:#10b981;color:#fff;border:0" onclick="ClientProfilePage.moveToDrawings(${a.id})">📁 В чертежи</button>` : ''}
+                ${a.drawing_id
+                  ? `<button class="btn btn-sm" style="background:#10b981;color:#fff;border:0" onclick="Modal.close();App.navigateTo('calculator?drawing=${a.drawing_id}&client=${this.clientId}')">📐 Открыть чертёж</button>`
+                  : (a.status === 'approved' && lastVersion ? `<button class="btn btn-sm" style="background:#10b981;color:#fff;border:0" onclick="ClientProfilePage.moveToDrawings(${a.id})">📁 В чертежи</button>` : '')}
               </div>
             ` : ''}
           </div>
-          ${a.description ? `<div style="padding:10px 14px;background:var(--bg-main);border-radius:8px;margin-bottom:16px;font-size:0.88rem;color:var(--text-secondary)">${a.description}</div>` : ''}
+          ${a.description ? `<div style="padding:10px 14px;background:var(--bg-main);border-radius:8px;margin-bottom:16px;font-size:0.88rem;color:var(--text-secondary)">${esc(a.description)}</div>` : ''}
 
           <!-- Действия -->
           <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
@@ -1278,17 +1557,12 @@ const ClientProfilePage = {
 
   async moveToDrawings(approvalId) {
     try {
-      const data = await API.get(`/clients/${this.clientId}/approvals/${approvalId}`);
-      const lastVersion = data.versions[data.versions.length - 1];
-      if (!lastVersion) { Toast.error('Нет файлов для переноса'); return; }
-
-      await API.post(`/clients/${this.clientId}/documents/drawings`, {
-        name: data.title,
-        file_path: lastVersion.file_path,
-        file_type: lastVersion.file_type,
-        description: `Согласованный чертёж (из согласования #${approvalId})`,
-      });
-      Toast.success('Чертёж добавлен в раздел «Чертежи»');
+      const drawing = await API.post(`/clients/${this.clientId}/approvals/${approvalId}/to-drawing`, {});
+      Toast.success(drawing.already_exists
+        ? 'Чертёж уже создан — открываем его'
+        : 'Согласованный чертёж перенесён в «Чертежи»');
+      Modal.close();
+      App.navigateTo('calculator?drawing=' + drawing.id + '&client=' + this.clientId);
     } catch (err) { Toast.error(err.message); }
   },
 
@@ -1449,75 +1723,32 @@ const ClientProfilePage = {
     } catch (err) { Toast.error(err.message); }
   },
 
-  // Загрузка чертежа с проверкой дубликатов
+  // Загрузка чертежа: название = имя файла, комментарий — в описание.
+  // Один BOM может быть у нескольких клиентов, поэтому тот же файл не дублируем,
+  // а привязываем существующий чертёж к клиенту.
   uploadDrawing() {
-    this._uploadFile('Загрузить чертёж', 'drawing', async (fileRes, name, desc) => {
-      // Проверка дубликатов
-      try {
-        const dupRes = await API.get(`/drawings/check-duplicate?name=${encodeURIComponent(name)}`);
-        const duplicates = (dupRes.data || []).filter(d => d.client_id !== this.clientId || d.name !== name);
-
-        if (duplicates.length > 0) {
-          // Найдены похожие — предложить выбрать
-          const dupList = duplicates.map(d =>
-            `<div style="padding:10px;border:1px solid var(--border);border-radius:8px;margin:6px 0;cursor:pointer;transition:background 0.15s"
-                  onmouseenter="this.style.background='var(--bg-hover)'" onmouseleave="this.style.background=''"
-                  onclick="ClientProfilePage._useDuplicate(${d.id})">
-              <strong>${d.name}</strong>
-              <span style="color:var(--text-muted);font-size:0.85rem">${d.client_name ? ' · ' + d.client_name : ''}</span>
-              ${parseInt(d.components_count) > 0 ? '<span style="color:var(--accent-teal);margin-left:6px">📊 с расчётом</span>' : ''}
-            </div>`
-          ).join('');
-
-          Modal.open({
-            title: '⚠️ Найдены похожие чертежи',
-            body: `
-              <p style="margin-bottom:12px">Найдены чертежи с похожим названием:</p>
-              ${dupList}
-              <hr style="margin:16px 0;border:0;border-top:1px solid var(--border)">
-              <p style="color:var(--text-muted);font-size:0.88rem">Или загрузить как новый чертёж:</p>
-            `,
-            footer: `
-              <button class="btn btn-secondary" onclick="Modal.close()">Отмена</button>
-              <button class="btn btn-primary" onclick="ClientProfilePage._uploadDrawingNew('${name.replace(/'/g, "\\'")}', '${fileRes.path}', '${fileRes.file_type || fileRes.path.split('.').pop()}', '${(desc || '').replace(/'/g, "\\'")}')">Загрузить как новый</button>
-            `,
-          });
-          return;
-        }
-      } catch (e) { /* ignore duplicate check errors, proceed with upload */ }
-
-      // Нет дубликатов — загрузить
-      await API.post(`/clients/${this.clientId}/documents/drawings`, {
-        name, file_path: fileRes.path, file_type: fileRes.file_type || fileRes.path.split('.').pop(), description: desc,
-      });
-      Toast.success('Чертёж загружен');
-      Modal.close();
-      this.switchTab('drawings');
-    });
+    this._uploadFile('Загрузить чертёж', 'drawing', async (fileRes, name, comment) => {
+      await this._uploadDrawingNew(name, fileRes.path, fileRes.file_type || fileRes.path.split('.').pop(), comment);
+    }, { nameFromFile: true });
   },
 
   async _uploadDrawingNew(name, filePath, fileType, desc) {
     try {
+      // Сначала пробуем привязать уже существующий чертёж с тем же файлом
+      const dupRes = await API.get(`/drawings/check-duplicate?file_path=${encodeURIComponent(filePath)}`);
+      const sameFile = (dupRes.data || []).find(d => !d.archived_at);
+      if (sameFile) {
+        await API.post(`/drawings/${sameFile.id}/clients`, { client_id: this.clientId });
+        Toast.success('Файл уже есть в системе — чертёж привязан к клиенту');
+        Modal.close();
+        this.switchTab('drawings');
+        return;
+      }
+
       await API.post(`/clients/${this.clientId}/documents/drawings`, {
         name, file_path: filePath, file_type: fileType, description: desc,
       });
       Toast.success('Чертёж загружен');
-      Modal.close();
-      this.switchTab('drawings');
-    } catch (err) { Toast.error(err.message); }
-  },
-
-  async _useDuplicate(drawingId) {
-    // Привязать существующий чертёж к текущему клиенту (если не привязан)
-    try {
-      const drawing = await API.get(`/drawings/${drawingId}`);
-      if (!drawing.client_id || drawing.client_id == this.clientId) {
-        // Привязать к клиенту
-        await API.put(`/drawings/${drawingId}`, { client_id: this.clientId });
-        Toast.success('Чертёж привязан к клиенту');
-      } else {
-        Toast.info(`Чертёж уже привязан к другому клиенту. Откройте его в калькуляторе.`);
-      }
       Modal.close();
       this.switchTab('drawings');
     } catch (err) { Toast.error(err.message); }
@@ -1535,12 +1766,27 @@ const ClientProfilePage = {
     });
   },
 
-  _uploadFile(title, uploadType, onSave) {
+  _uploadFile(title, uploadType, onSave, options = {}) {
+    const nameFromFile = !!options.nameFromFile;
+    const nameField = nameFromFile
+      ? `<div id="upload-name-hint" style="padding:8px 12px;background:var(--bg-tertiary);border-radius:8px;font-size:0.85rem;color:var(--text-secondary)">
+           Название чертежа: <strong id="upload-name-display">выберите файл</strong>
+           <span style="color:var(--text-muted)">— берётся из имени файла</span>
+           <input type="hidden" id="upload-name">
+         </div>`
+      : '<div class="form-group"><label>Название *</label><input type="text" class="form-control" id="upload-name"></div>';
+    const descField = nameFromFile
+      ? `<div class="form-group">
+           <label>Комментарий</label>
+           <textarea class="form-control" id="upload-desc" rows="2" placeholder="Что это за чертёж, версия, примечания"></textarea>
+         </div>`
+      : '<div class="form-group"><label>Описание</label><input type="text" class="form-control" id="upload-desc"></div>';
+
     Modal.open({
       title,
       body: `
-        <div class="form-group"><label>Название *</label><input type="text" class="form-control" id="upload-name"></div>
-        <div class="form-group"><label>Описание</label><input type="text" class="form-control" id="upload-desc"></div>
+        ${nameField}
+        ${descField}
         <div class="form-group">
           <label>Файл *</label>
           <div class="upload-zone" id="upload-file-zone" style="padding:20px;text-align:center">
@@ -1570,8 +1816,12 @@ const ClientProfilePage = {
         uploadedFile = await API.upload(`/upload/${uploadType}`, formData);
         status.textContent = `✅ ${uploadedFile.originalname}`;
         document.getElementById('upload-save-btn').disabled = false;
-        if (!document.getElementById('upload-name').value) {
-          document.getElementById('upload-name').value = e.target.files[0].name.replace(/\.[^.]+$/, '');
+        const fileName = e.target.files[0].name.replace(/\.[^.]+$/, '');
+        if (nameFromFile) {
+          document.getElementById('upload-name').value = fileName;
+          document.getElementById('upload-name-display').textContent = fileName;
+        } else if (!document.getElementById('upload-name').value) {
+          document.getElementById('upload-name').value = fileName;
         }
       } catch (err) {
         status.textContent = '❌ Ошибка загрузки';
@@ -1589,8 +1839,8 @@ const ClientProfilePage = {
   },
 
   async deleteDrawing(id) {
-    if (!await ConfirmDialog.delete('Удалить чертёж?')) return;
-    try { await API.del(`/clients/${this.clientId}/documents/drawings/${id}`); Toast.success('Удалено'); this.switchTab('drawings'); }
+    if (!await ConfirmDialog.delete('Отправить чертёж в архив? Он сохранится и его можно будет вернуть.')) return;
+    try { await API.del(`/clients/${this.clientId}/documents/drawings/${id}`); Toast.success('Чертёж в архиве'); this.switchTab('drawings'); }
     catch (err) { Toast.error(err.message); }
   },
 

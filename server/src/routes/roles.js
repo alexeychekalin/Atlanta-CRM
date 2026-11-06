@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
 const adminOnly = require('../middleware/role');
+const { invalidateAccessCache } = require('../middleware/access');
 
 const router = express.Router();
 
@@ -67,6 +68,7 @@ router.post('/', auth, adminOnly, async (req, res) => {
       RETURNING *
     `, [sysName, display_name.trim(), description ? description.trim() : null, JSON.stringify(perms)]);
 
+    invalidateAccessCache();
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Ошибка создания роли:', err);
@@ -107,6 +109,7 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
       req.params.id,
     ]);
 
+    invalidateAccessCache();
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Ошибка обновления роли:', err);

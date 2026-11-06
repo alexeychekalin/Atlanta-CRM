@@ -1019,6 +1019,339 @@ textarea.form-control {
 }
 
 /* =============================================
+   LIGHTBOX — просмотр фотографий поверх карточки
+   z-index выше модального окна: закрытие просмотра
+   возвращает к карточке, а не закрывает её
+   ============================================= */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  display: none;
+  flex-direction: column;
+  background: rgba(2, 6, 23, 0.94);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.lightbox.is-open {
+  display: flex;
+}
+
+body.lightbox-open {
+  overflow: hidden;
+}
+
+.lightbox__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  color: var(--text-primary);
+  flex: none;
+}
+
+.lightbox__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lightbox__tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+
+.lightbox__counter {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  background: rgba(148, 163, 184, 0.14);
+  border-radius: 999px;
+  padding: 4px 11px;
+}
+
+.lightbox__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-primary);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.lightbox__close:hover {
+  background: rgba(148, 163, 184, 0.22);
+  border-color: var(--border-hover);
+}
+
+.lightbox__stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 clamp(56px, 8vw, 96px) 8px;
+}
+
+.lightbox__image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  cursor: default;
+}
+
+.lightbox__nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.75);
+  color: var(--text-primary);
+  font-size: 1.9rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.lightbox__nav:hover {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: var(--accent-teal);
+}
+
+.lightbox__nav:active {
+  transform: translateY(-50%) scale(0.95);
+}
+
+.lightbox__nav--prev {
+  left: 10px;
+}
+
+.lightbox__nav--next {
+  right: 10px;
+}
+
+.lightbox__thumbs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px 18px;
+  overflow-x: auto;
+  justify-content: center;
+  flex: none;
+}
+
+.lightbox__thumb {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  background: rgba(148, 163, 184, 0.1);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity var(--transition-fast), border-color var(--transition-fast);
+}
+
+.lightbox__thumb:hover {
+  opacity: 0.9;
+}
+
+.lightbox__thumb.is-active {
+  border-color: var(--accent-teal);
+  opacity: 1;
+}
+
+.lightbox__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* одно фото — нечего листать */
+.lightbox--single .lightbox__nav,
+.lightbox--single .lightbox__thumbs {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .lightbox__stage {
+    padding: 0 8px 4px;
+  }
+
+  .lightbox__nav {
+    width: 38px;
+    height: 38px;
+    font-size: 1.5rem;
+    top: auto;
+    bottom: 96px;
+    transform: none;
+  }
+
+  .lightbox__nav:active {
+    transform: scale(0.95);
+  }
+
+  .lightbox__nav--prev {
+    left: 12px;
+  }
+
+  .lightbox__nav--next {
+    right: 12px;
+  }
+
+  .lightbox__thumb {
+    width: 52px;
+    height: 52px;
+  }
+}
+
+/* =============================================
+   SEARCH CLEAR — кнопка «×» в полях поиска
+   ============================================= */
+.search-clear-wrap {
+  position: relative;
+  display: inline-block;
+  min-width: 0;
+  vertical-align: middle;
+}
+.search-clear-wrap > input { width: 100%; }
+
+.search-clear {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-secondary, rgba(148, 163, 184, 0.22));
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  z-index: 2;
+}
+.search-clear:hover {
+  background: var(--accent-teal);
+  color: #fff;
+}
+.search-clear[hidden] { display: none; }
+
+/* место под кнопку, чтобы текст не заезжал под неё */
+input.search-clear-host,
+.search-input input.search-clear-host,
+.global-search-input.search-clear-host {
+  padding-right: 36px;
+}
+
+/* в глобальном поиске подсказка Ctrl+K уступает место «×» */
+.global-search-input-wrap.has-search-value .global-search-kbd { display: none; }
+
+/* =============================================
+   CHIP FILTER — быстрые фильтры категорий
+   В скобках — сколько позиций найдено при текущем поиске.
+   ============================================= */
+.chip-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.chip-filter:hover {
+  border-color: var(--accent-teal);
+  color: var(--text-primary);
+}
+.chip-filter:focus-visible {
+  outline: 2px solid var(--accent-teal);
+  outline-offset: 2px;
+}
+.chip-filter.active {
+  background: var(--gradient-primary);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: var(--shadow-glow-teal);
+}
+
+/* по текущему поиску в категории пусто — фильтр никуда не ведёт */
+.chip-filter--empty {
+  opacity: 0.55;
+  border-style: dashed;
+}
+.chip-filter--empty:hover { opacity: 0.85; }
+.chip-filter--empty.active {
+  opacity: 1;
+  border-style: solid;
+}
+
+@media (max-width: 767px) {
+  .chip-filter {
+    padding: 5px 10px;
+    font-size: 0.75rem;
+  }
+}
+
+/* =============================================
+   COPYABLE — артикул копируется кликом
+   ============================================= */
+.copyable {
+  cursor: copy;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+.copyable:hover {
+  background: rgba(45, 212, 191, 0.14);
+  color: var(--accent-teal);
+}
+.copyable.is-copied {
+  background: rgba(34, 197, 94, 0.22);
+  color: #22c55e;
+}
+.copyable.is-copy-failed {
+  background: rgba(239, 68, 68, 0.18);
+  color: #ef4444;
+}
+
+/* =============================================
    TOAST NOTIFICATIONS
    ============================================= */
 .toast-container {
@@ -1521,6 +1854,13 @@ textarea.form-control {
   margin-bottom: 20px;
   border-bottom: 1px solid var(--border);
   padding-bottom: 0;
+}
+
+/* Админская вкладка прижата к правому краю полосы вкладок */
+.tab-btn-admin {
+  margin-left: auto;
+  color: var(--accent-teal);
+  font-weight: 600;
 }
 
 .tab-btn {

@@ -95,11 +95,16 @@ CREATE TABLE IF NOT EXISTS equipment_types (
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMP DEFAULT now()
 );
-INSERT INTO equipment_types (name, icon, sort_order) VALUES
-  ('Полуприцепы', '🚛', 1),
-  ('Легковые прицепы', '🚗', 2),
-  ('Сельхозтехника', '🚜', 3)
-ON CONFLICT DO NOTHING;
+INSERT INTO equipment_types (name, icon, sort_order)
+SELECT v.name, v.icon, v.sort_order
+  FROM (VALUES
+    ('Полуприцепы', '🚛', 1),
+    ('Легковые прицепы', '🚗', 2),
+    ('Сельхозтехника', '🚜', 3)
+  ) AS v(name, icon, sort_order)
+ WHERE NOT EXISTS (
+   SELECT 1 FROM equipment_types t WHERE lower(t.name) = lower(v.name)
+ );
 
 CREATE TABLE IF NOT EXISTS manufacturers (
   id SERIAL PRIMARY KEY,
