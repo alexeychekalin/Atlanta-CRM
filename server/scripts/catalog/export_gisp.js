@@ -16,6 +16,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { describeDbError } = require('../../src/utils/db-error');
 
 const CATALOG_JSON = path.join(__dirname, '../../src/db/catalog/catalog.json');
 
@@ -55,17 +56,22 @@ async function main() {
   const dryRun = args.has('--dry-run');
   const prune = args.has('--prune');
 
-  let db;
+  const db = require('../../src/db');
+  const config = JSON.parse(fs.readFileSync(CATALOG_JSON, 'utf8'));
+
+  let gisp;
   try {
-    db = require('../../src/db');
+    gisp = await readFromDb(db);
   } catch (err) {
-    console.error('❌ Не удалось подключиться к базе:', err.message);
+    console.error('❌ Не удалось прочитать базу:', describeDbError(err));
+    console.error(process.env.PGLITE_DIR
+      ? '   Демо-база: cd server && npm run demo:export-gisp'
+      : '   Проверьте DATABASE_URL в server/.env (docs/deploy-vps.md).' +
+        ' Демо-база: cd server && npm run demo:export-gisp');
     process.exitCode = 1;
+    if (typeof db.close === 'function') await db.close();
     return;
   }
-
-  const config = JSON.parse(fs.readFileSync(CATALOG_JSON, 'utf8'));
-  const gisp = await readFromDb(db);
   console.log(`🔗 Позиций со ссылкой на ГИСП в базе: ${gisp.size}`);
 
   const changes = apply(config.components, gisp, { prune });
