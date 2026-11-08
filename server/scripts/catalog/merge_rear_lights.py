@@ -16,6 +16,11 @@
          А.3776.005/А.3731.007 + 4 исполнения (Л/П × 01/05)
          А.3776.005/А.3731.002.3 + 4 исполнения (Л/П × 01/05)
 
+У фонарей 008 и 008.1 комплектов в каталоге нет — они собираются по аналогии
+с 005 (решение заказчика): те же «клюшка» и «рожок» с теми же исполнениями,
+только разъёмов у 008 два варианта — 01 и 03. Фото у таких комплектов —
+составляющие: сам фонарь и габаритный фонарь.
+
 Код исполнения — то, что напечатано после артикула: «Л-01», «П-05». Полный
 артикул записывается в full_article, потому что склейка «изделие-код» дала бы
 А.3776.005-Л-01; у комплекта печатный артикул ещё и со слэшем:
@@ -57,24 +62,28 @@ CONNECTION_03 = ('7-контактный разъём и два 2-контакт
                  '7-контактный разъём и два 2-контактных — всего 3 разъёма',
                  '7-контактный и два 2-контактных (3 разъёма)')
 
+KITS = {'А.3731.007': 'клюшка', 'А.3731.002.3': 'рожок'}
+
 FAMILIES = [
     {
         'article': 'А.3776.005',
         'name': 'Фонарь задний многофункциональный (ФОНАРЬ 005)',
         'connections': {'01': CONNECTION_01, '05': CONNECTION_05},
-        'kits': {'А.3731.007': 'клюшка', 'А.3731.002.3': 'рожок'},
+        'kits': KITS,
     },
     {
         'article': 'А.3776.008',
         'name': 'Фонарь задний комбинированный (ФОНАРЬ 008)',
         'connections': {'01': CONNECTION_01, '03': CONNECTION_03},
-        'kits': {},
+        'kits': KITS,
+        'kits_analogy': True,
     },
     {
         'article': 'А.3776.008.1',
         'name': 'Фонарь задний комбинированный с центральной подсветкой номера (ФОНАРЬ 008 с ФОНЗ)',
         'connections': {'01': CONNECTION_01, '03': CONNECTION_03},
-        'kits': {},
+        'kits': KITS,
+        'kits_analogy': True,
         'extra': 'Тот же фонарь 008 с центральной подсветкой номерного знака.',
     },
     {
@@ -96,6 +105,8 @@ def file_hash(name):
 def unique_files(names):
     seen, out = set(), []
     for name in names:
+        if not name:
+            continue
         digest = file_hash(name)
         if digest in seen:
             continue
@@ -140,6 +151,16 @@ def family_note(family):
     return ' '.join(parts)
 
 
+def kits_sentence(articles, analogy=False):
+    if not articles:
+        return ''
+    text = ('Комплекты с дополнительным габаритным фонарём — отдельные изделия: '
+            + ', '.join(articles) + '.')
+    if analogy:
+        text += ' Комплекты собираются по аналогии с фонарём 005.'
+    return text
+
+
 def kit_word(family, extra, *texts):
     """Как фонарь называют в каталоге: «клюшка», «рожок»."""
     word = (family.get('kits') or {}).get(extra)
@@ -150,13 +171,6 @@ def kit_word(family, extra, *texts):
         if match:
             return match.group(1)
     return ''
-
-
-def kits_sentence(articles):
-    if not articles:
-        return ''
-    return ('Комплекты с дополнительным габаритным фонарём — отдельные изделия: '
-            + ', '.join(articles) + '.')
 
 
 def family_description(texts, name, note):
@@ -177,7 +191,7 @@ def family_description(texts, name, note):
     return f'{name}.\n{note}\n' + '\n'.join(kept).strip()
 
 
-def kit_description(family, extra):
+def kit_description(family, extra, analogy=False):
     """Название и описание изделия-комплекта: в названии оба артикула, состав — в описании."""
     word = kit_word(family, extra)
     label = f'{extra} «{word}»' if word else extra
@@ -186,6 +200,8 @@ def kit_description(family, extra):
             f'В комплект входят {lower_first(family["name"])} и габаритный фонарь {label}; '
             f'артикул комплекта печатается через слэш — {family["article"]}Л-01/{extra}. '
             f'{connections_note(family)}')
+    if analogy:
+        text += ' Комплект собирается по аналогии с фонарём 005.'
     return name, text
 
 
@@ -247,10 +263,10 @@ def append_body(entry, base_description):
     return entry
 
 
-def build_kit_entry(family, extra, mods, template):
+def build_kit_entry(family, extra, mods, template, extra_cover=None, analogy=False):
     """Изделие-комплект: исполнения — сторона + число разъёмов."""
     base = family['article']
-    name, description = kit_description(family, extra)
+    name, description = kit_description(family, extra, analogy=analogy)
     modifications, images = [], []
     for order, mod in enumerate(sorted(mods, key=lambda m: (SIDE_ORDER.get(m['_side'], 9),
                                                             m['code']))):
@@ -263,6 +279,10 @@ def build_kit_entry(family, extra, mods, template):
         })
         images.extend(mod.get('images') or [])
     images = unique_files(images)
+    if not images and extra_cover:
+        # своего снимка у комплекта нет — показываем то, из чего он собран
+        images = unique_files([template.get('image'), extra_cover])
+        description += '\nНа фотографиях показаны составляющие комплекта — фонарь и габаритный фонарь.'
     return {
         'category': template['category'],
         'article': f'{base}/{extra}',
@@ -271,18 +291,38 @@ def build_kit_entry(family, extra, mods, template):
         'specs': template.get('specs') or {},
         'image': images[0] if images else None,
         'source_page': template.get('source_page'),
-        'supersedes': [mod['full_article'] for mod in modifications],
+        # у комплекта «по аналогии» прежних артикулов не было — гасить нечего
+        'supersedes': [] if analogy else [mod['full_article'] for mod in modifications],
         'modifications': modifications,
         'images': images,
     }
 
 
+def synth_kit_mods(family, base_entry, extra):
+    """Исполнения комплекта по аналогии: те же стороны и разъёмы, что у изделия."""
+    mods = []
+    for mod in base_entry.get('modifications') or []:
+        code = mod.get('code') or ''
+        if '/' in code:
+            continue
+        parsed = parse_code(family, code)
+        if not parsed:
+            print(f'   ⚠️  не разобрать код {code} — пропуск')
+            continue
+        side, conn = parsed
+        mods.append({
+            'code': kit_code(side, conn),
+            'full_article': f"{family['article']}{side}-{conn}/{extra}",
+            'name': mod.get('name') or kit_mod_name(family, side, conn),
+            'images': [],
+            '_side': side,
+        })
+    return mods
+
+
 def build_from_flats(family, sides, kits):
     """Первый прогон: из плоских «Л»/«П» и комплектов — изделие и изделия-комплекты."""
     base = family['article']
-    if not sides:
-        return None
-
     modifications = []
     seen = set()
     for side in sorted(sides, key=lambda s: SIDE_ORDER.get(s, 9)):
@@ -338,7 +378,7 @@ def build_from_flats(family, sides, kits):
     description = family_description(
         [member.get('description') or '' for member in sides.values()],
         family['name'],
-        family_note(family) + ' ' + kits_sentence([f'{e["article"]}' for e in entries]),
+        family_note(family) + ' ' + kits_sentence(sorted(e['article'] for e in entries)),
     )
     for entry in entries:
         append_body(entry, description)
@@ -386,7 +426,7 @@ def split_merged(family, component):
                sorted(groups.items())]
 
     # описание изделия: убираем абзац про комплекты и заново собираем вводную строку
-    note = family_note(family) + ' ' + kits_sentence([entry['article'] for entry in entries])
+    note = family_note(family) + ' ' + kits_sentence(sorted(entry['article'] for entry in entries))
     body = [line for line in (component.get('description') or '').split('\n')[1:]
             if line.strip() and 'Комплект' not in line]
     description = f'{component["name"]}.\n{note}\n' + '\n'.join(body)
@@ -404,16 +444,76 @@ def split_merged(family, component):
     return [base_entry] + entries
 
 
-def apply_family(family, components):
-    """Новые позиции семьи или None, если менять нечего."""
+def plan_family(family, components):
+    """Что сделать с семьёй: вставить, удалить, куда вставить. None — менять нечего."""
+    base = family['article']
     sides, kits = collect(family, components)
-    base = next((item for item in components if item['article'] == family['article']), None)
+    component = next((item for item in components if item['article'] == base), None)
+
+    entries, drop, analogy_kits = [], [], False
 
     if sides:
-        return build_from_flats(family, sides, kits)
-    if base and any('/' in (mod.get('code') or '') for mod in base.get('modifications') or []):
-        return split_merged(family, base)
-    return None
+        entries = build_from_flats(family, sides, kits) or []
+        drop = [item['article'] for item in sides.values()] + [item['article'] for item in kits]
+        anchor = next(iter(sides.values()))['article']
+        replace_base = True
+    elif component and any('/' in (mod.get('code') or '') for mod in component.get('modifications') or []):
+        entries = split_merged(family, component) or []
+        drop = [base]
+        anchor = base
+        replace_base = True
+    elif component:
+        entries, anchor, replace_base = [], base, False
+    else:
+        return None
+
+    # комплекты, которых в каталоге нет: собираем по аналогии с 005
+    if family.get('kits_analogy'):
+        source = next((entry for entry in entries if entry['article'] == base), component)
+        present = {entry['article'] for entry in entries}
+        present |= {item['article'] for item in components if item['article'].startswith(f'{base}/')}
+        if source:
+            for extra in sorted(family.get('kits') or {}):
+                if f'{base}/{extra}' in present:
+                    continue
+                mods = synth_kit_mods(family, source, extra)
+                if not mods:
+                    continue
+                extra_cover = next((item.get('image') for item in components
+                                    if item['article'] == extra), None)
+                entries.append(build_kit_entry(family, extra, mods, source,
+                                               extra_cover=extra_cover, analogy=True))
+                analogy_kits = True
+
+        if analogy_kits:
+            # в описании изделия — ссылки на его комплекты
+            base_entry = next((entry for entry in entries if entry['article'] == base), None)
+            if base_entry:
+                entries[entries.index(base_entry)] = with_kits_note(family, base_entry, entries)
+            elif component:
+                entries.insert(0, with_kits_note(family, component, entries))
+                drop.append(base)
+                replace_base = True
+
+    if not entries:
+        return None
+    return {'entries': entries, 'drop': drop, 'anchor': anchor, 'replace_base': replace_base}
+
+
+def with_kits_note(family, base_entry, entries):
+    """В описании изделия — ссылки на изделия-комплекты (в том числе собранные по аналогии)."""
+    articles = [entry['article'] for entry in entries
+                if entry['article'] != base_entry['article']]
+    if not articles:
+        return base_entry
+    entry = dict(base_entry)
+    note = family_note(family) + ' ' + kits_sentence(sorted(articles), analogy=True)
+    body = [line for line in (entry.get('description') or '').split('\n')[1:]
+            if line.strip()
+            and 'Комплекты с дополнительным' not in line
+            and 'Исполнение задаётся стороной' not in line]
+    entry['description'] = f'{entry["name"]}.\n{note}\n' + '\n'.join(body)
+    return entry
 
 
 def plural(count, one, few, many):
@@ -424,6 +524,13 @@ def plural(count, one, few, many):
     return many
 
 
+def print_entry(entry):
+    print(f'\n── {entry["article"]} {entry["name"]}')
+    print('   описание:', entry['description'].split('\n')[0], '…')
+    for mod in entry['modifications']:
+        print(f'   {mod["full_article"]:<38} {mod["name"][:70]}')
+
+
 def main():
     parser = argparse.ArgumentParser(description='Собрать задние фонари «изделие + исполнения»')
     parser.add_argument('--dry-run', action='store_true', help='только показать, что изменится')
@@ -432,65 +539,47 @@ def main():
     config = json.loads(CATALOG_JSON.read_text(encoding='utf-8'))
     components = config['components']
 
-    replace = {}                       # артикул новой позиции → позиция
-    drop = set()                       # что уходит из каталога
-    order = {}                         # после какого артикула вставить
-
+    plans, new_by_article = {}, {}
     for family in FAMILIES:
-        entries = apply_family(family, components)
-        if not entries:
+        plan = plan_family(family, components)
+        if not plan:
             continue
-        base = family['article']
-        old_sides = [item for item in components if item['article'] in
-                     {entry['article'] for entry in entries} or
-                     (item['article'].startswith(base) and
-                      item['article'][len(base):][:1] in SIDES)]
-        anchor = old_sides[0]['article'] if old_sides else base
-        order[base] = anchor
-        for item in old_sides:
-            drop.add(item['article'])
-        for entry in entries:
-            replace[entry['article']] = entry
-        mods = sum(len(entry['modifications']) for entry in entries)
-        kits = len(entries) - 1
-        print(f'{base}: {len(old_sides)} {plural(len(old_sides), "позиция", "позиции", "позиций")} → '
-              f'1 изделие' + (f' + {kits} {plural(kits, "комплект", "комплекта", "комплектов")}' if kits else '')
-              + f', {mods} исполнений, {len(entries[0]["images"])} фото')
+        plans[family['article']] = plan
+        for entry in plan['entries']:
+            new_by_article[entry['article']] = entry
+        added = [entry['article'] for entry in plan['entries']
+                 if entry['article'] not in {item['article'] for item in components}]
+        print(f'{family["article"]}: вставка {len(plan["entries"])} поз., '
+              f'удаление {len(plan["drop"])} поз.'
+              + (f', новых: {", ".join(added)}' if added else ''))
 
-    if not replace:
+    if not plans:
         print('ℹ️  Задние фонари уже собраны — менять нечего.')
         return
 
-    result, placed = [], set()
+    result = []
+    inserted = set()
     for item in components:
-        article = item['article']
-        for base, anchor in order.items():
-            if article == anchor and base not in placed:
-                result.extend(replace[key] for key in sorted(replace)
-                              if key == base or key.startswith(f'{base}/'))
-                placed.add(base)
-        if article in drop:
+        plan = next((p for p in plans.values() if item['article'] == p['anchor']), None)
+        if plan and plan['anchor'] not in inserted:
+            inserted.add(plan['anchor'])
+            result.extend(new_by_article[entry['article']] for entry in plan['entries'])
+        if any(item['article'] in p['drop'] for p in plans.values()):
             continue
         result.append(item)
 
-    for base in order:
-        if base in placed:
+    for key, plan in plans.items():
+        if plan['anchor'] in inserted:
             continue
-        result.extend(replace[key] for key in sorted(replace)
-                      if key == base or key.startswith(f'{base}/'))
+        result.extend(new_by_article[entry['article']] for entry in plan['entries'])
 
     print(f'позиций в каталоге: {len(components)} → {len(result)}')
+    print(f'исполнений: {sum(len(c.get("modifications") or []) for c in components)} → '
+          f'{sum(len(c.get("modifications") or []) for c in result)}')
 
     if args.dry_run:
-        for family in FAMILIES:
-            for entry in replace.values():
-                if entry['article'] != family['article'] and \
-                        not entry['article'].startswith(family['article'] + '/'):
-                    continue
-                print(f'\n── {entry["article"]} {entry["name"]}')
-                print('   описание:', entry['description'].split('\n')[0], '…')
-                for mod in entry['modifications']:
-                    print(f'   {mod["full_article"]:<34} {mod["name"][:74]}')
+        for entry in new_by_article.values():
+            print_entry(entry)
         return
 
     config['components'] = result

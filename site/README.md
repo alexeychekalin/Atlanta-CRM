@@ -53,7 +53,7 @@ python3 site/build.py --domain https://atlanta.ru   # домен без прав
 
 ```
 /                                    главная
-/catalog/                            все 187 позиций с поиском (в том числе по исполнениям)
+/catalog/                            все 191 позиция с поиском (в том числе по исполнениям)
 /catalog/<раздел>/                   11 разделов
 /catalog/<раздел>/<артикул>/         214 карточек
 /about/ /certificates/ /delivery/ /contacts/ /privacy/ /404.html

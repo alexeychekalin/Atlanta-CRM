@@ -271,21 +271,29 @@ def counts(component_count, modification_count):
 
 
 def localize_counts(value, component_count, modification_count):
-    """Заменить зашитые в текстах «214 позиций» / «867 исполнений» на фактические числа."""
+    """Числа каталога в текстах content.json: «214 позиций» → «191 позиция».
+
+    Работает с любым числом в исходнике, поэтому тексты не устаревают при
+    изменении каталога; плитки со счётчиками берут число из catalog.json.
+    """
+    positions = f'{component_count} ' + plural(component_count, ('позиция', 'позиции', 'позиций'))
+    modifications = (f'{modification_count} ' +
+                     plural(modification_count, ('исполнение', 'исполнения', 'исполнений')))
     if isinstance(value, dict):
         result = {key: localize_counts(item, component_count, modification_count)
                   for key, item in value.items()}
-        # плитки «214 позиций» / «867 исполнений»: число лежит отдельным полем
-        if result.get('value') == '214':
+        label = str(result.get('label') or '')
+        if 'позиц' in label:
             result['value'] = str(component_count)
-        if result.get('value') == '867':
+        elif 'исполнен' in label:
             result['value'] = str(modification_count)
         return result
     if isinstance(value, list):
         return [localize_counts(item, component_count, modification_count) for item in value]
     if isinstance(value, str):
-        return (value.replace('214 позиц', counts(component_count, modification_count).split(', ')[0])
-                     .replace('867 исполнен', counts(component_count, modification_count).split(', ')[1]))
+        value = re.sub(r'\b\d+\s+позици[яий]\b', positions, value)
+        value = re.sub(r'\b\d+\s+исполнени[яей]\b', modifications, value)
+        return value
     return value
 
 

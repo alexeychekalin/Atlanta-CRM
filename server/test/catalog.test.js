@@ -101,6 +101,24 @@ test('каталог: полные артикулы совпадают с печ
   assert.ok(socket, 'нет изделия-комплекта А.3776.005/А.3731.002.3');
   assert.equal(socket.modifications.length, 4);
 
+  // у фонарей 008 и 008.1 комплекты собраны по аналогии с 005:
+  // те же «клюшка» и «рожок», свои коды — 01 и 03 разъёма
+  for (const light of ['А.3776.008', 'А.3776.008.1']) {
+    for (const extra of ['А.3731.007', 'А.3731.002.3']) {
+      const kit = byArticle.get(`${light}/${extra}`);
+      assert.ok(kit, `нет изделия-комплекта ${light}/${extra}`);
+      assert.deepEqual(kit.modifications.map(m => m.code), ['Л-01', 'Л-03', 'П-01', 'П-03'],
+        `${light}/${extra}: исполнения`);
+      assert.deepEqual(kit.modifications.map(m => m.full_article), [
+        `${light}Л-01/${extra}`, `${light}Л-03/${extra}`,
+        `${light}П-01/${extra}`, `${light}П-03/${extra}`,
+      ]);
+      assert.ok(kit.images.length > 0, `${light}/${extra}: нет фото`);
+      assert.deepEqual(kit.supersedes, [], `${light}/${extra}: прежних артикулов быть не должно`);
+    }
+    assert.match(byArticle.get(light).description, /по аналогии с фонарём 005/);
+  }
+
   // прежние плоские артикулы погашены, в том числе старые комплекты
   assert.deepEqual(byArticle.get('А.3776.005Л'), undefined, 'остался прежний артикул А.3776.005Л');
   assert.deepEqual(byArticle.get('А.3776.005Л-01/А.3731.007'), undefined,
