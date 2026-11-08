@@ -73,18 +73,28 @@ test('каталог: полные артикулы совпадают с печ
     ['А.3776.001.1-Б', 'А.3776.001.1-Б-01', 'А.3776.001.1-Б-02.02']
   );
 
-  // комплект — один артикул со слэшем, без модификаций
-  const set = byArticle.get('А.3776.005Л-01/А.3731.007');
-  assert.ok(set, 'нет комплекта А.3776.005Л-01/А.3731.007');
-  assert.deepEqual(set.modifications, []);
-  assert.equal(fullArticle(set.article, undefined), 'А.3776.005Л-01/А.3731.007');
+  // задние фонари: изделие без Л/П, сторона и число разъёмов — исполнения
+  const rear = byArticle.get('А.3776.005');
+  const codes = (rear.modifications || []).map(m => m.code);
+  for (const code of ['Л-01', 'Л-05', 'П-01', 'П-05']) {
+    assert.ok(codes.includes(code), `А.3776.005: нет исполнения ${code}`);
+  }
+  // комплект — исполнение с полным артикулом через слэш
+  const kit = rear.modifications.find(m => m.code === 'Л-01/А.3731.007');
+  assert.ok(kit, 'нет комплекта А.3776.005Л-01/А.3731.007');
+  assert.equal(kit.full_article, 'А.3776.005Л-01/А.3731.007');
+  assert.equal(fullArticle(rear.article, kit.code, kit.full_article), 'А.3776.005Л-01/А.3731.007');
+  // прежние плоские артикулы погашены
+  assert.deepEqual(byArticle.get('А.3776.005Л'), undefined, 'остался прежний артикул А.3776.005Л');
+  assert.ok((rear.supersedes || []).includes('А.3776.005Л-01/А.3731.007'),
+    'прежний комплект не в supersedes');
 });
 
 test('каталог: у позиций есть галерея, обложка берётся из неё', () => {
   const { components } = readConfig();
   const gallery = components.filter(entry => (entry.images || []).length > 0);
 
-  assert.ok(gallery.length >= 50, `позиций с галереей: ${gallery.length}`);
+  assert.ok(gallery.length >= 45, `позиций с галереей: ${gallery.length}`);
   for (const entry of gallery) {
     // у семейства с несколькими исполнениями фото больше, чем у одной позиции
     assert.ok(entry.images.length <= 20, `${entry.article}: больше двадцати фото в галерее`);
