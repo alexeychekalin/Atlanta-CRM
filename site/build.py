@@ -15,6 +15,7 @@
     site/dist/                результат (в git не коммитится)
 """
 import argparse
+import hashlib
 import html
 import json
 import re
@@ -339,6 +340,35 @@ def build_images(components, out_dir, skip=False):
     return made, names, dims
 
 
+def gallery_images(component, files_dir=None):
+    """Фото карточки: галерея изделия + снимки исполнений (комплектов) без повторов.
+
+    Повторы ловим и по имени, и по содержимому: у вариантов одного исполнения
+    поставщик кладёт один и тот же снимок под разными именами.
+    """
+    images, names, digests = [], set(), set()
+    for name in component.get('images') or []:
+        if name not in names:
+            names.add(name)
+            images.append(name)
+    for mod in component.get('modifications') or []:
+        for name in mod.get('images') or []:
+            if name in names:
+                continue
+            names.add(name)
+            if files_dir:
+                try:
+                    digest = hashlib.md5((files_dir / name).read_bytes()).hexdigest()
+                except OSError:
+                    digest = None
+                if digest:
+                    if digest in digests:
+                        continue
+                    digests.add(digest)
+            images.append(name)
+    return images
+
+
 def image_src(name, width=640):
     return f'/img/{Path(name).stem}-{width}.jpg'
 
@@ -357,6 +387,7 @@ class Site:
         self.dims = dims or {}
         self.catalog = catalog
         self.out = out_dir
+        self.files_dir = FILES_DIR
         self.site = content['site']
         self.components = catalog['components']
         self.categories = {item['key']: item for item in catalog['categories']}
@@ -564,7 +595,7 @@ class Site:
         }
 
     def schema_product(self, component):
-        images = component.get('images') or []
+        images = gallery_images(component, self.files_dir)
         category = self.categories.get(component['category'], {})
         data = {
             '@context': 'https://schema.org',
@@ -983,7 +1014,7 @@ class Site:
     def product_page(self, component):
         category = self.categories.get(component['category'], {'name': 'Каталог'})
         cat_slug = component['_cat_slug']
-        images = component.get('images') or []
+        images = gallery_images(component, self.files_dir)
         parsed = parse_description(component.get('description') or '')
 
         if images:
