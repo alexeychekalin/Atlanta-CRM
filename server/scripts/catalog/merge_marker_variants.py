@@ -21,6 +21,11 @@
 
 Прежние артикулы попадают в `supersedes` — импорт погасит/удалит их в базе.
 
+Правила подтверждены заказчиком: буква кронштейна — в конце артикула
+(`А.3731.010-03.04-Т`), подпись вариантов без кода — «разъём на корпусе»,
+варианты из прайсов дилеров (кабель 1,2/1,5 м) не добавляются — только то,
+что напечатано в каталоге АТЛАНТА-26.
+
 Запуск из корня репозитория:
 
     python3 server/scripts/catalog/merge_marker_variants.py --dry-run
@@ -134,6 +139,15 @@ def family_description(member_texts, name, note):
     return f'{header}\n{body}'.strip()
 
 
+def already_merged(family, components):
+    """Семья уже собрана: базовый артикул на месте, прежние — в его supersedes."""
+    base = next((item for item in components if item['article'] == family['article']), None)
+    if not base:
+        return False
+    supersedes = set(base.get('supersedes') or [])
+    return all(old in supersedes for old, _, _, _ in family['members'])
+
+
 def build_family(family, components):
     by_article = {item['article']: item for item in components}
     members = [by_article[old] for old, _, _, _ in family['members'] if old in by_article]
@@ -146,7 +160,7 @@ def build_family(family, components):
     for old_article, variant, letter, qualifier in family['members']:
         member = by_article.get(old_article)
         if not member:
-            print(f'   ⚠️  нет позиции {old_article} — пропуск')
+            print(f'   ⚠️  нет позиции {old_article} — пропуск (уже влита в изделие?)')
             continue
         old_mods = member.get('modifications') or []
         if not old_mods:
@@ -215,8 +229,16 @@ def main():
     config = json.loads(CATALOG_JSON.read_text(encoding='utf-8'))
     components = config['components']
 
+    if all(already_merged(family, components) for family in FAMILIES):
+        print('ℹ️  Семейства уже собраны — менять нечего. '
+              'Для пересборки верните плоские артикулы в catalog.json.')
+        return
+
     replace = {}
     for family in FAMILIES:
+        if already_merged(family, components):
+            print(f'{family["article"]}: уже собрано — пропуск')
+            continue
         entry = build_family(family, components)
         if not entry:
             print(f'⚠️  {family["article"]}: позиции не найдены — пропуск')
