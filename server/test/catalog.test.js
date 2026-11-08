@@ -360,3 +360,35 @@ test('ошибки БД: пустой message от pg превращается �
   assert.equal(describeDbError(new Error('column "x" does not exist')), 'column "x" does not exist');
   assert.equal(describeDbError(null), 'неизвестная ошибка');
 });
+
+test('ГИСП: ссылки из базы переносятся в catalog.json, пустая не стирает', () => {
+  const { apply } = require('../scripts/catalog/export_gisp');
+
+  const components = [
+    { article: 'А.1', name: 'без ссылки' },
+    { article: 'А.2', name: 'ссылка та же', gisp_url: 'https://gisp.gov.ru/2' },
+    { article: 'А.3', name: 'ссылка устарела', gisp_url: 'https://gisp.gov.ru/old' },
+    { article: 'А.4', name: 'снятая', gisp_url: 'https://gisp.gov.ru/4' },
+  ];
+  const gisp = new Map([
+    ['А.1', 'https://gisp.gov.ru/1'],
+    ['А.2', 'https://gisp.gov.ru/2'],
+    ['А.3', 'https://gisp.gov.ru/new'],
+    ['А.9', 'https://gisp.gov.ru/9'],
+  ]);
+
+  const changes = apply(components, gisp);
+  assert.deepEqual(changes.added, ['А.1']);
+  assert.deepEqual(changes.updated, ['А.3']);
+  assert.deepEqual(changes.removed, []);
+  assert.deepEqual(changes.missing, ['А.9']);
+  assert.equal(components[0].gisp_url, 'https://gisp.gov.ru/1');
+  assert.equal(components[2].gisp_url, 'https://gisp.gov.ru/new');
+  // ссылки нет в базе — значение из catalog.json остаётся
+  assert.equal(components[3].gisp_url, 'https://gisp.gov.ru/4');
+
+  // --prune снимает отметку, если её убрали в CRM
+  const pruned = apply(components, gisp, { prune: true });
+  assert.deepEqual(pruned.removed, ['А.4']);
+  assert.equal(components[3].gisp_url, undefined);
+});

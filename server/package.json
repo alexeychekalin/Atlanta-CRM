@@ -17,8 +17,10 @@
     "db:preseed": "node src/db/preseed.js",
     "demo:preseed": "node dev/preseed.js",
     "db:catalog": "node src/db/catalog.js",
+    "db:export-gisp": "node scripts/catalog/export_gisp.js",
     "db:data": "node src/db/data.js",
     "demo:catalog": "node dev/catalog.js",
+    "demo:export-gisp": "node dev/run.js scripts/catalog/export_gisp.js",
     "demo:data": "node dev/data.js",
     "db:init:full": "npm run db:init && npm run db:catalog",
     "demo:init:full": "npm run demo:init && npm run demo:catalog"

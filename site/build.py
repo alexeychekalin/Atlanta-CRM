@@ -374,6 +374,15 @@ def build_images(components, out_dir, skip=False):
     return made, names, dims
 
 
+def has_gisp(component):
+    """Изделие внесено в реестр ГИСП — на сайте получает отметку «Сделано в России».
+
+    Поле заполняется в карточке позиции в CRM (ссылка на запись в реестре) и
+    переносится в catalog.json скриптом scripts/catalog/export_gisp.js.
+    """
+    return bool(str(component.get('gisp_url') or '').strip())
+
+
 def gallery_images(component, files_dir=None):
     """Фото карточки: галерея изделия + снимки исполнений (комплектов) без повторов.
 
@@ -435,6 +444,7 @@ class Site:
             component['_cat_slug'] = CATEGORY_SLUGS.get(component['category'], 'prochee')
             component['_url'] = f"/catalog/{component['_cat_slug']}/{component['_slug']}/"
             self.by_slug[component['_slug']] = component
+        self.gisp_components = [item for item in self.components if has_gisp(item)]
         self.counts_text = counts(len(self.components),
                                   sum(len(item.get('modifications') or []) for item in self.components))
         self.category_counts = {}
@@ -445,7 +455,7 @@ class Site:
     # ------------------------------------------------------------ общий каркас
     def head(self, title, description, canonical, og_image='', extra=''):
         full_title = title if 'АТЛАНТА' in title else f'{title} — АТЛАНТА'
-        image = og_image or '/static/img/logo.svg'
+        image = og_image or '/static/img/logo.png'
         robots = '<meta name="robots" content="noindex">' if canonical == '/404.html' else ''
         return f'''<!doctype html>
 <html lang="ru" class="no-js">
@@ -461,9 +471,10 @@ class Site:
 <meta property="og:description" content="{esc(description)}">
 <meta property="og:url" content="{esc(self.site['domain'] + canonical)}">
 <meta property="og:image" content="{esc(self.site['domain'] + image)}">
-<meta name="theme-color" content="#0f1216">
+<meta name="theme-color" content="#2161a0">
 {robots}
-<link rel="icon" href="/static/img/logo.svg" type="image/svg+xml">
+<link rel="icon" href="/static/img/favicon-64.png" type="image/png" sizes="64x64">
+<link rel="apple-touch-icon" href="/static/img/favicon-180.png" sizes="180x180">
 <link rel="stylesheet" href="/static/css/site.css">
 <script>document.documentElement.className = "js";</script>
 {extra}
@@ -474,13 +485,7 @@ class Site:
 
     def logo(self, href='/'):
         return f'''<a class="logo" href="{href}" aria-label="АТЛАНТА — на главную">
-  <svg class="logo__mark" viewBox="0 0 40 40" aria-hidden="true">
-    <rect width="40" height="40" rx="10" fill="#0f1216"/>
-    <circle cx="20" cy="10.2" r="2.05" fill="#f5a524"/>
-    <path d="M20 14.4 11.1 30.2" stroke="#f5a524" stroke-width="3.1" stroke-linecap="round"/>
-    <path d="M20 14.4 28.9 30.2" stroke="#ffffff" stroke-width="3.1" stroke-linecap="round" opacity="0.92"/>
-    <path d="M14.7 24.6h10.6" stroke="#f5a524" stroke-width="3.1" stroke-linecap="round"/>
-  </svg>
+  <img class="logo__mark" src="/static/img/logo-mark.png" alt="" width="34" height="38">
   <span class="logo__text">
     <span class="logo__name">АТЛАНТА</span>
     <span class="logo__sub">светотехника и жгуты</span>
@@ -495,6 +500,7 @@ class Site:
         nav_items = [
             ('/catalog/', 'Каталог', 'catalog'),
             ('/about/', 'О компании', 'about'),
+            ('/made-in-russia/', 'Сделано в России', 'russia'),
             ('/certificates/', 'Сертификаты', 'certificates'),
             ('/delivery/', 'Условия работы', 'delivery'),
             ('/contacts/', 'Контакты', 'contacts'),
@@ -620,7 +626,7 @@ class Site:
             'name': self.site['legal_name'],
             'alternateName': self.site['name'],
             'url': self.site['domain'],
-            'logo': self.site['domain'] + '/static/img/logo.svg',
+            'logo': self.site['domain'] + '/static/img/logo.png',
             'foundingDate': str(self.site['founded']),
             'description': self.content['about']['paragraphs'][0],
             'address': {'@type': 'PostalAddress', 'addressCountry': 'RU',
@@ -646,6 +652,8 @@ class Site:
             'brand': {'@type': 'Brand', 'name': self.site['name']},
             'manufacturer': {'@type': 'Organization', 'name': self.site['legal_name']},
         }
+        if has_gisp(component):
+            data['countryOfOrigin'] = {'@type': 'Country', 'name': 'Россия'}
         description = ' '.join(lead_text(component).split())[:300]
         if description:
             data['description'] = description
@@ -744,9 +752,11 @@ class Site:
         search_text = re.sub(r'\s+', ' ', ' '.join([
             component['article'], component['name'], clean_public(component.get('description')),
             ' '.join(text for text in mods_text if text)]))
+        russia = ('<span class="russia-badge" title="Изделие внесено в реестр ГИСП">'
+                  'Сделано в России</span>' if has_gisp(component) else '')
         return f'''<a class="product-card" href="{component['_url']}"
    data-search-text="{esc(search_text)}">
-  <div class="product-card__media">{media}</div>
+  <div class="product-card__media">{media}{russia}</div>
   <div class="product-card__body">
     <div class="product-card__article">{esc(component['article'])}</div>
     <div class="product-card__name">{esc(component['name'])}</div>
@@ -825,7 +835,10 @@ class Site:
                         f'<div class="stat__label">{esc(item["label"])}</div></div>'
                         for item in content['stats'])
 
-        badges = ''.join(f'<span class="badge">{esc(item)}</span>' for item in hero['badges'])
+        badges = ''.join(
+            f'<a class="badge badge--link" href="/made-in-russia/">{esc(item)} {icon("arrow", 12)}</a>'
+            if item.strip().lower() == 'сделано в россии' else f'<span class="badge">{esc(item)}</span>'
+            for item in hero['badges'])
 
         categories = ''.join(self.category_card(key) for key in CATEGORY_ORDER)
 
@@ -891,9 +904,9 @@ class Site:
       <div>
         <div class="eyebrow">Продукция</div>
         <h2>11 разделов: от габаритного огня до жгута</h2>
-        <p>Светотехника, электрожгуты и разъёмы для прицепов, грузовиков, автобусов
-           и спецтехники. Внутри каждого раздела — исполнения под разные разъёмы,
-           длину кабеля и сторону установки.</p>
+        <p>Светотехника, электрожгуты и разъёмы для грузовых и легковых прицепов,
+           грузовиков, автобусов и спецтехники. Внутри каждого раздела — исполнения
+           под разные разъёмы, длину кабеля и сторону установки.</p>
       </div>
       <a class="section__link" href="/catalog/">Весь каталог {icon('arrow', 14)}</a>
     </div>
@@ -977,7 +990,7 @@ class Site:
 '''
         body += self.request_block()
         return self.page(
-            'Светотехника и электрожгуты для грузового транспорта',
+            'Светотехника и электрожгуты для грузовых и легковых прицепов',
             'Производство автомобильной светотехники, электрожгутов и разъёмов: '
             f'{self.counts_text}. Сертификаты ТР ТС 018/2011 и E28, защита до IP69.',
             '/', body,
@@ -991,7 +1004,9 @@ class Site:
     <div class="eyebrow">Каталог</div>
     <h1 style="margin-top:14px">Вся продукция завода</h1>
     <p>{len(self.components)} позиций в 11 разделах: фонари, плафоны, жгуты, разъёмы и прочие изделия.
-       Фильтруйте по названию или артикулу — поиск работает без перезагрузки страницы.</p>
+       Фильтруйте по названию или артикулу — поиск работает без перезагрузки страницы.
+       Изделия с отметкой «Сделано в России» собраны
+       <a href="/made-in-russia/" style="border-bottom:1px solid var(--line-strong)">в отдельном разделе</a>.</p>
   </div>
 </div>
 {self.toolbar(None, None, len(self.components))}
@@ -1012,6 +1027,89 @@ class Site:
                          'фото и характеристики каждой позиции.',
                          '/catalog/', body, current='catalog',
                          schemas=[self.schema_breadcrumbs([('Главная', '/'), ('Каталог', '/catalog/')])])
+
+    def made_in_russia_page(self):
+        """Раздел «Сделано в России»: изделия с заполненной ссылкой на реестр ГИСП."""
+        items = self.gisp_components
+        count = len(items)
+        cards = ''.join(self.product_card(item) for item in items)
+
+        if items:
+            grid = f'''
+<section class="section section--tight">
+  <div class="wrap">
+    <div class="product-grid">{cards}</div>
+  </div>
+</section>
+'''
+            counter = (f'<div class="russia-counter">{count} '
+                       f'{plural(count, ("изделие", "изделия", "изделий"))} '
+                       f'с отметкой «Сделано в России»</div>')
+        else:
+            grid = f'''
+<section class="section section--tight">
+  <div class="wrap">
+    <div class="empty">
+      <h3>Список пополняется</h3>
+      <p>Отметку «Сделано в России» получают изделия, внесённые в Государственный
+         информационный реестр промышленной продукции. Как только изделие попадает
+         в реестр, оно появляется в этом разделе.</p>
+      <p style="margin-top:10px">Нужна запись по конкретному артикулу — напишите,
+         пришлём номер и ссылку на реестр.</p>
+      <div style="margin-top:18px"><a class="btn btn--primary" href="/#request">Запросить сведения</a></div>
+    </div>
+  </div>
+</section>
+'''
+            counter = ''
+
+        body = f'''
+<div class="page-head page-head--russia">
+  <div class="wrap">
+    <div class="eyebrow">ГИСП · Минпромторг России</div>
+    <h1 style="margin-top:14px">Сделано в России</h1>
+    <p class="russia-lead">Изделия завода «Атланта», внесённые в Государственный информационный
+       реестр промышленной продукции. Отметка подтверждает российское производство:
+       у каждой позиции есть запись в реестре, ссылка на неё — в карточке изделия.</p>
+    {counter}
+  </div>
+</div>
+
+<section class="section">
+  <div class="wrap">
+    <div class="russia-grid">
+      <div class="russia-card">
+        <div class="russia-card__label">Что это</div>
+        <p>Государственный информационный реестр промышленной продукции ведёт Минпромторг
+           России. В него попадают изделия, выпущенные на российских производствах.</p>
+      </div>
+      <div class="russia-card">
+        <div class="russia-card__label">Что подтверждает</div>
+        <p>Изделие произведено в России и включено в реестр — с номером записи,
+           который можно проверить по ссылке.</p>
+      </div>
+      <div class="russia-card">
+        <div class="russia-card__label">Как проверить</div>
+        <p>В карточке изделия с отметкой есть ссылка «Запись в реестре ГИСП».
+           Она ведёт на страницу изделия в реестре.</p>
+      </div>
+    </div>
+  </div>
+</section>
+{grid}
+'''
+        body += self.request_block()
+        count_text = ((f'{count} {plural(count, ("изделие", "изделия", "изделий"))} '
+                       'с отметкой «Сделано в России»: реестр ГИСП, российское производство.')
+                      if count else
+                      'Изделия с записью в реестре ГИСП: отметка «Сделано в России», '
+                      'российское производство.')
+        return self.page('Сделано в России',
+                         'Изделия завода «Атланта» в Государственном информационном реестре '
+                         f'промышленной продукции (ГИСП). {count_text}',
+                         '/made-in-russia/', body, current='russia',
+                         schemas=[self.schema_breadcrumbs(
+                             [('Главная', '/'), ('Сделано в России', '/made-in-russia/')])])
 
     def category_page(self, key):
         category = self.categories[key]
@@ -1114,6 +1212,22 @@ class Site:
 
         lead = lead_text(component)
         lead_html = f'<p class="product__lead">{esc(lead)}</p>' if lead else ''
+        russia_html = ''
+        if has_gisp(component):
+            link = esc(component['gisp_url'])
+            russia_html = (
+                '<div class="product__russia">'
+                '<span class="russia-badge russia-badge--lg">Сделано в России</span>'
+                f'<a class="russia-link" href="{link}" target="_blank" rel="noopener">'
+                'Запись в реестре ГИСП ↗</a>'
+                '</div>')
+        gisp_docs = ''
+        if has_gisp(component):
+            link = esc(component['gisp_url'])
+            gisp_docs = (
+                '<p class="product__gisp">Изделие внесено в Государственный информационный реестр '
+                'промышленной продукции (ГИСП) — отметка «Сделано в России». '
+                f'<a href="{link}" target="_blank" rel="noopener">Запись в реестре ↗</a></p>')
         article = component['article']
 
         body = f'''
@@ -1127,6 +1241,7 @@ class Site:
   <div>
     <div class="product__head">
       <div class="product__article">{esc(article)}</div>
+      {russia_html}
       <h1>{esc(component['name'])}</h1>
       {lead_html}
       <div class="product__actions">
@@ -1145,6 +1260,7 @@ class Site:
         Сертификат соответствия ТР ТС 018/2011 и протоколы испытаний прикладываем к отгрузке.
         Копии — по запросу: <a href="#request" style="border-bottom:1px solid var(--line-strong)">оставить заявку</a>.
       </p>
+      {gisp_docs}
     </div>
   </div>
 </section>
@@ -1368,6 +1484,7 @@ class Site:
             '/': self.index(),
             '/catalog/': self.catalog_index(),
             '/about/': self.about_page(),
+            '/made-in-russia/': self.made_in_russia_page(),
             '/certificates/': self.certificates_page(),
             '/delivery/': self.delivery_page(),
             '/contacts/': self.contacts_page(),
@@ -1400,7 +1517,7 @@ class Site:
             depth = path.strip('/').count('/')
             if path == '/':
                 freq, priority = 'weekly', '1.0'
-            elif path == '/catalog/':
+            elif path in ('/catalog/', '/made-in-russia/'):
                 freq, priority = 'weekly', '0.9'
             elif path.startswith('/catalog/') and depth == 1:
                 freq, priority = 'weekly', '0.8'

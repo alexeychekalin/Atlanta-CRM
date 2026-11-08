@@ -83,16 +83,18 @@ async function ensureCategory(runner, category) {
 
 async function findComponent(runner, article) {
   const result = await runner.query(
-    'SELECT id, image_path, description FROM components WHERE article = $1 LIMIT 1', [article]);
+    'SELECT id, image_path, description, gisp_url FROM components WHERE article = $1 LIMIT 1',
+    [article]);
   return result.rows[0] || null;
 }
 
 async function insertComponent(runner, entry, categoryId, imagePath) {
   const result = await runner.query(
-    `INSERT INTO components (category_id, article, name, price, image_path, description, is_active)
-     VALUES ($1, $2, $3, 0, $4, $5, true)
+    `INSERT INTO components (category_id, article, name, price, image_path, description, is_active, gisp_url)
+     VALUES ($1, $2, $3, 0, $4, $5, true, $6)
      RETURNING id`,
-    [categoryId, entry.article, entry.name, imagePath, entry.description || null]
+    [categoryId, entry.article, entry.name, imagePath, entry.description || null,
+      entry.gisp_url || null]
   );
   return result.rows[0].id;
 }
@@ -101,6 +103,8 @@ async function insertComponent(runner, entry, categoryId, imagePath) {
 async function fillEmptyFields(runner, componentId, current, entry, imagePath) {
   const patch = {};
   if (!current.image_path && imagePath) patch.image_path = imagePath;
+  // ссылку на реестр ГИСП заполняем только если её ещё нет: правки из CRM важнее
+  if (!current.gisp_url && entry.gisp_url) patch.gisp_url = entry.gisp_url;
   if (entry.description) {
     const currentText = (current.description || '').trim();
     // пустое заполняем, а расширенный текст из каталога принимаем только если

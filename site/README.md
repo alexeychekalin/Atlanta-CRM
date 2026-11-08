@@ -22,7 +22,7 @@ python3 site/build.py --domain https://atlanta.ru   # домен без прав
 | Каталог: разделы, позиции, исполнения, характеристики | `server/src/db/catalog/catalog.json` |
 | Фотографии | `server/src/db/catalog/files/` |
 | Все тексты сайта: главная, преимущества, FAQ, контакты, условия | `site/content.json` |
-| Вёрстка | `site/static/css/site.css`, `site/static/js/site.js`, `site/static/img/logo.svg` |
+| Вёрстка | `site/static/css/site.css`, `site/static/js/site.js`, `site/static/img/logo.png` и `logo-mark.png` (знак в шапке) |
 
 Цены в каталоге (`price = 0`) не публикуются: на сайте везде «цена по запросу».
 
@@ -55,10 +55,34 @@ python3 site/build.py --domain https://atlanta.ru   # домен без прав
 /                                    главная
 /catalog/                            все 191 позиция с поиском (в том числе по исполнениям)
 /catalog/<раздел>/                   11 разделов
-/catalog/<раздел>/<артикул>/         214 карточек
+/catalog/<раздел>/<артикул>/         карточки изделий и заглушки прежних артикулов
+/made-in-russia/                     «Сделано в России»: позиции с записью в ГИСП
 /about/ /certificates/ /delivery/ /contacts/ /privacy/ /404.html
 /sitemap.xml /robots.txt /search.json
 ```
+
+## Отметка «Сделано в России»
+
+Раздел `/made-in-russia/` собирается сам: в него попадают позиции, у которых
+в каталоге заполнено поле `gisp_url` — ссылка на запись в реестре ГИСП.
+Такие позиции получают бейдж «Сделано в России» на фото в каталоге и на карточке
+изделия, ссылку «Запись в реестре ГИСП» в блоке документов и
+`countryOfOrigin: Россия` в разметке Schema.org.
+
+Ссылку ставит менеджер в CRM: «Каталог» → карточка позиции → поле «Ссылка на ГИСП».
+Дальше её надо перенести в `catalog.json`, из которого собирается сайт:
+
+```bash
+npm run db:export-gisp                 # из корня: боевая база (DATABASE_URL)
+cd server && npm run demo:export-gisp  # демо-база PGlite
+npm run db:export-gisp -- --dry-run    # только показать, что изменится
+npm run db:export-gisp -- --prune      # снять отметки, которых уже нет в CRM
+python3 site/build.py                  # пересобрать сайт
+```
+
+Пустая ссылка в базе значение из `catalog.json` не стирает — иначе одна
+незаполненная карточка гасила бы отметку. Чтобы снять отметку, нужен `--prune`
+(или удалить `gisp_url` у позиции в `catalog.json` руками).
 
 ## Служебные пометки каталога
 
