@@ -263,6 +263,32 @@ def plural(count, forms):
     return forms[2]
 
 
+def counts(component_count, modification_count):
+    """«187 позиций, 964 исполнения» — формы слов по числам."""
+    return (f'{component_count} {plural(component_count, ("позиция", "позиции", "позиций"))}, '
+            f'{modification_count} '
+            f'{plural(modification_count, ("исполнение", "исполнения", "исполнений"))}')
+
+
+def localize_counts(value, component_count, modification_count):
+    """Заменить зашитые в текстах «214 позиций» / «867 исполнений» на фактические числа."""
+    if isinstance(value, dict):
+        result = {key: localize_counts(item, component_count, modification_count)
+                  for key, item in value.items()}
+        # плитки «214 позиций» / «867 исполнений»: число лежит отдельным полем
+        if result.get('value') == '214':
+            result['value'] = str(component_count)
+        if result.get('value') == '867':
+            result['value'] = str(modification_count)
+        return result
+    if isinstance(value, list):
+        return [localize_counts(item, component_count, modification_count) for item in value]
+    if isinstance(value, str):
+        return (value.replace('214 позиц', counts(component_count, modification_count).split(', ')[0])
+                     .replace('867 исполнен', counts(component_count, modification_count).split(', ')[1]))
+    return value
+
+
 def clip(text, limit):
     """Обрезать по границе слова, чтобы заголовок влезал в выдачу."""
     text = ' '.join((text or '').split())
@@ -401,6 +427,8 @@ class Site:
             component['_cat_slug'] = CATEGORY_SLUGS.get(component['category'], 'prochee')
             component['_url'] = f"/catalog/{component['_cat_slug']}/{component['_slug']}/"
             self.by_slug[component['_slug']] = component
+        self.counts_text = counts(len(self.components),
+                                  sum(len(item.get('modifications') or []) for item in self.components))
         self.category_counts = {}
         for component in self.components:
             key = component['category']
@@ -883,8 +911,7 @@ class Site:
       <div>
         <div class="eyebrow">Популярное</div>
         <h2>Часто заказывают</h2>
-        <p>Позиции с фотографиями и полными характеристиками. Всего в каталоге 214 позиций
-           и 867 исполнений.</p>
+        <p>Позиции с фотографиями и полными характеристиками. Всего в каталоге {self.counts_text}.</p>
       </div>
       <a class="section__link" href="/catalog/">Смотреть все {icon('arrow', 14)}</a>
     </div>
@@ -944,7 +971,7 @@ class Site:
         return self.page(
             'Светотехника и электрожгуты для грузового транспорта',
             'Производство автомобильной светотехники, электрожгутов и разъёмов: '
-            '214 позиций, 867 исполнений. Сертификаты ТР ТС 018/2011 и E28, защита до IP69.',
+            f'{self.counts_text}. Сертификаты ТР ТС 018/2011 и E28, защита до IP69.',
             '/', body,
             schemas=[self.schema_organization(), self.schema_faq()])
 
@@ -973,7 +1000,7 @@ class Site:
 '''
         body += self.request_block()
         return self.page('Каталог продукции', 
-                         'Каталог светотехники и электрожгутов: 214 позиций, 867 исполнений, '
+                         f'Каталог светотехники и электрожгутов: {self.counts_text}, '
                          'фото и характеристики каждой позиции.',
                          '/catalog/', body, current='catalog',
                          schemas=[self.schema_breadcrumbs([('Главная', '/'), ('Каталог', '/catalog/')])])
@@ -1071,7 +1098,10 @@ class Site:
 
         related = [item for item in self.components
                    if item['category'] == component['category'] and item is not component]
-        related.sort(key=lambda item: (not item.get('images'), -len(item.get('images') or [])))
+        # сначала родня по изделию: у «А.3776.005» — его комплекты «А.3776.005/А.3731.007»
+        root = component['article'].split('/')[0]
+        related.sort(key=lambda item: (item['article'].split('/')[0] != root,
+                                       not item.get('images'), -len(item.get('images') or [])))
         related_html = ''.join(self.product_card(item) for item in related[:4])
 
         lead = lead_text(component)
@@ -1311,11 +1341,11 @@ class Site:
                               ('Политика обработки персональных данных', '/privacy/')])])
 
     def not_found(self):
-        body = '''
+        body = f'''
 <div class="wrap prose" style="text-align:center;padding-top:90px">
   <div class="eyebrow" style="justify-content:center">404</div>
   <h1 style="margin-top:16px">Страница не найдена</h1>
-  <p style="margin-top:14px">Возможно, позиция переехала. Посмотрите каталог — там все 214 позиций.</p>
+  <p style="margin-top:14px">Возможно, позиция переехала. Посмотрите каталог — там все {self.counts_text}.</p>
   <div style="margin-top:26px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
     <a class="btn btn--primary" href="/catalog/">В каталог</a>
     <a class="btn btn--ghost" href="/">На главную</a>
@@ -1408,6 +1438,11 @@ def main():
     out_dir = Path(args.out)
     content = read_json(SITE / 'content.json')
     catalog = read_json(CATALOG_JSON)
+
+    content = localize_counts(content,
+                              len(catalog['components']),
+                              sum(len(item.get('modifications') or [])
+                                  for item in catalog['components']))
 
     if args.domain:
         domain = args.domain.strip().rstrip('/')
