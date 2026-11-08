@@ -83,7 +83,7 @@ router.get('/', auth, async (req, res) => {
                       AND translate(lower(COALESCE(cm.full_article, c.article || '-' || cm.code)), ' .-/_', '') LIKE $2))
          )
        ORDER BY CASE WHEN c.name ILIKE $1 OR c.article ILIKE $1 THEN 0 ELSE 1 END,
-                cc.sort_order, c.name
+                length(c.article), cc.sort_order, c.name
        LIMIT 5`, [searchTerm, bareSearch]) : { rows: [] };
     components.rows.forEach(r => results.push({
       type: 'component',

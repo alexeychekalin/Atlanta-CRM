@@ -49,10 +49,16 @@ test('каталог: артикулы уникальны, коды модифи
     const codes = (entry.modifications || []).map(m => m.code.toLowerCase());
     assert.equal(new Set(codes).size, codes.length, `${entry.article}: повторяются коды модификаций`);
 
-    // полный артикул собирается в одном месте: самим артикулом или полем full_article
+    // полный артикул собирается в одном месте: самим артикулом или полем full_article.
+    // У изделия-комплекта артикул печатается через слэш (А.3776.005/А.3731.007),
+    // а исполнение встаёт между половинами: А.3776.005Л-01/А.3731.007.
+    const [head, tail] = entry.article.split('/');
     for (const mod of entry.modifications || []) {
       const full = fullArticle(entry.article, mod.code, mod.full_article);
-      assert.ok(full.startsWith(entry.article), `${entry.article}: код ${mod.code} даёт ${full}`);
+      const ok = tail
+        ? full.startsWith(head) && full.endsWith(`/${tail}`)
+        : full.startsWith(entry.article);
+      assert.ok(ok, `${entry.article}: код ${mod.code} даёт ${full}`);
     }
   }
 });
@@ -75,26 +81,41 @@ test('каталог: полные артикулы совпадают с печ
 
   // задние фонари: изделие без Л/П, сторона и число разъёмов — исполнения
   const rear = byArticle.get('А.3776.005');
-  const codes = (rear.modifications || []).map(m => m.code);
-  for (const code of ['Л-01', 'Л-05', 'П-01', 'П-05']) {
-    assert.ok(codes.includes(code), `А.3776.005: нет исполнения ${code}`);
-  }
-  // комплект — исполнение с полным артикулом через слэш
-  const kit = rear.modifications.find(m => m.code === 'Л-01/А.3731.007');
-  assert.ok(kit, 'нет комплекта А.3776.005Л-01/А.3731.007');
-  assert.equal(kit.full_article, 'А.3776.005Л-01/А.3731.007');
-  assert.equal(fullArticle(rear.article, kit.code, kit.full_article), 'А.3776.005Л-01/А.3731.007');
-  // прежние плоские артикулы погашены
+  assert.deepEqual(rear.modifications.map(m => m.code), ['Л-01', 'Л-05', 'П-01', 'П-05']);
+  assert.deepEqual(rear.supersedes, ['А.3776.005Л', 'А.3776.005П']);
+
+  // комплект — отдельное изделие, внутри те же сторона и число разъёмов
+  const kit = byArticle.get('А.3776.005/А.3731.007');
+  assert.ok(kit, 'нет изделия-комплекта А.3776.005/А.3731.007');
+  assert.deepEqual(kit.modifications.map(m => m.code), ['Л-01', 'Л-05', 'П-01', 'П-05']);
+  assert.deepEqual(kit.modifications.map(m => m.full_article), [
+    'А.3776.005Л-01/А.3731.007', 'А.3776.005Л-05/А.3731.007',
+    'А.3776.005П-01/А.3731.007', 'А.3776.005П-05/А.3731.007',
+  ]);
+  assert.match(kit.name, /Комплект: А\.3776\.005 \+ А\.3731\.007/);
+  assert.match(kit.description, /габаритный фонарь А\.3731\.007/);
+  assert.ok(kit.images.length > 0, 'у комплекта нет фото');
+
+  // второй комплект — с габаритным фонарём «рожок»
+  const socket = byArticle.get('А.3776.005/А.3731.002.3');
+  assert.ok(socket, 'нет изделия-комплекта А.3776.005/А.3731.002.3');
+  assert.equal(socket.modifications.length, 4);
+
+  // прежние плоские артикулы погашены, в том числе старые комплекты
   assert.deepEqual(byArticle.get('А.3776.005Л'), undefined, 'остался прежний артикул А.3776.005Л');
-  assert.ok((rear.supersedes || []).includes('А.3776.005Л-01/А.3731.007'),
-    'прежний комплект не в supersedes');
+  assert.deepEqual(byArticle.get('А.3776.005Л-01/А.3731.007'), undefined,
+    'комплект остался отдельной позицией');
+  for (const old of ['А.3776.005Л-01/А.3731.007', 'А.3776.005П-05/А.3731.002.3']) {
+    assert.ok(kit.supersedes.includes(old) || socket.supersedes.includes(old),
+      `прежний комплект ${old} не в supersedes`);
+  }
 });
 
 test('каталог: у позиций есть галерея, обложка берётся из неё', () => {
   const { components } = readConfig();
   const gallery = components.filter(entry => (entry.images || []).length > 0);
 
-  assert.ok(gallery.length >= 45, `позиций с галереей: ${gallery.length}`);
+  assert.ok(gallery.length >= 50, `позиций с галереей: ${gallery.length}`);
   for (const entry of gallery) {
     // у семейства с несколькими исполнениями фото больше, чем у одной позиции
     assert.ok(entry.images.length <= 20, `${entry.article}: больше двадцати фото в галерее`);
@@ -224,9 +245,11 @@ test('каталог: изделие с цветными исполнениям�
     'поиск по печатному артикулу не находит изделие');
 
   for (const entry of components) {
+    const [head, tail] = entry.article.split('/');
     for (const mod of entry.modifications || []) {
       const full = fullArticle(entry.article, mod.code, mod.full_article);
-      assert.ok(full.includes(entry.article), `${entry.article}: ${mod.code} даёт ${full}`);
+      assert.ok(full.includes(tail ? head : entry.article), `${entry.article}: ${mod.code} даёт ${full}`);
+      if (tail) assert.ok(full.endsWith(`/${tail}`), `${entry.article}: ${mod.code} даёт ${full}`);
     }
   }
 });

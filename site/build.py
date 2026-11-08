@@ -347,25 +347,28 @@ def gallery_images(component, files_dir=None):
     поставщик кладёт один и тот же снимок под разными именами.
     """
     images, names, digests = [], set(), set()
+
+    def add(name):
+        if not name or name in names:
+            return
+        names.add(name)
+        if files_dir:
+            path = files_dir / name
+            try:
+                digest = hashlib.md5(path.read_bytes()).hexdigest()
+            except OSError:
+                digest = None
+            if digest:
+                if digest in digests:
+                    return
+                digests.add(digest)
+        images.append(name)
+
     for name in component.get('images') or []:
-        if name not in names:
-            names.add(name)
-            images.append(name)
+        add(name)
     for mod in component.get('modifications') or []:
         for name in mod.get('images') or []:
-            if name in names:
-                continue
-            names.add(name)
-            if files_dir:
-                try:
-                    digest = hashlib.md5((files_dir / name).read_bytes()).hexdigest()
-                except OSError:
-                    digest = None
-                if digest:
-                    if digest in digests:
-                        continue
-                    digests.add(digest)
-            images.append(name)
+            add(name)
     return images
 
 
@@ -1128,8 +1131,13 @@ class Site:
                                '. Светотехника и электрожгуты собственного производства, '
                                'цена по запросу, отгрузка по России.', 165)
         name_limit = max(24, 58 - len(article) - 1)
-        title = (f"{component['name']} {article}" if len(component['name']) + len(article) <= 58
-                 else f"{clip(component['name'], name_limit)} {article}")
+        parts = [part for part in article.split('/') if part]
+        if len(parts) > 1 and all(part in component['name'] for part in parts):
+            # артикул уже в названии (изделие-комплект: «Комплект: А.3776.005 + А.3731.007 «клюшка»»)
+            title = clip(component['name'], 70)
+        else:
+            title = (f"{component['name']} {article}" if len(component['name']) + len(article) <= 58
+                     else f"{clip(component['name'], name_limit)} {article}")
         og_image = image_src(images[0], 1280) if images else ''
         return self.page(title, description, component['_url'], body,
                          current='catalog', og_image=og_image,
