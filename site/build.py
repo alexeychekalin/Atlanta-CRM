@@ -499,6 +499,27 @@ class Site:
 </html>
 '''
 
+    def redirect_page(self, component, old_article):
+        """Заглушка на прежний артикул: он стал исполнением изделия.
+
+        Старые ссылки (каталоги дилеров, распечатки) ведут сюда; страница
+        ведёт на карточку изделия и не попадает в sitemap.
+        """
+        target = component['_url']
+        title = f'{old_article} — теперь {component["article"]}'
+        body = f"""<section class="section">
+  <div class="container">
+    <h1>{esc(old_article)}</h1>
+    <p class="lead">Артикул стал исполнением изделия
+       <a href="{target}"><strong>{esc(component['article'])}</strong> — {esc(component['name'])}</a>.</p>
+    <p><a class="btn" href="{target}">Перейти к изделию и списку исполнений</a></p>
+  </div>
+</section>"""
+        html = self.page(title, f'{old_article} — исполнение изделия {component["article"]}.',
+                         target, body, current='catalog')
+        meta = f'<meta http-equiv="refresh" content="0; url={target}">'
+        return html.replace('</head>', f'  {meta}\n</head>', 1)
+
     def page(self, title, description, canonical, body, current='', schemas=None, og_image=''):
         extra = ''.join(self.ld(item) for item in (schemas or []))
         return (self.head(title, description, canonical, og_image=og_image, extra=extra) + self.header(current) +
@@ -1284,6 +1305,16 @@ class Site:
         for component in self.components:
             pages[component['_url']] = self.product_page(component)
 
+        # прежние артикулы слитых семейств: А.3731.027-01 → А.3731.027
+        redirects = set()
+        for component in self.components:
+            for old_article in component.get('supersedes') or []:
+                path = f"/catalog/{component['_cat_slug']}/{slugify(old_article)}/"
+                if path in pages:
+                    continue
+                pages[path] = self.redirect_page(component, old_article)
+                redirects.add(path)
+
         for path, html_text in pages.items():
             self.write(path, html_text)
 
@@ -1303,7 +1334,8 @@ class Site:
             return (f'<url><loc>{esc(self.site["domain"] + path)}</loc>'
                     f'<changefreq>{freq}</changefreq><priority>{priority}</priority></url>')
 
-        urls = ''.join(sitemap_entry(path) for path in pages if path != '/404.html')
+        urls = ''.join(sitemap_entry(path) for path in pages
+                       if path != '/404.html' and path not in redirects)
         (self.out / 'sitemap.xml').write_text(
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
