@@ -11,7 +11,7 @@ CRM для производственно-торговой компании: **�
 
 > Подробный аудит проекта, реестр найденных проблем и статус исправлений — в [`docs/ANALYSIS.md`](docs/ANALYSIS.md). Развёртывание на VPS — в [`DEPLOY.md`](DEPLOY.md), сценарий с доменом, поддоменом `crm` и HTTPS — в [`docs/deploy-vps.md`](docs/deploy-vps.md).
 >
-> Сайт завода собирается из того же каталога: `python3 site/build.py` → `site/dist` (см. [`site/README.md`](site/README.md)).
+> Сайт завода собирается из того же каталога: `python3 site/build.py` → `site/dist` (см. [`site/README.md`](site/README.md)). Выкладка — той же командой: `--publish` копирует в веб-корень только изменившиеся файлы, FTP для этого не нужен.
 
 ---
 
@@ -402,6 +402,7 @@ curl -s -b /tmp/cj.txt http://localhost:3000/api/drawings | head -c 400
 │   ├── test/                        # node:test (цены, чертежи, рендер страниц, файлы)
 │   └── uploads/                     # images, drawings, avatars, documents (в .gitignore)
 ├── site/                            # сайт завода: build.py + content.json + вёрстка
+│   ├── publish.py                   # выкладка: папка, FTP/FTPS или rsync (только изменённое)
 │   └── dist/                        # собранный сайт (в .gitignore)
 ├── deploy/nginx/                    # шаблоны двух хостов: сайт и crm.<домен>
 ├── scripts/

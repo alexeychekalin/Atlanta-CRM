@@ -435,6 +435,27 @@ sudo ./update.sh
 пользователей обновление не трогает. Код он не забирает: `git pull` — отдельным шагом,
 до запуска.
 
+Пятым шагом `update.sh` собирает сайт завода и раскладывает его в `SITE_ROOT`
+(по умолчанию `/var/www/atlanta`). Шаг включается сам, если в `SITE_ROOT` уже лежит наш
+сайт (`index.html` и `search.json`), или флагом `WITH_SITE=1`; `WITH_SITE=0` его
+выключает. Копируются только изменившиеся файлы, лишние удаляются (`--prune`), так что
+выкладка занимает секунды и не требует FTP.
+
+| Переменная | Что задаёт | По умолчанию |
+|---|---|---|
+| `WITH_SITE=1` / `WITH_SITE=0` | включить / выключить сборку и выкладку сайта | сам, если сайт уже лежит в `SITE_ROOT` |
+| `SITE_ROOT` | папка, куда складывается сайт | `/var/www/atlanta` |
+| `SITE_DOMAIN` | домен для канонических ссылок и `sitemap.xml` | из `site/content.json` |
+
+```bash
+cd /opt/atlanta-crm && git pull && sudo WITH_CATALOG=1 ./update.sh
+sudo WITH_SITE=1 SITE_DOMAIN=https://atlanta.ru ./update.sh   # сайт заведомо нужен
+sudo WITH_SITE=0 ./update.sh                                  # только CRM
+```
+
+Если Pillow не установлен, сайт не собирается, но CRM обновляется — в логе будет
+подсказка `pip3 install --break-system-packages pillow`.
+
 Догрузить каталог на установке, где его не было:
 
 ```bash
@@ -515,6 +536,23 @@ sudo systemctl restart atlanta-crm
 Сайт статический и сам не пересобирается: изменения в каталоге и текстах появляются
 только после повторной публикации. Фото и ссылки на ГИСП, добавленные в карточках CRM,
 сначала переносятся в каталог (`npm run db:export-site` — фото + ГИСП), потом собирается сайт.
+
+### Выкладка сайта без FTP
+
+```bash
+cd /opt/atlanta-crm
+sudo WITH_SITE=1 SITE_DOMAIN=https://ваш-домен.ru ./update.sh    # собрать + выложить
+# или по отдельности:
+python3 site/build.py --domain https://ваш-домен.ru --publish /var/www/atlanta --prune
+python3 site/publish.py --to /var/www/atlanta --dry-run          # что изменится
+```
+
+`site/publish.py` (его вызывает `--publish`) сравнивает файлы по содержимому и
+отправляет только изменившиеся: обычно 5–20 файлов вместо 1071. Приёмник — папка,
+`ftp://`/`ftps://` или `user@host:/путь` (rsync). Пароль FTP берётся из
+`SITE_FTP_PASSWORD`. Это же лекарство от «FTP-сервер падает»: одно соединение,
+повтор при обрыве, докачка недописанного файла и проверка размера после загрузки.
+
 Ссылки на реестр можно завести и списком: `server/scripts/catalog/gisp-links.json` +
 `npm run db:apply-gisp` (при желании — `npm run db:import-gisp`, чтобы они появились в CRM). С машины разработчика:
 

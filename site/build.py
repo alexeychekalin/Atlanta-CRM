@@ -8,6 +8,13 @@
     python3 site/build.py --skip-images   # без пережатия фото (быстро)
     python3 site/build.py --out /tmp/site # в другую папку
 
+Выкладка — сразу после сборки (подробности в site/publish.py):
+
+    python3 site/build.py --publish                      # в $SITE_ROOT или /var/www/atlanta
+    python3 site/build.py --publish /var/www/atlanta     # в папку, только изменившееся
+    python3 site/build.py --publish ftp://user@host/www  # FTP, пароль из SITE_FTP_PASSWORD
+    python3 site/build.py --publish root@host:/var/www --prune
+
 Структура:
     site/content.json         тексты (правятся руками)
     site/static/              css, js, логотип
@@ -1721,6 +1728,14 @@ def main():
     parser.add_argument('--skip-images', action='store_true', help='не пережимать фото')
     parser.add_argument('--domain', default='', help='домен сайта, например https://atlanta.ru '
                                                     '(перебивает site.domain из content.json)')
+    parser.add_argument('--publish', nargs='?', const='', default=None, metavar='КУДА',
+                        help='после сборки выложить сайт: папка, ftp://user@host/путь '
+                             'или user@host:/путь (без значения — $SITE_ROOT '
+                             'или /var/www/atlanta)')
+    parser.add_argument('--prune', action='store_true',
+                        help='при выкладке удалить файлы, которых нет в сборке')
+    parser.add_argument('--force', action='store_true', help='выложить все файлы, не сравнивая')
+    parser.add_argument('--dry-run', action='store_true', help='показать выкладку, ничего не меняя')
     args = parser.parse_args()
 
     out_dir = Path(args.out)
@@ -1753,6 +1768,44 @@ def main():
     pages = site.build()
     print(f'страниц: {pages}')
     print(f'готово → {out_dir}')
+
+    if args.publish is not None:
+        return publish_site(out_dir, args.publish, prune=args.prune,
+                            dry_run=args.dry_run, force=args.force)
+
+    print('\nВыложить:  python3 site/build.py --publish /var/www/atlanta')
+    print('           python3 site/build.py --publish ftp://user@host/public_html')
+    return 0
+
+
+def publish_site(out_dir, target, prune=False, dry_run=False, force=False):
+    """Копирование собранного сайта в приёмник. Возвращает код выхода."""
+    if str(SITE) not in sys.path:
+        sys.path.insert(0, str(SITE))
+    import publish as publish_module
+
+    print(f'\n━━━ Выкладка ━━━')
+    try:
+        report = publish_module.run(source=out_dir,
+                                    target=target or publish_module.default_target(),
+                                    prune=prune, dry_run=dry_run, force=force)
+    except publish_module.PublishError as err:
+        print(f'✗ {err}')
+        return 1
+    except KeyboardInterrupt:
+        print('\n✗ выкладка прервана')
+        return 130
+
+    icon = '🔍' if report.dry_run else '✅'
+    print(f'{icon} {report.target}: {report.summary()}')
+    if report.failed:
+        print(f'⚠️  не выложено файлов: {len(report.failed)}')
+        for item in report.failed[:20]:
+            print(f'   • {item}')
+        if len(report.failed) > 20:
+            print(f'   … и ещё {len(report.failed) - 20}')
+        return 1
+    return 0
 
 
 if __name__ == '__main__':

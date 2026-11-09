@@ -127,9 +127,14 @@ pip3 install --break-system-packages pillow
 
 cd /opt/atlanta-crm
 git pull
-python3 site/build.py --domain https://ваш-домен.ru
-rsync -a --delete site/dist/ /var/www/atlanta/
+python3 site/build.py --domain https://ваш-домен.ru --publish /var/www/atlanta --prune
 ```
+
+`--publish` копирует только изменившиеся файлы (обычно 5–20 вместо всей сборки) и
+убирает старые, `--prune`. Ни FTP, ни rsync для этого не нужны. Дальше `update.sh`
+делает то же самое пятым шагом: сайт собирается и выкладывается в `SITE_ROOT`
+сам, если в нём уже лежит наш сайт (есть `index.html` и `search.json`). Выключить —
+`WITH_SITE=0`, включить принудительно — `WITH_SITE=1`.
 
 После первой выгрузки проверьте права — nginx читает файлы как `www-data`:
 

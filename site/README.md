@@ -23,6 +23,7 @@ python3 site/build.py --domain https://atlanta.ru   # домен без прав
 | Фотографии | `server/src/db/catalog/files/` |
 | Все тексты сайта: главная, преимущества, FAQ, контакты, условия | `site/content.json` |
 | Вёрстка | `site/static/css/site.css`, `site/static/js/site.js`, `site/static/img/logo.png` и `logo-mark.png` (знак в шапке) |
+| Выкладка | `site/publish.py` — копирование в папку, FTP/FTPS или rsync; тесты — `site/test_publish.py` |
 
 Цены в каталоге (`price = 0`) не публикуются: на сайте везде «цена по запросу».
 
@@ -136,13 +137,61 @@ python3 site/build.py                  # пересобрать сайт
 Сайт живёт на основном домене, CRM — на поддомене `crm.<домен>` (схема и шаги —
 в [`docs/deploy-vps.md`](../docs/deploy-vps.md)).
 
-```bash
-# со своей машины: собрать с нужным доменом и залить
-./scripts/deploy-site.sh root@103.80.87.197 --domain https://atlanta.ru
+### Выкладка из сборки: `--publish`
 
-# или вручную
-python3 site/build.py --domain https://atlanta.ru
-rsync -av --delete site/dist/ root@103.80.87.197:/var/www/atlanta/
+Сборка сама копирует готовые файлы в приёмник и **заменяет только изменившиеся** —
+обычно это 5–20 файлов вместо всей сборки (сейчас 1071 файл, 35 МБ). Старые файлы
+убирает `--prune`, временные недописанные не остаются: каждый файл пишется рядом и
+переименовывается.
+
+```bash
+python3 site/build.py --publish                        # $SITE_ROOT или /var/www/atlanta
+python3 site/build.py --publish /var/www/atlanta       # в папку
+python3 site/build.py --publish /var/www/atlanta --prune
+python3 site/build.py --publish ftp://user@host/public_html/site
+python3 site/build.py --publish root@103.80.87.197:/var/www/atlanta --prune
+```
+
+Приёмник определяется по строке: путь на диске (в том числе сетевой или смонтированный
+через sshfs), `ftp://`/`ftps://` или `user@host:/путь` (rsync по SSH). Пароль FTP
+берётся из `SITE_FTP_PASSWORD` и никогда не пишется в историю команд:
+
+```bash
+SITE_FTP_PASSWORD='…' python3 site/build.py --publish ftp://user@host/public_html
+```
+
+**Почему FTP-клиенты падают и почему здесь не падает.** FileZilla и панель хостинга
+открывают несколько соединений и заливают всё заново при каждом обновлении; на 800+
+файлах сервер отваливается. `site/publish.py` работает одним соединением, файлы
+сравнивает по содержимому, оборванную загрузку продолжает с того же места
+(`REST`), повторяет попытку при обрыве и проверяет размер после каждого файла.
+Для капризных серверов есть пауза между файлами: `--pause 0.2`.
+
+Выложить уже собранное, без пересборки:
+
+```bash
+python3 site/publish.py --to /var/www/atlanta --prune
+python3 site/publish.py --to ftp://user@host/site --dry-run
+```
+
+Кэш выложенного лежит в `site/.publish-cache/` (в git не коммитится) — по нему видно,
+что уже уехало, чтобы не заливать повторно. `--force` заливает всё заново.
+
+### На сервере
+
+`update.sh` собирает и выкладывает сайт сам, если в `SITE_ROOT` уже лежит наш сайт
+(есть `index.html` и `search.json`) или стоит флаг `WITH_SITE=1`:
+
+```bash
+cd /opt/atlanta-crm && git pull && sudo WITH_CATALOG=1 ./update.sh
+sudo WITH_SITE=1 SITE_ROOT=/var/www/atlanta SITE_DOMAIN=https://atlanta.ru ./update.sh
+sudo WITH_SITE=0 ./update.sh            # только CRM, сайт не трогать
+```
+
+### Со своей машины
+
+```bash
+./scripts/deploy-site.sh root@103.80.87.197 --domain https://atlanta.ru   # rsync
 ```
 
 nginx-конфиг сайта лежит шаблоном в `deploy/nginx/site.conf` и ставится командой

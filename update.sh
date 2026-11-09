@@ -29,7 +29,7 @@ echo ""
 # update.sh не делает git pull — это отдельный шаг. Но если репозиторий стоит
 # не на той ветке, `git pull` пишет «Already up to date», и обновления молча
 # не приезжают. Поэтому печатаем ветку, коммит и все ветки origin.
-echo -e "${CYAN}━━━ 0/4 • Версия кода ━━━${NC}"
+echo -e "${CYAN}━━━ 0/5 • Версия кода ━━━${NC}"
 cd "$APP_DIR"
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '—')"
@@ -71,12 +71,12 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 
 # 1. Остановить сервис
-echo -e "${CYAN}━━━ 1/4 • Остановка сервиса ━━━${NC}"
+echo -e "${CYAN}━━━ 1/5 • Остановка сервиса ━━━${NC}"
 systemctl stop atlanta-crm 2>/dev/null || warn "Сервис не был запущен"
 log "Сервис остановлен"
 
 # 2. Установить зависимости (нужны для раннера миграций)
-echo -e "${CYAN}━━━ 2/4 • npm install ━━━${NC}"
+echo -e "${CYAN}━━━ 2/5 • Зависимости ━━━${NC}"
 cd "$APP_DIR/server"
 npm install --omit=dev 2>&1 | tail -3
 cd "$APP_DIR"
@@ -108,6 +108,7 @@ else
 fi
 export SKIP_PRESEED="${SKIP_PRESEED:-0}"
 
+echo -e "${CYAN}━━━ 3/5 • Данные ━━━${NC}"
 if [ -f "$APP_DIR/server/src/db/data.js" ]; then
   if node src/db/data.js; then
     if [ "$WITH_CATALOG" = "1" ]; then
@@ -121,7 +122,7 @@ fi
 cd "$APP_DIR"
 
 # 4. Запустить сервис
-echo -e "${CYAN}━━━ 4/4 • Запуск сервиса ━━━${NC}"
+echo -e "${CYAN}━━━ 4/5 • Запуск сервиса ━━━${NC}"
 systemctl start atlanta-crm
 sleep 2
 
@@ -137,6 +138,41 @@ if [ -n "$DB_USER" ]; then
   sudo -u postgres psql -d $DB_NAME -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO $DB_USER;" 2>/dev/null
   sudo -u postgres psql -d $DB_NAME -c "GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;" 2>/dev/null
   log "Права выданы для $DB_USER"
+fi
+
+# 5. Сайт завода: собрать и выложить в веб-корень.
+# Включается сам, если в SITE_ROOT уже лежит наш сайт (index.html + search.json),
+# или флагом WITH_SITE=1; выключается WITH_SITE=0. FTP не нужен: копирование
+# идёт по локальным путям, а в приёмник уходит только изменившееся.
+SITE_ROOT="${SITE_ROOT:-/var/www/atlanta}"
+SITE_MODE="${WITH_SITE:-auto}"
+SITE_AUTO=0
+if [ -f "$SITE_ROOT/index.html" ] && [ -f "$SITE_ROOT/search.json" ]; then
+  SITE_AUTO=1
+fi
+if [ -f "$APP_DIR/server/.site-enabled" ]; then
+  SITE_AUTO=1
+fi
+
+if [ "$SITE_MODE" = "0" ]; then
+  echo -e "${CYAN}━━━ 5/5 • Сайт завода ━━━${NC}"
+  log "пропущен: WITH_SITE=0"
+elif [ "$SITE_MODE" = "1" ] || [ "$SITE_AUTO" = "1" ]; then
+  echo -e "${CYAN}━━━ 5/5 • Сайт завода ━━━${NC}"
+  cd "$APP_DIR"
+  if ! python3 -c "import PIL" >/dev/null 2>&1; then
+    warn "нет Pillow — сайт не собран: pip3 install --break-system-packages pillow"
+    warn "CRM обновлена, сайт остался прежним"
+  elif python3 site/build.py ${SITE_DOMAIN:+--domain="$SITE_DOMAIN"} --publish "$SITE_ROOT" --prune; then
+    touch "$APP_DIR/server/.site-enabled"
+    log "Сайт собран и выложен в $SITE_ROOT"
+  else
+    warn "Сайт не выложен (см. сообщения выше) — CRM при этом работает"
+  fi
+else
+  echo -e "${CYAN}━━━ 5/5 • Сайт завода ━━━${NC}"
+  warn "сайта нет в $SITE_ROOT — выкладка пропущена"
+  warn "  разово: WITH_SITE=1 ./update.sh   или   ./scripts/deploy-site.sh root@host"
 fi
 
 echo ""
