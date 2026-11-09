@@ -227,6 +227,7 @@ cd /opt/atlanta-crm && git pull && sudo ./update.sh
 | Сайт открывается, но без стилей | статика не доехала: `ls /var/www/atlanta/static/css/site.css` |
 | После SSL не пускает в CRM | `COOKIE_SECURE=true` при http → вернуть `false` или перейти на https |
 | `duplicate default server` в `nginx -t` | остался старый конфиг: `rm /etc/nginx/sites-enabled/default` |
+| `sudo: ./update.sh: command not found` | у скрипта нет права на исполнение: `sudo chmod +x update.sh` (или `sudo WITH_CATALOG=1 bash update.sh`); если файла нет — `git pull` не забрал его: `git log --oneline -1`, `git status` |
 | Домен не резолвится | подождать TTL, проверить `dig +short crm.ваш-домен.ru` |
 
 ---
