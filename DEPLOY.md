@@ -455,6 +455,52 @@ sudo WITH_CATALOG=1 bash update.sh
 Другая причина той же ошибки — файл правили на Windows и в нём CRLF; тогда bash пишет
 `/bin/bash^M: bad interpreter`. Лечится `sed -i 's/\r$//' update.sh`.
 
+### `git pull` пишет «Already up to date», а обновлений нет
+
+Почти всегда это значит, что репозиторий стоит **не на той ветке**. Пока работа не влита
+в `main`, все изменения лежат в ветке `arena/65030bab-atlanta-crm`, а `main` на GitHub
+не двигается.
+
+`git reset --hard origin/arena/65030bab-atlanta-crm`, выполненный на ветке `main`,
+переносит саму ветку `main` на этот коммит. Дальше `git pull` сравнивает её с
+`origin/main` (там по-прежнему старый коммит), ничего нового не находит и пишет
+«Already up to date» — при этом новые коммиты из рабочей ветки так и не приезжают.
+
+Проверить, где стоит сервер:
+
+```bash
+cd /opt/atlanta-crm
+git fetch origin --prune
+git status -sb        # первая строка: ветка и отставание от origin
+git log --oneline -1  # какой коммит развёрнут
+```
+
+Поставить репозиторий на рабочую ветку и вернуть `main` туда, где он на GitHub:
+
+```bash
+cd /opt/atlanta-crm
+git fetch origin --prune
+git checkout -B arena/65030bab-atlanta-crm origin/arena/65030bab-atlanta-crm
+git branch --set-upstream-to=origin/arena/65030bab-atlanta-crm
+git branch -f main origin/main      # безопасно: мы уже не на main
+git status -sb                      # ожидаем «## arena/... ...origin/arena/...»
+```
+
+После этого `git pull` в этой папке тянет именно рабочую ветку. `update.sh` в начале
+печатает ветку, коммит, все ветки `origin` и отставание — расхождение видно сразу,
+даже если `git pull` молчит.
+
+**Что `git reset --hard` стирает, а что нет.** Стирает незакоммиченные правки в
+отслеживаемых файлах — например `server/src/db/catalog/catalog.json` после
+`npm run db:export-images` на сервере. Не трогает ничего из `.gitignore` и всё, что вне
+git: `server/.env`, `server/uploads/` (фото товаров и файлы клиентов),
+`server/.catalog-enabled`, `node_modules/`, `site/dist/` и базу PostgreSQL. Если после
+reset фотографии пропали из `catalog.json` — они не потеряны: `cd server && npm run
+db:export-site` заново выгрузит их из базы вместе со ссылками ГИСП.
+
+Порядок после таких правок: код на нужной ветке → `sudo WITH_CATALOG=1 ./update.sh`
+(миграции и перезапуск) → при необходимости `cd server && npm run db:preseed -- --refresh`.
+
 Вручную, без обновления кода:
 
 ```bash

@@ -25,6 +25,51 @@ echo -e "${CYAN}║    CRM «Атланта» — Обновление          
 echo -e "${CYAN}╚══════════════════════════════════════════╝${NC}"
 echo ""
 
+# 0. Версия кода в папке
+# update.sh не делает git pull — это отдельный шаг. Но если репозиторий стоит
+# не на той ветке, `git pull` пишет «Already up to date», и обновления молча
+# не приезжают. Поэтому печатаем ветку, коммит и все ветки origin.
+echo -e "${CYAN}━━━ 0/4 • Версия кода ━━━${NC}"
+cd "$APP_DIR"
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '—')"
+  COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo '—')"
+  SUBJECT="$(git log -1 --pretty=%s 2>/dev/null | cut -c1-60)"
+  echo "    ветка ${BRANCH} · коммит ${COMMIT} · ${SUBJECT}"
+
+  git fetch --quiet origin 2>/dev/null || warn "git fetch не удался (сеть или доступ к origin)"
+
+  echo "    ветки в origin:"
+  git for-each-ref --format='%(refname:short) %(objectname:short) %(contents:subject)' refs/remotes/origin \
+    | grep -v '^origin/HEAD ' | sed 's|origin/|      |' | cut -c1-100
+
+  UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+  if [ -z "$UPSTREAM" ]; then
+    if git rev-parse --verify --quiet "origin/${BRANCH}" >/dev/null; then
+      warn "Ветка ${BRANCH} не следит за origin/${BRANCH} — git pull ничего не притянет"
+      warn "  git branch --set-upstream-to=origin/${BRANCH} ${BRANCH}"
+    else
+      warn "Ветка ${BRANCH} не следит за origin, и такой ветки в origin нет"
+      warn "  git fetch origin && git branch -r   # на какой ветке должен стоять сервер"
+    fi
+  else
+    BEHIND="$(git rev-list --count "HEAD..${UPSTREAM}" 2>/dev/null || echo 0)"
+    AHEAD="$(git rev-list --count "${UPSTREAM}..HEAD" 2>/dev/null || echo 0)"
+    if [ "$BEHIND" != "0" ]; then
+      warn "Позади ${UPSTREAM} на ${BEHIND} коммит(ов) — сначала git pull, потом update.sh"
+    else
+      log "Код свежий: ${UPSTREAM} не впереди"
+    fi
+    if [ "$AHEAD" != "0" ]; then
+      warn "В ${BRANCH} есть ${AHEAD} коммит(ов), которых нет в ${UPSTREAM}"
+      warn "  так бывает после git reset --hard на другую ветку: git pull молчит, обновления не едут"
+    fi
+  fi
+
+  DIRTY="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  [ "$DIRTY" != "0" ] && warn "Незакоммиченных изменений: ${DIRTY} — git reset --hard их сотрёт (update.sh — нет)"
+fi
+
 # 1. Остановить сервис
 echo -e "${CYAN}━━━ 1/4 • Остановка сервиса ━━━${NC}"
 systemctl stop atlanta-crm 2>/dev/null || warn "Сервис не был запущен"
