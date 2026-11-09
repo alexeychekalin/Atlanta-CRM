@@ -1102,6 +1102,49 @@ class Site:
                          '/catalog/', body, current='catalog',
                          schemas=[self.schema_breadcrumbs([('Главная', '/'), ('Каталог', '/catalog/')])])
 
+    def gisp_groups(self, items):
+        """Раздел «Сделано в России» по разделам каталога.
+
+        Позиции без фото показываем компактными строками: у жгутов фотографий
+        почти нет, и стена серых заглушек читалась бы хуже, чем список реестра.
+        """
+        groups = []
+        for key in CATEGORY_ORDER:
+            group = [item for item in items if item['category'] == key]
+            if not group:
+                continue
+
+            with_photo = [item for item in group if cover(item)]
+            without = [item for item in group if not cover(item)]
+
+            parts = ''
+            if with_photo:
+                cards = ''.join(self.product_card(item) for item in with_photo)
+                parts += f'<div class="product-grid">{cards}</div>'
+            if without:
+                rows = ''.join(
+                    f'<li><a class="russia-row" href="{item["_url"]}">'
+                    f'<span class="russia-row__article">{esc(item["article"])}</span>'
+                    f'<span class="russia-row__name">{esc(item["name"])}</span>'
+                    f'<span class="russia-row__arrow" aria-hidden="true">{icon("arrow", 14)}</span>'
+                    f'</a></li>'
+                    for item in without)
+                parts += f'<ul class="russia-list">{rows}</ul>'
+
+            category = self.categories.get(key, {})
+            groups.append(f'''
+<section class="section section--tight russia-group">
+  <div class="wrap">
+    <div class="russia-group__head">
+      <h2>{esc(category.get('name', 'Прочее'))}</h2>
+      <a class="section__link" href="/catalog/{CATEGORY_SLUGS.get(key, 'prochee')}/">Раздел каталога {icon('arrow', 14)}</a>
+      <span class="russia-group__count">{len(group)}</span>
+    </div>
+    {parts}
+  </div>
+</section>''')
+        return ''.join(groups)
+
     def made_in_russia_page(self):
         """Раздел «Сделано в России»: изделия с заполненной ссылкой на реестр ГИСП."""
         items = self.gisp_components
@@ -1109,13 +1152,7 @@ class Site:
         cards = ''.join(self.product_card(item) for item in items)
 
         if items:
-            grid = f'''
-<section class="section section--tight">
-  <div class="wrap">
-    <div class="product-grid">{cards}</div>
-  </div>
-</section>
-'''
+            grid = self.gisp_groups(items)
             counter = (f'<div class="russia-counter">{count} '
                        f'{plural(count, ("изделие", "изделия", "изделий"))} '
                        f'с отметкой «Сделано в России»</div>')
@@ -1319,10 +1356,12 @@ class Site:
         gisp_docs = ''
         if has_gisp(component):
             link = esc(component['gisp_url'])
+            all_mods = bool(component.get('modifications'))
             gisp_docs = (
                 '<p class="product__gisp">Изделие внесено в Государственный информационный реестр '
-                'промышленной продукции (ГИСП) — отметка «Сделано в России». '
-                f'<a href="{link}" target="_blank" rel="noopener">Запись в реестре ↗</a></p>')
+                'промышленной продукции (ГИСП) — отметка «Сделано в России».'
+                + (' Все исполнения изделия входят в ту же запись реестра.' if all_mods else '') +
+                f' <a href="{link}" target="_blank" rel="noopener">Запись в реестре ↗</a></p>')
         article = component['article']
 
         body = f'''

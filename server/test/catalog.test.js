@@ -445,3 +445,46 @@ test('фото из CRM: новые снимки добавляются, ста�
   applyImages(components, fromDb, { place: url => names[url] || null, prune: true });
   assert.deepEqual(components[0].images, ['old-2.jpeg', 'a-1_new3.jpg']);
 });
+
+test('ГИСП: список ссылок — точный артикул и целое семейство', () => {
+  const { applyLinks } = require('../scripts/catalog/apply_gisp');
+
+  const components = [
+    { article: 'А.3724.050' },
+    { article: 'А.3724.051' },
+    { article: 'А.3724.МД-002.01495-00-09' },
+    { article: 'А.3717.001' },
+    { article: 'А.3717.001-Б' },
+    { article: 'А.3714.001', gisp_url: 'https://gisp.gov.ru/goods/#/product/old' },
+  ];
+  const links = [
+    { match: 'prefix', article: 'А.3724', url: 'https://gisp.gov.ru/goods/#/product/1942091' },
+    { article: 'А.3717.001', url: 'https://gisp.gov.ru/goods/#/product/4668729' },
+    { article: 'А.3714.001', url: 'https://gisp.gov.ru/goods/#/product/4710066' },
+    { article: 'А.3714.020', url: 'https://gisp.gov.ru/goods/#/product/0000000' },
+  ];
+
+  const report = applyLinks(components, links);
+  const byArticle = Object.fromEntries(components.map(item => [item.article, item.gisp_url]));
+
+  // семейство: все артикулы с этого начала, включая буквенный
+  assert.deepEqual(report.rules[0].hits, 3);
+  assert.equal(byArticle['А.3724.051'], 'https://gisp.gov.ru/goods/#/product/1942091');
+  assert.equal(byArticle['А.3724.МД-002.01495-00-09'], 'https://gisp.gov.ru/goods/#/product/1942091');
+
+  // точный артикул не задевает соседние исполнения с буквой
+  assert.equal(byArticle['А.3717.001'], 'https://gisp.gov.ru/goods/#/product/4668729');
+  assert.equal(byArticle['А.3717.001-Б'], undefined);
+
+  // ссылка перезаписывается, если в списке новее
+  assert.equal(byArticle['А.3714.001'], 'https://gisp.gov.ru/goods/#/product/4710066');
+
+  // позиции нет в каталоге — попадает в отчёт, а не молча теряется
+  assert.deepEqual(report.unmatched.map(item => item.article), ['А.3714.020']);
+  assert.equal(report.matched, 5);
+  assert.equal(report.changed, 5);
+
+  // повторный прогон ничего не меняет
+  const again = applyLinks(components, links);
+  assert.equal(again.changed, 0);
+});

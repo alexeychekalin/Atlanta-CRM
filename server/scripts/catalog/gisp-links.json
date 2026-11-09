@@ -1,0 +1,28 @@
+{
+  "$comment": "Записи изделий в реестре ГИСП. Правится руками, применяется командой npm run db:apply-gisp (из корня). match=exact — только этот артикул, match=prefix — он и все артикулы, которые с него начинаются (семейство с исполнениями).",
+
+  "links": [
+    {
+      "match": "prefix",
+      "article": "А.3724",
+      "url": "https://gisp.gov.ru/goods/#/product/1942091",
+      "note": "Жгуты проводов типа А.3724 — всё семейство"
+    },
+    { "article": "А.3717.001", "url": "https://gisp.gov.ru/goods/#/product/4668729" },
+    { "article": "А.3731.006", "url": "https://gisp.gov.ru/goods/#/product/4669268" },
+    { "article": "А.3731.005", "url": "https://gisp.gov.ru/goods/#/product/4669273" },
+    { "article": "А.3731.018", "url": "https://gisp.gov.ru/goods/#/product/4669281" },
+    { "article": "А.3731.027", "url": "https://gisp.gov.ru/goods/#/product/4669329" },
+    { "article": "А.3731.007", "url": "https://gisp.gov.ru/goods/#/product/4669254" },
+    { "article": "А.3717.002", "url": "https://gisp.gov.ru/goods/#/product/4669246" },
+    { "article": "А.3731.010", "url": "https://gisp.gov.ru/goods/#/product/4669320" },
+    { "article": "А.3731.020", "url": "https://gisp.gov.ru/goods/#/product/4709787" },
+    { "article": "А.3776.001", "url": "https://gisp.gov.ru/goods/#/product/4709712" },
+    { "article": "А.3716.001", "url": "https://gisp.gov.ru/goods/#/product/4710058" },
+    { "article": "А.3716.002", "url": "https://gisp.gov.ru/goods/#/product/4709912" },
+    { "article": "А.3776.005", "url": "https://gisp.gov.ru/goods/#/product/4709674" },
+    { "article": "А.3731.023", "url": "https://gisp.gov.ru/goods/#/product/4709728" }
+  ],
+
+  "$missing": "А.3714.020 (плафон, запись 4710066) — такого артикула в каталоге нет. В разделе «Плафоны» только А.3714.001, .002 и .003: либо опечатка, либо позицию надо завести."
+}

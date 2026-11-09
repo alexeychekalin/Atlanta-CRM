@@ -1251,6 +1251,85 @@ ul {
   height: 12px;
 }
 
+/* раздел «Сделано в России»: группы по разделам каталога и строки
+   для позиций без фото — реестр читается ровнее, чем стена заглушек */
+.russia-group {
+  padding-top: clamp(28px, 3vw, 40px);
+}
+
+.russia-group__head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.russia-group__head h2 {
+  font-size: clamp(20px, 2.2vw, 26px);
+  letter-spacing: -0.02em;
+}
+
+.russia-group__head .section__link {
+  margin-left: auto;
+}
+
+.russia-group__count {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--accent-wash);
+  color: var(--accent-deep);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.russia-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 28px;
+}
+
+.russia-list li {
+  border-bottom: 1px solid var(--line);
+}
+
+.russia-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 11px 2px;
+  font-size: 14px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.russia-row:hover {
+  background: var(--paper-soft);
+  color: var(--accent);
+}
+
+.russia-row__article {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-deep);
+  white-space: nowrap;
+}
+
+.russia-row__name {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.russia-row__arrow {
+  color: var(--accent-pale);
+  align-self: center;
+}
+
 /* ------------------------------------------------- раздел «Сделано в России» */
 
 .page-head--russia {
@@ -1954,6 +2033,7 @@ ul {
 @media (max-width: 1080px) {
   .cat-grid { grid-template-columns: repeat(2, 1fr); }
   .russia-grid { grid-template-columns: 1fr; }
+  .russia-list { grid-template-columns: 1fr; }
   .product-grid { grid-template-columns: repeat(3, 1fr); }
   .adv-grid { grid-template-columns: repeat(2, 1fr); }
   .footer__grid { grid-template-columns: 1fr 1fr; }
