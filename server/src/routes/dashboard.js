@@ -11,9 +11,9 @@ router.get('/', auth, async (req, res) => {
     const kpiQuery = `
       SELECT
         COUNT(*) as total_orders,
-        COALESCE(SUM(subtotal), 0) as total_subtotal,
-        COALESCE(SUM(commission_amount), 0) as total_commission,
-        COALESCE(SUM(total), 0) as total_amount,
+        COALESCE(SUM(subtotal) FILTER (WHERE status <> 'cancelled'), 0) as total_subtotal,
+        COALESCE(SUM(commission_amount) FILTER (WHERE status <> 'cancelled'), 0) as total_commission,
+        COALESCE(SUM(total) FILTER (WHERE status <> 'cancelled'), 0) as total_amount,
         COUNT(CASE WHEN status = 'new' THEN 1 END) as new_orders,
         COUNT(CASE WHEN status = 'in_progress' THEN 1 END) as in_progress_orders,
         COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_orders,
@@ -33,7 +33,8 @@ router.get('/', auth, async (req, res) => {
         COUNT(*) as count,
         COALESCE(SUM(total), 0) as amount
       FROM orders
-      WHERE order_date >= NOW() - INTERVAL '12 months'
+      WHERE status <> 'cancelled'
+        AND order_date >= NOW() - INTERVAL '12 months'
       GROUP BY TO_CHAR(order_date, 'YYYY-MM'), TO_CHAR(order_date, 'Mon YYYY')
       ORDER BY month
     `;
@@ -76,8 +77,8 @@ router.get('/clients', auth, async (req, res) => {
       SELECT c.id, c.name, c.phone, c.email, c.avatar_path, c.status_id, c.created_at,
         cws.name AS status_name, cws.color AS status_color,
         COUNT(o.id) AS total_orders,
-        COALESCE(SUM(o.total), 0) AS total_amount,
-        COALESCE(SUM(o.commission_amount), 0) AS total_commission,
+        COALESCE(SUM(o.total) FILTER (WHERE o.status <> 'cancelled'), 0) AS total_amount,
+        COALESCE(SUM(o.commission_amount) FILTER (WHERE o.status <> 'cancelled'), 0) AS total_commission,
         COUNT(CASE WHEN o.status = 'new' THEN 1 END) AS new_orders,
         COUNT(CASE WHEN o.status = 'in_progress' THEN 1 END) AS in_progress_orders,
         COUNT(CASE WHEN o.status = 'paid' THEN 1 END) AS paid_orders,

@@ -32,6 +32,13 @@ DB_PASS=$(openssl rand -hex 16)
 JWT_SECRET=$(openssl rand -hex 32)
 PORT=3000
 
+# Наполнение базы (см. DEPLOY.md, раздел «Варианты наполнения»)
+#   WITH_CATALOG=1  — импортировать каталог АТЛАНТА-26 (полная версия)
+#   SEED_DEMO=0     — не создавать демо-клиентов, услуги и заказы
+#   SKIP_PRESEED=1  — не загружать предзаполненных клиентов из src/db/preseed
+export SEED_DEMO="${SEED_DEMO:-1}"
+SKIP_PRESEED="${SKIP_PRESEED:-0}"
+
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║      CRM «Атланта» — Установка           ║${NC}"
@@ -40,16 +47,45 @@ echo ""
 echo "  Директория: $APP_DIR"
 echo "  БД:         $DB_NAME"
 echo "  Пользователь БД: $DB_USER"
+if [ "${WITH_CATALOG:-0}" = "1" ]; then
+  echo "  Каталог:    с каталогом АТЛАНТА-26 (полная версия)"
+else
+  echo "  Каталог:    без каталога (пустая версия)"
+fi
+if [ "$SEED_DEMO" = "0" ]; then
+  echo "  Демо-данные: не создаются (SEED_DEMO=0)"
+else
+  echo "  Демо-данные: 3 клиента, 5 услуг, 4 заказа (SEED_DEMO=0 — отключить)"
+fi
+if [ "$SKIP_PRESEED" = "1" ]; then
+  echo "  Предзаполнение клиентов: пропускается (SKIP_PRESEED=1)"
+fi
 echo ""
 
-# Интерактивный ввод домена
-read -p "Введите домен или IP сервера (или Enter для пропуска): " DOMAIN
+# Домен: из окружения (DOMAIN=...) или интерактивно. Пустой ответ — без имени,
+# сервер ответит на любой адрес (server_name _).
+if [ -z "${DOMAIN:-}" ]; then
+  if [ -t 0 ]; then
+    read -p "Введите домен или IP сервера (или Enter для пропуска): " DOMAIN || true
+  else
+    # неинтерактивный запуск (CI, ansible): домен не спрашиваем
+    DOMAIN=$(hostname -I 2>/dev/null | awk '{print $1}')
+  fi
+fi
 DOMAIN=${DOMAIN:-_}
+
+# без вопросов apt (tzdata и прочие пакеты ждут ответа и вешают CI)
+export DEBIAN_FRONTEND=noninteractive
 
 # ─────────────────────────────────────────────
 step "1/8 • Обновление системы"
 # ─────────────────────────────────────────────
-apt update && apt upgrade -y
+apt update
+if [ "${SKIP_APT_UPGRADE:-0}" != "1" ]; then
+  apt upgrade -y
+else
+  echo "  полный apt upgrade пропущен (SKIP_APT_UPGRADE=1)"
+fi
 apt install -y curl git ufw lsb-release gnupg2 ca-certificates
 log "Система обновлена"
 
@@ -108,15 +144,8 @@ log "Применяю схему БД..."
 sudo -u postgres psql -d $DB_NAME -f "$APP_DIR/server/src/db/schema.sql" 2>&1 | tail -5
 log "Схема применена"
 
-# Применить миграции
-log "Применяю миграции..."
-for migration in "$APP_DIR"/server/src/db/migration_*.sql; do
-  if [ -f "$migration" ]; then
-    sudo -u postgres psql -d $DB_NAME -f "$migration" 2>&1 | tail -2
-    log "  $(basename $migration)"
-  fi
-done
-log "Все миграции применены"
+# Миграции применяются после установки зависимостей (npm run db:migrate)
+log "Схема применена"
 
 # Выдать права на все таблицы и последовательности
 sudo -u postgres psql -d $DB_NAME -c "GRANT USAGE ON SCHEMA public TO $DB_USER;"
@@ -152,6 +181,8 @@ DATABASE_URL=postgresql://$DB_USER:$DB_PASS@localhost:5432/$DB_NAME
 JWT_SECRET=$JWT_SECRET
 PORT=$PORT
 NODE_ENV=production
+TRUST_PROXY=true
+COOKIE_SECURE=false
 EOF
 log ".env создан"
 
@@ -159,15 +190,38 @@ log ".env создан"
 mkdir -p "$APP_DIR/server/uploads"/{images,drawings,avatars,documents}
 log "Директории uploads созданы"
 
-# Заполнить тестовые данные
-log "Заполняю тестовые данные (seed)..."
+# Применить миграции (реестр schema_migrations)
+log "Применяю миграции..."
 cd "$APP_DIR/server"
+node src/db/migrate.js || err "Ошибка миграции БД"
+
+# Заполнить тестовые данные (SEED_DEMO=0 — только структура, пользователи и справочники)
+log "Инициализирую базу (seed)..."
 node src/db/seed.js 2>/dev/null || warn "Seed уже был применён или произошла ошибка"
 
 # Миграция ролей (добавляет guest и др.)
 node src/db/migrate_roles.js 2>/dev/null || warn "Миграция ролей: ошибка или уже применена"
+
+# Наполнение базы одним шагом (src/db/data.js): контрагенты из карточек
+# предприятий + каталог АТЛАНТА-26, если включён WITH_CATALOG=1.
+# Контрагенты пропускаются флагом SKIP_PRESEED=1.
+export WITH_CATALOG="${WITH_CATALOG:-0}"
+export SKIP_PRESEED
+if [ "$WITH_CATALOG" = "1" ]; then
+  DATASET_LABEL="контрагенты + каталог АТЛАНТА-26"
+else
+  DATASET_LABEL="контрагенты (каталог выключен)"
+fi
+log "Загружаю данные: ${DATASET_LABEL}..."
+if node src/db/data.js; then
+  if [ "$WITH_CATALOG" = "1" ]; then
+    touch "$APP_DIR/server/.catalog-enabled"
+  fi
+  log "Данные загружены"
+else
+  warn "Наполнение: часть данных не загрузилась (см. сообщения выше)"
+fi
 cd "$APP_DIR"
-log "Данные загружены"
 
 # Повторно выдать права (seed/migrate_roles могли создать записи)
 sudo -u postgres psql -d $DB_NAME -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO $DB_USER;" 2>/dev/null
@@ -214,12 +268,19 @@ step "7/8 • Настройка Nginx"
 # ─────────────────────────────────────────────
 apt install -y nginx
 
-SERVER_NAME="$DOMAIN"
-if [ "$DOMAIN" = "_" ]; then
-  SERVER_NAME="_"
-fi
-
-cat > /etc/nginx/sites-available/atlanta-crm <<NGINX
+# Два хоста: сайт завода на основном домене, CRM — на поддомене crm.<домен>.
+# Конфиги — шаблоны deploy/nginx/*.conf, раскладывает scripts/setup-nginx.sh.
+# Его же можно запустить отдельно позже, когда появится домен.
+export DOMAIN
+export SITE_ROOT="${SITE_ROOT:-/var/www/atlanta}"
+export APP_PORT="$PORT"
+if [ -x "$APP_DIR/scripts/setup-nginx.sh" ]; then
+  "$APP_DIR/scripts/setup-nginx.sh"
+else
+  # резервный вариант, если скрипт не попал в архив: один server block на CRM
+  SERVER_NAME="$DOMAIN"
+  if [ "$DOMAIN" = "_" ]; then SERVER_NAME="_"; fi
+  cat > /etc/nginx/sites-available/atlanta-crm <<NGINX
 server {
     listen 80;
     server_name $SERVER_NAME;
@@ -239,10 +300,10 @@ server {
     }
 }
 NGINX
-
-ln -sf /etc/nginx/sites-available/atlanta-crm /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
-nginx -t && systemctl restart nginx
+  ln -sf /etc/nginx/sites-available/atlanta-crm /etc/nginx/sites-enabled/
+  rm -f /etc/nginx/sites-enabled/default
+  nginx -t && systemctl restart nginx
+fi
 log "Nginx настроен"
 
 # ─────────────────────────────────────────────
@@ -251,8 +312,15 @@ step "8/8 • Настройка файрвола"
 ufw allow 22/tcp   >/dev/null 2>&1
 ufw allow 80/tcp   >/dev/null 2>&1
 ufw allow 443/tcp  >/dev/null 2>&1
-ufw --force enable >/dev/null 2>&1
-log "UFW настроен (22, 80, 443)"
+# без домена CRM живёт на :8080 — открываем только в этом режиме
+if [ "$DOMAIN" = "_" ] || [[ "$DOMAIN" =~ ^[0-9.]+$ ]]; then
+  ufw allow 8080/tcp >/dev/null 2>&1
+  ufw --force enable >/dev/null 2>&1
+  log "UFW настроен (22, 80, 443, 8080 — CRM без домена)"
+else
+  ufw --force enable >/dev/null 2>&1
+  log "UFW настроен (22, 80, 443)"
+fi
 
 # ─────────────────────────────────────────────
 # Итоги
@@ -262,7 +330,14 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║     ✅ Установка завершена успешно!       ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
 echo ""
-echo "  🌐 Сайт:     http://${DOMAIN//_/$(hostname -I | awk '{print $1}')}"
+SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+if [ "$DOMAIN" = "_" ] || [[ "$DOMAIN" =~ ^[0-9.]+$ ]]; then
+  echo "  🌐 Сайт:     http://${SERVER_IP}"
+  echo "  🖥️  CRM:      http://${SERVER_IP}:8080"
+else
+  echo "  🌐 Сайт:     http://${DOMAIN}"
+  echo "  🖥️  CRM:      http://crm.${DOMAIN}"
+fi
 echo "  📦 Директория: $APP_DIR"
 echo "  🗄️  БД:        $DB_NAME"
 echo ""
@@ -280,9 +355,9 @@ echo "    sudo systemctl restart atlanta-crm"
 echo "    sudo journalctl -u atlanta-crm -f"
 echo ""
 
-if [ "$DOMAIN" != "_" ]; then
+if [ "$DOMAIN" != "_" ] && [[ ! "$DOMAIN" =~ ^[0-9.]+$ ]]; then
   echo -e "  ${CYAN}💡 Для SSL (HTTPS):${NC}"
   echo "    sudo apt install -y certbot python3-certbot-nginx"
-  echo "    sudo certbot --nginx -d $DOMAIN"
+  echo "    sudo certbot --nginx -d $DOMAIN -d www.$DOMAIN -d crm.$DOMAIN"
   echo ""
 fi

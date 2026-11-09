@@ -1,14 +1,8 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
-const adminOnly = require('../middleware/role');
 
 const router = express.Router({ mergeParams: true });
-
-const eventIcons = {
-  call: '📞', negotiation: '💬', price_change: '💰', deferral: '⏳',
-  order: '📋', document: '📎', payment: '✅', issue: '⚠️', note: '📝',
-};
 
 // GET /api/clients/:id/timeline
 router.get('/', auth, async (req, res) => {
