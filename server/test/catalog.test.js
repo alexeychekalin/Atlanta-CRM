@@ -33,7 +33,10 @@ test('каталог: файл данных есть и корректно ра�
     assert.ok(entry.article, 'позиция без артикула');
     assert.ok(entry.name, `${entry.article}: без названия`);
     assert.ok(keys.has(entry.category), `${entry.article}: неизвестная категория «${entry.category}»`);
-    assert.ok(Number.isInteger(entry.source_page), `${entry.article}: не указана страница каталога`);
+    // у позиций, заведённых вне печатного каталога (фото и описание от завода),
+    // страницы нет — source_page: null
+    assert.ok(entry.source_page === null || Number.isInteger(entry.source_page),
+      `${entry.article}: не указана страница каталога`);
     assert.ok(entry.description && entry.description.length > 20, `${entry.article}: пустое описание`);
   }
 });

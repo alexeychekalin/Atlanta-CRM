@@ -116,6 +116,27 @@ LABELS = {
 SENTENCE_SPLIT = re.compile(r'(?<=[.!?])\s+')
 
 
+def split_top_level(text, seps=',;'):
+    """Разделить перечисление, не заглядывая внутрь скобок.
+
+    «2-х функциональный (габарит, светоотражатель), свет передний габаритный»
+    — это два пункта, а не три: запятая внутри скобок относится к первому.
+    """
+    parts, buf, depth = [], [], 0
+    for char in text or '':
+        if char == '(':
+            depth += 1
+        elif char == ')':
+            depth = max(0, depth - 1)
+        if char in seps and depth == 0:
+            parts.append(''.join(buf))
+            buf = []
+        else:
+            buf.append(char)
+    parts.append(''.join(buf))
+    return [part.strip() for part in parts if part.strip()]
+
+
 def clean_public(text):
     """Убрать из текста служебные пометки CRM, которые не для клиента."""
     text = text or ''
@@ -169,12 +190,20 @@ def parse_description(text):
         if not line:
             continue
         if line.lower().startswith('функции:'):
-            blocks['functions'] += [item.strip(' .') for item in
-                                    re.split(r'[,;]', line.split(':', 1)[1]) if item.strip()]
+            value = line.split(':', 1)[1]
+            parts = [item.strip(' .') for item in split_top_level(value) if item.strip(' .')]
+            # «освещение салонов автобусов, фургонов, специальной техники» —
+            # это одна фраза с продолжением перечисления, а не три функции:
+            # короткие куски («фургонов», «кабин», «багажников») склеиваем назад
+            long_parts = sum(1 for part in parts if len(part.split()) >= 3)
+            if len(parts) > 2 and long_parts / len(parts) < 0.6:
+                blocks['functions'].append(' '.join(value.split()).strip(' .'))
+            else:
+                blocks['functions'] += parts
             continue
         if line.lower().startswith('особенности:'):
             blocks['features'] += [item.strip(' .') for item in
-                                   line.split(':', 1)[1].split(';') if item.strip()]
+                                   split_top_level(line.split(':', 1)[1], ';') if item.strip(' .')]
             continue
         match = PARAM_RE.match(line)
         if match:
@@ -1077,7 +1106,7 @@ class Site:
   <div class="wrap">
     <div class="eyebrow">Каталог</div>
     <h1 style="margin-top:14px">Вся продукция завода</h1>
-    <p>{len(self.components)} позиций в 11 разделах: фонари, плафоны, жгуты, разъёмы и прочие изделия.
+    <p>{len(self.components)} {plural(len(self.components), ('позиция', 'позиции', 'позиций'))} в 11 разделах: фонари, плафоны, жгуты, разъёмы и прочие изделия.
        Фильтруйте по названию или артикулу — поиск работает без перезагрузки страницы.
        Изделия с отметкой «Сделано в России» собраны
        <a href="/made-in-russia/" style="border-bottom:1px solid var(--line-strong)">в отдельном разделе</a>.</p>
