@@ -491,3 +491,35 @@ test('ГИСП: список ссылок — точный артикул и ц�
   const again = applyLinks(components, links);
   assert.equal(again.changed, 0);
 });
+
+test('ГИСП: семейство А.3776.001 и комплект с фонарём А.3776.005', () => {
+  const { applyLinks } = require('../scripts/catalog/apply_gisp');
+  const { links } = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '../scripts/catalog/gisp-links.json'), 'utf8'));
+
+  const components = [
+    'А.3776.001', 'А.3776.001-Б', 'А.3776.001-БЖ',
+    'А.3776.001.1', 'А.3776.001.1-Б', 'А.3776.001.1-БЖ',
+    'А.3776.005',
+    'А.3776.005/А.3731.007',
+    'А.3776.005/А.3731.002.3',
+    'А.3776.008',
+  ].map(article => ({ article }));
+
+  applyLinks(components, links);
+  const byArticle = Object.fromEntries(components.map(item => [item.article, item.gisp_url]));
+
+  // А.3776.001(-/.)* — всё семейство: бесцветные и с подсветкой номера
+  for (const article of ['А.3776.001', 'А.3776.001-Б', 'А.3776.001-БЖ',
+    'А.3776.001.1', 'А.3776.001.1-Б', 'А.3776.001.1-БЖ']) {
+    assert.equal(byArticle[article], 'https://gisp.gov.ru/goods/#/product/4709712', article);
+  }
+
+  // Комплект ссылается на запись фонаря, а не на свою
+  assert.equal(byArticle['А.3776.005'], 'https://gisp.gov.ru/goods/#/product/4709674');
+  assert.equal(byArticle['А.3776.005/А.3731.007'], 'https://gisp.gov.ru/goods/#/product/4709674');
+
+  // Соседние комплекты и А.3776.008 правило не задевает
+  assert.equal(byArticle['А.3776.005/А.3731.002.3'], undefined);
+  assert.equal(byArticle['А.3776.008'], undefined);
+});
