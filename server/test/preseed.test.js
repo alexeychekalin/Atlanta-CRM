@@ -4,8 +4,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { buildNotes, placeDocument, readConfig, CLIENTS_JSON, FILES_DIR } =
-  require('../src/db/preseed');
+const { buildNotes, diffClient, updateClient, parseArgs, placeDocument, readConfig,
+  CLIENT_FIELDS, CLIENTS_JSON, FILES_DIR } = require('../src/db/preseed');
 
 test('предзаполнение: файл данных есть и корректно разбирается', () => {
   assert.ok(fs.existsSync(CLIENTS_JSON), 'нет src/db/preseed/clients.json');
@@ -102,4 +102,98 @@ test('предзаполнение: файл копируется под ста�
   assert.deepEqual(fs.readdirSync(target), [path.basename(first.url)]);
 
   fs.rmSync(target, { recursive: true, force: true });
+});
+
+test('предзаполнение: все поля карточки есть в схеме базы', () => {
+  // CLIENT_FIELDS — единственный список колонок, который пишет предзаполнение:
+  // опечатка в имени поля иначе всплывёт только на боевой базе.
+  const schema = fs.readFileSync(path.join(__dirname, '../src/db/schema.sql'), 'utf8');
+  for (const field of CLIENT_FIELDS) {
+    assert.match(schema, new RegExp(`\\b${field}\\s+(VARCHAR|TEXT|INT)`),
+      `поля ${field} нет в clients (schema.sql)`);
+  }
+
+  const migration = fs.readFileSync(path.join(__dirname, '../src/db/migration_client_org.sql'), 'utf8');
+  for (const field of ['full_name', 'name_en', 'full_name_en', 'okpo', 'okved',
+    'director_position', 'director_basis']) {
+    assert.match(migration, new RegExp(`ADD COLUMN IF NOT EXISTS ${field}\\b`),
+      `миграция не добавляет ${field}`);
+  }
+});
+
+test('предзаполнение: карточка РУАТ заполнена по карточке организации', () => {
+  const { clients } = readConfig();
+  const ruat = clients.find(c => c.inn === '3300013912');
+  assert.ok(ruat, 'нет клиента с ИНН 3300013912');
+  assert.equal(ruat.name, 'ООО «РУАТ»');
+  assert.match(ruat.full_name, /^Общество с ограниченной ответственностью «РуАуто Трейлер»$/);
+  assert.equal(ruat.name_en, 'RUAT LLC');
+  assert.equal(ruat.full_name_en, 'RuAuto Trailer Limited Liability Company');
+  assert.equal(ruat.okpo, '96134892');
+  assert.equal(ruat.okved, '29.20');
+  assert.match(ruat.phone, /^\+7 492 442 70 07$/);
+  assert.equal(ruat.email, 'ruautotrailer@bk.ru');
+  assert.match(ruat.legal_address, /^601446, Владимирская область/);
+  assert.match(ruat.legal_address, /Железнодорожная, д\. 13, помещ\. 414$/);
+  assert.equal(ruat.legal_address, ruat.address, 'фактический адрес совпадает с юридическим');
+  assert.equal(ruat.bank_account, '40702810524630001427');
+  assert.equal(ruat.bank_name, 'ФИЛИАЛ "ЦЕНТРАЛЬНЫЙ" БАНКА ВТБ (ПАО)');
+  assert.equal(ruat.corr_account, '30101810145250000411');
+  assert.equal(ruat.bik, '044525411');
+  assert.equal(ruat.director, 'Холов Наиль Хусанович');
+  assert.equal(ruat.director_position, 'Генеральный директор');
+  assert.equal(ruat.director_basis, 'Устава');
+});
+
+test('предзаполнение: банковские реквизиты заполняются только целиком', () => {
+  // Р/С без банка или без БИК в счёте — это счёт, который некуда отправить.
+  const { clients } = readConfig();
+  for (const entry of clients) {
+    const bank = [entry.bank_account, entry.bank_name, entry.bik, entry.corr_account];
+    const filled = bank.filter(Boolean).length;
+    assert.ok(filled === 0 || filled === bank.length,
+      `${entry.name}: банковские реквизиты заполнены частично`);
+  }
+});
+
+test('--refresh: пустое поле в файле не стирает значение в карточке', () => {
+  const entry = { name: 'ООО «РУАТ»', email: 'new@example.ru', phone: '', bank_name: null };
+
+  const changes = diffClient(entry, {
+    name: 'ООО «РУАТ»', email: 'old@example.ru', phone: '+7 000', bank_name: 'Банк',
+  });
+
+  assert.deepEqual(Object.keys(changes).sort(), ['email']);
+  assert.equal(changes.email.from, 'old@example.ru');
+  assert.equal(changes.email.to, 'new@example.ru');
+
+  // Ничего не поменялось — обновлять нечего
+  assert.deepEqual(diffClient({ name: 'ООО «РУАТ»' }, { name: ' ООО «РУАТ» ' }), {});
+});
+
+test('--refresh: UPDATE собирается только из полей карточки', async () => {
+  const calls = [];
+  const runner = {
+    query: async (sql, params) => {
+      calls.push({ sql, params });
+      return { rows: [] };
+    },
+  };
+
+  const count = await updateClient(runner, 42, {
+    email: { from: null, to: 'ruautotrailer@bk.ru' },
+    bik: { from: null, to: '044525411' },
+  });
+
+  assert.equal(count, 2);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].sql, /^UPDATE clients SET email = \$1, bik = \$2 WHERE id = \$3$/);
+  assert.deepEqual(calls[0].params, ['ruautotrailer@bk.ru', '044525411', 42]);
+  assert.equal(await updateClient(runner, 42, {}), 0, 'пустой набор не должен ходить в базу');
+});
+
+test('флаги командной строки: --refresh и --dry-run', () => {
+  assert.deepEqual(parseArgs([]), { refresh: false, dryRun: false });
+  assert.deepEqual(parseArgs(['--refresh']), { refresh: true, dryRun: false });
+  assert.deepEqual(parseArgs(['--refresh', '--dry-run']), { refresh: true, dryRun: true });
 });

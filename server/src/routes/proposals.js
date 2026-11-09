@@ -63,9 +63,12 @@ router.get('/', auth, async (req, res) => {
 router.get('/:id', auth, async (req, res) => {
   try {
     const proposal = await db.query(
-      `SELECT p.*, c.name as client_name, c.phone as client_phone, c.email as client_email,
+      `SELECT p.*, c.name as client_name, c.full_name as client_full_name,
+       c.phone as client_phone, c.email as client_email,
        c.address as client_address, c.inn as client_inn, c.kpp as client_kpp,
        c.legal_address as client_legal_address, c.bank_details as client_bank_details,
+       c.bank_account as client_bank_account, c.bank_name as client_bank_name,
+       c.bik as client_bik, c.corr_account as client_corr_account,
        pr.name as principal_name, pr.agent_commission_pct,
        u.full_name as created_by_name
        FROM proposals p
@@ -359,9 +362,12 @@ router.get('/:id/pdf', auth, async (req, res) => {
   try {
     // Получаем данные КП
     const proposalRes = await db.query(
-      `SELECT p.*, c.name as client_name, c.phone as client_phone, c.email as client_email,
+      `SELECT p.*, c.name as client_name, c.full_name as client_full_name,
+       c.phone as client_phone, c.email as client_email,
        c.address as client_address, c.inn as client_inn, c.kpp as client_kpp,
        c.legal_address as client_legal_address, c.bank_details as client_bank_details,
+       c.bank_account as client_bank_account, c.bank_name as client_bank_name,
+       c.bik as client_bik, c.corr_account as client_corr_account,
        pr.name as principal_name
        FROM proposals p
        LEFT JOIN clients c ON c.id = p.client_id
@@ -459,13 +465,27 @@ router.get('/:id/pdf', auth, async (req, res) => {
        .text('Заказчик:', 40, y);
     y += 14;
     doc.font(fontRegular).fontSize(9).fillColor('#333');
-    doc.text(proposal.client_name, 40, y); y += 12;
-    if (proposal.client_inn) { doc.text(`ИНН ${proposal.client_inn}${proposal.client_kpp ? ' / КПП ' + proposal.client_kpp : ''}`, 40, y); y += 12; }
-    if (proposal.client_legal_address) { doc.text(proposal.client_legal_address, 40, y); y += 12; }
-    else if (proposal.client_address) { doc.text(proposal.client_address, 40, y); y += 12; }
-    if (proposal.client_bank_details) { doc.text(proposal.client_bank_details, 40, y); y += 12; }
-    if (proposal.client_phone) { doc.text(`Тел.: ${proposal.client_phone}`, 40, y); y += 12; }
-    if (proposal.client_email) { doc.text(`Email: ${proposal.client_email}`, 40, y); y += 12; }
+
+    // В официальном документе — полное наименование, если карточка его знает
+    const writeWrapped = (text, width = pageWidth) => {
+      doc.text(text, 40, y, { width });
+      y += Math.max(doc.heightOfString(text, { width }), 11) + 1;
+    };
+    writeWrapped(proposal.client_full_name || proposal.client_name);
+    if (proposal.client_inn) { writeWrapped(`ИНН ${proposal.client_inn}${proposal.client_kpp ? ' / КПП ' + proposal.client_kpp : ''}`); }
+    if (proposal.client_legal_address) { writeWrapped(proposal.client_legal_address); }
+    else if (proposal.client_address) { writeWrapped(proposal.client_address); }
+
+    // Банковские реквизиты: сначала старое свободное поле, иначе собираем из карточки
+    const bankLine = proposal.client_bank_details || [
+      proposal.client_bank_account ? `Р/С ${proposal.client_bank_account}` : '',
+      proposal.client_bank_name ? `Банк: ${proposal.client_bank_name}` : '',
+      proposal.client_corr_account ? `К/С ${proposal.client_corr_account}` : '',
+      proposal.client_bik ? `БИК ${proposal.client_bik}` : '',
+    ].filter(Boolean).join(', ');
+    if (bankLine) writeWrapped(bankLine);
+    if (proposal.client_phone) { writeWrapped(`Тел.: ${proposal.client_phone}`); }
+    if (proposal.client_email) { writeWrapped(`Email: ${proposal.client_email}`); }
 
     y += 8;
 

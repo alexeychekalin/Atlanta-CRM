@@ -7,8 +7,14 @@
  * и не перезаписывает правки, сделанные в интерфейсе.
  *
  * Запуск:
- *   npm run db:preseed      # обычная база (DATABASE_URL)
- *   npm run demo:preseed    # демо на PGlite (PGLITE_DIR)
+ *   npm run db:preseed               # обычная база (DATABASE_URL)
+ *   npm run demo:preseed             # демо на PGlite (PGLITE_DIR)
+ *   npm run db:preseed -- --refresh  # обновить реквизиты уже заведённых карточек
+ *   npm run db:preseed -- --refresh --dry-run
+ *
+ * Без флага --refresh существующие карточки не трогаются: правки из интерфейса
+ * важнее файла. С флагом файл считается эталоном: непустые значения из него
+ * перезаписывают поля карточки, пустые — никогда (не стираем то, чего нет в файле).
  *
  * Запускается автоматически в deploy.sh и demo:init.
  */
@@ -32,6 +38,18 @@ function readConfig() {
   const config = JSON.parse(raw);
   return { clients: Array.isArray(config.clients) ? config.clients : [] };
 }
+
+/**
+ * Поля карточки, которые предзаполнение переносит из файла в базу.
+ * Порядок — как в форме клиента; используется и вставкой, и режимом --refresh.
+ */
+const CLIENT_FIELDS = [
+  'name', 'full_name', 'name_en', 'full_name_en',
+  'phone', 'email', 'site', 'address', 'legal_address', 'postal_address',
+  'inn', 'kpp', 'ogrn', 'ogrnip', 'okpo', 'okved',
+  'bank_account', 'bank_name', 'bik', 'corr_account',
+  'director', 'director_position', 'director_basis', 'client_type',
+];
 
 /** Примечание клиента: полное наименование, коды, телефоны и источник данных. */
 function buildNotes(entry) {
@@ -68,37 +86,43 @@ async function findClient(runner, entry) {
   return byName.rows.length > 0 ? byName.rows[0].id : null;
 }
 
-async function insertClient(runner, entry, statusId, pricingLevelId) {
-  const result = await runner.query(
-    `INSERT INTO clients (name, phone, email, site, address, notes, status_id, pricing_level_id,
-       inn, kpp, legal_address, ogrn, postal_address, bank_account, bank_name, bik, corr_account,
-       director, client_type, ogrnip)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
-     RETURNING id`,
-    [
-      entry.name,
-      entry.phone || null,
-      entry.email || null,
-      entry.site || null,
-      entry.address || null,
-      buildNotes(entry),
-      statusId,
-      pricingLevelId,
-      entry.inn || null,
-      entry.kpp || null,
-      entry.legal_address || null,
-      entry.ogrn || null,
-      entry.postal_address || null,
-      entry.bank_account || null,
-      entry.bank_name || null,
-      entry.bik || null,
-      entry.corr_account || null,
-      entry.director || null,
-      entry.client_type || 'ooo',
-      entry.ogrnip || null,
-    ]
+function insertClient(runner, entry, statusId, pricingLevelId) {
+  const columns = [...CLIENT_FIELDS, 'notes', 'status_id', 'pricing_level_id'];
+  const values = CLIENT_FIELDS.map(field => entry[field] || null);
+  values[CLIENT_FIELDS.indexOf('client_type')] = entry.client_type || 'ooo';
+  values.push(buildNotes(entry), statusId, pricingLevelId);
+
+  const placeholders = columns.map((_, i) => `$${i + 1}`).join(',');
+  return runner
+    .query(`INSERT INTO clients (${columns.join(', ')})
+            VALUES (${placeholders})
+            RETURNING id`, values)
+    .then(result => result.rows[0].id);
+}
+
+/**
+ * Что в карточке расходится с файлом — для режима --refresh.
+ * Сравниваем только непустые значения из файла: пустым полем не затираем.
+ */
+function diffClient(entry, row) {
+  const changes = {};
+  for (const field of CLIENT_FIELDS) {
+    const want = entry[field] == null ? '' : String(entry[field]).trim();
+    const have = row && row[field] != null ? String(row[field]).trim() : '';
+    if (want && want !== have) changes[field] = { from: have || null, to: want };
+  }
+  return changes;
+}
+
+async function updateClient(runner, clientId, changes) {
+  const fields = Object.keys(changes);
+  if (fields.length === 0) return 0;
+  const sets = fields.map((field, i) => `${field} = $${i + 1}`).join(', ');
+  await runner.query(
+    `UPDATE clients SET ${sets} WHERE id = $${fields.length + 1}`,
+    [...fields.map(field => changes[field].to), clientId]
   );
-  return result.rows[0].id;
+  return fields.length;
 }
 
 /**
@@ -153,17 +177,29 @@ async function attachDocuments(runner, clientId, entry) {
   return attached;
 }
 
-async function run(db = require('../db')) {
+/** Флаги командной строки: --refresh (файл — эталон) и --dry-run (только показать). */
+function parseArgs(argv = []) {
+  return {
+    refresh: argv.includes('--refresh'),
+    dryRun: argv.includes('--dry-run'),
+  };
+}
+
+async function run(db = require('../db'), options = {}) {
+  const { refresh, dryRun } = { refresh: false, dryRun: false, ...options };
   const { clients } = readConfig();
   if (clients.length === 0) {
     console.log('ℹ️  Предзаполнение: нет данных в src/db/preseed/clients.json');
     return;
   }
 
-  console.log(`\n📥 Предзаполнение клиентами: ${clients.length} в источнике`);
+  console.log(`\n📥 Предзаполнение клиентами: ${clients.length} в источнике`
+    + (refresh ? ' (режим --refresh: реквизиты обновляются из файла)' : '')
+    + (dryRun ? ' [--dry-run: база не меняется]' : ''));
 
   let created = 0;
   let skipped = 0;
+  let updated = 0;
   let files = 0;
   const errors = [];
 
@@ -182,7 +218,23 @@ async function run(db = require('../db')) {
 
       if (clientId) {
         skipped += 1;
-        console.log(`↷  ${entry.name} — уже есть (id ${clientId})`);
+        if (refresh) {
+          const current = await db.query('SELECT * FROM clients WHERE id = $1', [clientId]);
+          const changes = diffClient(entry, current.rows[0]);
+          const fields = Object.keys(changes);
+          if (fields.length === 0) {
+            console.log(`↷  ${entry.name} — уже есть, реквизиты совпадают`);
+          } else if (dryRun) {
+            const shown = fields.map(field => `${field}: ${changes[field].from ?? '—'} → ${changes[field].to}`);
+            console.log(`~  ${entry.name} — изменилось бы (${fields.length}): ${shown.join('; ')}`);
+          } else {
+            await updateClient(db, clientId, changes);
+            updated += 1;
+            console.log(`↻  ${entry.name} — обновлено полей: ${fields.length} (${fields.join(', ')})`);
+          }
+        } else {
+          console.log(`↷  ${entry.name} — уже есть (id ${clientId})`);
+        }
       } else {
         clientId = await insertClient(db, entry, statusId, pricingLevelId);
         created += 1;
@@ -200,7 +252,8 @@ async function run(db = require('../db')) {
     }
   }
 
-  console.log(`✅ Предзаполнение: создано ${created}, уже было ${skipped}, вложений ${files}`);
+  console.log(`✅ Предзаполнение: создано ${created}, уже было ${skipped}, `
+    + `обновлено ${updated}, вложений ${files}`);
   if (errors.length > 0) {
     console.error(`⚠️  Ошибки: ${errors.join('; ')}`);
     process.exitCode = 1;
@@ -209,7 +262,7 @@ async function run(db = require('../db')) {
 
 if (require.main === module) {
   const db = require('../db');
-  run(db)
+  run(db, parseArgs(process.argv.slice(2)))
     .catch((err) => {
       console.error('❌ Ошибка предзаполнения:', err.message);
       process.exitCode = 1;
@@ -223,4 +276,7 @@ if (require.main === module) {
     });
 }
 
-module.exports = { buildNotes, placeDocument, readConfig, run, CLIENTS_JSON, FILES_DIR };
+module.exports = {
+  buildNotes, diffClient, updateClient, insertClient, parseArgs, placeDocument, readConfig, run,
+  CLIENT_FIELDS, CLIENTS_JSON, FILES_DIR,
+};

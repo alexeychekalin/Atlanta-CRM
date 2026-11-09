@@ -87,6 +87,14 @@ CREATE TABLE IF NOT EXISTS clients (
   bik VARCHAR(15),
   corr_account VARCHAR(30),
   director VARCHAR(255),
+  -- Карточка организации: наименования полностью и по-английски, коды и подписант
+  full_name TEXT,
+  name_en VARCHAR(255),
+  full_name_en TEXT,
+  okpo VARCHAR(20),
+  okved VARCHAR(100),
+  director_position VARCHAR(255),
+  director_basis VARCHAR(255),
   telegram VARCHAR(100),
   max_messenger VARCHAR(500),
   -- Сайт клиента: ссылка в карточке и в списках

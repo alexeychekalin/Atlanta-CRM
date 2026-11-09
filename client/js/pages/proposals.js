@@ -153,16 +153,17 @@ const ProposalsPage = {
         wide: true,
         body: `
           <div class="grid-2 mb-2">
-            <div><strong>Клиент:</strong> ${esc(p.client_name) || '—'}</div>
+            <div><strong>Клиент:</strong> ${esc(p.client_full_name || p.client_name) || '—'}</div>
             <div><strong>Принципал:</strong> ${esc(p.principal_name) || '—'}</div>
             <div><strong>Дата:</strong> ${Table.formatDate(p.created_at)}</div>
             <div><strong>Статус:</strong> ${statusMap[p.status] || p.status}</div>
             ${p.valid_until ? `<div><strong>Действ. до:</strong> ${Table.formatDate(p.valid_until)}</div>` : ''}
             ${p.order_id ? `<div><strong>Заказ:</strong> <a href="#" onclick="Modal.close();App.navigateTo('orders')" style="color:var(--accent-teal)">Перейти к заказу</a></div>` : ''}
           </div>
-          ${p.client_inn ? `<div class="mb-2" style="padding:10px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border);font-size:0.85rem">
-            <strong>Реквизиты:</strong> ИНН ${esc(p.client_inn)}${p.client_kpp ? ' / КПП ' + esc(p.client_kpp) : ''}
+          ${(p.client_inn || p.client_bank_account) ? `<div class="mb-2" style="padding:10px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border);font-size:0.85rem">
+            <strong>Реквизиты:</strong>${p.client_inn ? ` ИНН ${esc(p.client_inn)}${p.client_kpp ? ' / КПП ' + esc(p.client_kpp) : ''}` : ''}
             ${p.client_legal_address ? '<br>' + esc(p.client_legal_address) : ''}
+            ${p.client_bank_account ? `<br>Р/С ${esc(p.client_bank_account)}${p.client_bank_name ? `, ${esc(p.client_bank_name)}` : ''}${p.client_corr_account ? `, К/С ${esc(p.client_corr_account)}` : ''}${p.client_bik ? `, БИК ${esc(p.client_bik)}` : ''}` : ''}
           </div>` : ''}
           ${p.comment ? `<div class="mb-2"><strong>Комментарий:</strong> ${esc(p.comment)}</div>` : ''}
           <h4 class="mb-1" style="color:var(--text-secondary)">Позиции</h4>

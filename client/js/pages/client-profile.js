@@ -75,6 +75,9 @@ const ClientProfilePage = {
             </div>
             <div>${pricingBadge}</div>
           </div>
+          ${c.full_name && c.full_name !== c.name ? `<div style="font-size:0.9rem;color:var(--text-secondary);margin-top:4px">
+            ${esc(c.full_name)}${c.full_name_en ? `<span style="color:var(--text-muted);font-size:0.8rem"> · ${esc(c.full_name_en)}</span>` : ''}
+          </div>` : ''}
           <div class="profile-contacts" style="margin-top:6px">
             ${c.phone ? `<span class="profile-contact-item"><a href="tel:${esc(c.phone)}" style="color:inherit;text-decoration:none">📞 ${esc(c.phone)}</a></span>` : ''}
             ${c.email ? `<span class="profile-contact-item"><a href="mailto:${esc(c.email)}" style="color:inherit;text-decoration:none">✉️ ${esc(c.email)}</a></span>` : ''}
@@ -93,7 +96,8 @@ const ClientProfilePage = {
               </div>
             </div>
           ` : ''}
-          ${(c.inn || c.kpp || c.legal_address || c.bank_details || c.ogrnip || c.ogrn || c.bank_account) ? `
+          ${(c.inn || c.kpp || c.legal_address || c.bank_details || c.ogrnip || c.ogrn || c.bank_account
+             || c.full_name || c.okpo || c.okved || c.bank_name || c.director) ? `
             <div style="margin-top:10px;padding:10px 14px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border)">
               <div onclick="ClientProfilePage.toggleRequisites()" style="display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer;user-select:none" title="Показать или скрыть реквизиты">
                 <div style="font-size:0.78rem;color:var(--text-muted);font-weight:600">
@@ -102,15 +106,19 @@ const ClientProfilePage = {
                 <span id="requisites-toggle-label" style="font-size:0.78rem;color:var(--accent-teal)">Развернуть ▾</span>
               </div>
               <div id="client-requisites-body" class="profile-contacts" style="display:none;margin-top:8px">
+                ${c.full_name ? `<span class="profile-contact-item">Полное наименование: ${esc(c.full_name)}</span>` : ''}
+                ${c.full_name_en ? `<span class="profile-contact-item">На английском: ${esc(c.full_name_en)}${c.name_en ? ` (${esc(c.name_en)})` : ''}</span>` : ''}
                 ${c.inn ? `<span class="profile-contact-item">ИНН ${esc(c.inn)}${c.kpp ? ' / КПП ' + esc(c.kpp) : ''}</span>` : ''}
                 ${c.ogrn ? `<span class="profile-contact-item">ОГРН ${esc(c.ogrn)}</span>` : ''}
                 ${c.ogrnip ? `<span class="profile-contact-item">ОГРНИП ${esc(c.ogrnip)}</span>` : ''}
+                ${(c.okpo || c.okved) ? `<span class="profile-contact-item">${[c.okpo ? 'ОКПО ' + esc(c.okpo) : '', c.okved ? 'ОКВЭД ' + esc(c.okved) : ''].filter(Boolean).join(' · ')}</span>` : ''}
                 ${c.legal_address ? `<span class="profile-contact-item">📍 Юр. адрес: ${esc(c.legal_address)}</span>` : ''}
+                ${c.address && c.address !== c.legal_address ? `<span class="profile-contact-item">🏢 Факт. адрес: ${esc(c.address)}</span>` : ''}
                 ${c.postal_address ? `<span class="profile-contact-item">📮 Почт. адрес: ${esc(c.postal_address)}</span>` : ''}
                 ${c.bank_account ? `<span class="profile-contact-item">💳 Р/С: ${esc(c.bank_account)}</span>` : ''}
                 ${c.corr_account ? `<span class="profile-contact-item">К/С: ${esc(c.corr_account)}</span>` : ''}
                 ${c.bank_name ? `<span class="profile-contact-item">🏦 ${esc(c.bank_name)}${c.bik ? ', БИК: ' + esc(c.bik) : ''}</span>` : ''}
-                ${c.director ? `<span class="profile-contact-item">👤 ${c.client_type === 'ip' ? '' : 'Ген. директор: '}${esc(c.director)}</span>` : ''}
+                ${c.director ? `<span class="profile-contact-item">👤 ${c.client_type === 'ip' ? '' : `${esc(c.director_position || 'Руководитель')}: `}${esc(c.director)}${c.director_basis ? ` (действует на основании ${esc(c.director_basis)})` : ''}</span>` : ''}
                 ${c.bank_details ? `<span class="profile-contact-item" style="color:var(--text-muted);font-size:0.78rem">📋 ${esc(c.bank_details)}</span>` : ''}
               </div>
             </div>
@@ -1214,7 +1222,7 @@ const ClientProfilePage = {
           <div class="form-group"><label>💬 MAX</label><input type="text" class="form-control" id="prof-max-messenger" value="${c.max_messenger || ''}" placeholder="https://max.ru/u/..."></div>
         </div>
         <div class="form-group"><label>🌐 Сайт</label><input type="text" class="form-control" id="prof-site" value="${esc(c.site || '')}" placeholder="example.ru или https://example.ru"></div>
-        <div class="form-group"><label>Адрес</label><input type="text" class="form-control" id="prof-address" value="${c.address || ''}"></div>
+        <div class="form-group"><label>Фактический адрес</label><input type="text" class="form-control" id="prof-address" value="${esc(c.address || '')}" placeholder="Совпадает с юридическим, если не указано иное"></div>
         <div class="form-group">
           <label>Статус</label>
           <select class="form-control" id="prof-status">
@@ -1250,6 +1258,11 @@ const ClientProfilePage = {
             </div>
             <input type="hidden" id="prof-client-type" value="${c.client_type || 'ooo'}">
           </div>
+          <div class="form-group"><label>Полное наименование</label><input type="text" class="form-control" id="prof-full-name" value="${esc(c.full_name || '')}" placeholder="Общество с ограниченной ответственностью «…»"></div>
+          <div class="form-row">
+            <div class="form-group"><label>Полное наименование (англ.)</label><input type="text" class="form-control" id="prof-full-name-en" value="${esc(c.full_name_en || '')}" placeholder="… Limited Liability Company"></div>
+            <div class="form-group"><label>Сокращённое (англ.)</label><input type="text" class="form-control" id="prof-name-en" value="${esc(c.name_en || '')}" placeholder="… LLC"></div>
+          </div>
           <div class="form-row">
             <div class="form-group"><label>ИНН</label><input type="text" class="form-control" id="prof-inn" value="${c.inn || ''}" placeholder="ИНН"></div>
             <div class="form-group" id="prof-kpp-wrap"><label>КПП</label><input type="text" class="form-control" id="prof-kpp" value="${c.kpp || ''}" placeholder="КПП"></div>
@@ -1257,6 +1270,10 @@ const ClientProfilePage = {
           <div class="form-row">
             <div class="form-group" id="prof-ogrn-wrap"><label>ОГРН</label><input type="text" class="form-control" id="prof-ogrn" value="${c.ogrn || ''}" placeholder="ОГРН (13 цифр)"></div>
             <div class="form-group" id="prof-ogrnip-wrap"><label>ОГРНИП</label><input type="text" class="form-control" id="prof-ogrnip" value="${c.ogrnip || ''}" placeholder="ОГРНИП (15 цифр)"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>ОКПО</label><input type="text" class="form-control" id="prof-okpo" value="${c.okpo || ''}" placeholder="ОКПО"></div>
+            <div class="form-group"><label>ОКВЭД</label><input type="text" class="form-control" id="prof-okved" value="${c.okved || ''}" placeholder="29.20"></div>
           </div>
           <div class="form-group"><label>Юридический адрес</label><input type="text" class="form-control" id="prof-legal-address" value="${c.legal_address || ''}" placeholder="Юридический адрес"></div>
           <div class="form-group" id="prof-postal-wrap"><label>Почтовый адрес</label><input type="text" class="form-control" id="prof-postal-address" value="${c.postal_address || ''}" placeholder="Почтовый адрес"></div>
@@ -1268,7 +1285,11 @@ const ClientProfilePage = {
             <div class="form-group"><label>Банк</label><input type="text" class="form-control" id="prof-bank-name" value="${c.bank_name || ''}" placeholder="Название банка"></div>
             <div class="form-group"><label>БИК</label><input type="text" class="form-control" id="prof-bik" value="${c.bik || ''}" placeholder="БИК (9 цифр)"></div>
           </div>
-          <div class="form-group" id="prof-director-wrap"><label>Генеральный директор</label><input type="text" class="form-control" id="prof-director" value="${c.director || ''}" placeholder="Фамилия И.О."></div>
+          <div class="form-row" id="prof-director-wrap">
+            <div class="form-group"><label>Руководитель</label><input type="text" class="form-control" id="prof-director" value="${c.director || ''}" placeholder="Фамилия Имя Отчество"></div>
+            <div class="form-group"><label>Должность</label><input type="text" class="form-control" id="prof-director-position" value="${c.director_position || ''}" placeholder="Генеральный директор"></div>
+          </div>
+          <div class="form-group" id="prof-director-basis-wrap"><label>Действует на основании</label><input type="text" class="form-control" id="prof-director-basis" value="${c.director_basis || ''}" placeholder="Устава"></div>
           <div class="form-group" style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border)"><label style="color:var(--text-muted)">Банковские реквизиты (старое поле)</label><input type="text" class="form-control" id="prof-bank-details" value="${c.bank_details || ''}" placeholder="Устаревшее поле, используйте новые"></div>
         </div>
       `,
@@ -1311,6 +1332,13 @@ const ClientProfilePage = {
       bik: document.getElementById('prof-bik').value.trim(),
       corr_account: document.getElementById('prof-corr-account').value.trim(),
       director: document.getElementById('prof-director').value.trim(),
+      director_position: document.getElementById('prof-director-position').value.trim(),
+      director_basis: document.getElementById('prof-director-basis').value.trim(),
+      full_name: document.getElementById('prof-full-name').value.trim(),
+      full_name_en: document.getElementById('prof-full-name-en').value.trim(),
+      name_en: document.getElementById('prof-name-en').value.trim(),
+      okpo: document.getElementById('prof-okpo').value.trim(),
+      okved: document.getElementById('prof-okved').value.trim(),
     };
     if (!data.name) { Toast.error('Укажите название'); return; }
     try {
@@ -1334,6 +1362,7 @@ const ClientProfilePage = {
     show('prof-ogrnip-wrap', !isOOO);   // ОГРНИП — только ИП
     show('prof-postal-wrap', isOOO);    // Почтовый адрес — только ООО
     show('prof-director-wrap', isOOO);  // Директор — только ООО
+    show('prof-director-basis-wrap', isOOO);
   },
 
   // =================== СОГЛАСОВАНИЯ ЧЕРТЕЖЕЙ ===================

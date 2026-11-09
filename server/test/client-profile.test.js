@@ -6,8 +6,17 @@ const vm = require('vm');
 
 const clientDir = path.join(__dirname, '../../client/js');
 
+/** Заглушка элемента DOM: тестам нужен только innerHTML и пара методов. */
+function fakeElement() {
+  return {
+    innerHTML: '', textContent: '', value: '', style: {}, dataset: {},
+    classList: { add() {}, remove() {}, toggle() {} },
+    addEventListener() {},
+  };
+}
+
 /** Загружает cards клиента в песочницу с минимальными заглушками. */
-function loadClientProfile({ isAdmin = false } = {}) {
+function loadClientProfile({ isAdmin = false, client = null } = {}) {
   const elements = {};
   const storage = {};
   const sandbox = {
@@ -19,7 +28,18 @@ function loadClientProfile({ isAdmin = false } = {}) {
       removeItem: key => { delete storage[key]; },
     },
     document: {
-      getElementById: id => elements[id] || null,
+      getElementById: id => {
+        if (!(id in elements)) {
+          // render() пишет в контейнер и вешает обработчик на скрытый input
+          if (['content-area', 'profile-tab-content', 'avatar-upload-input'].includes(id)) {
+            elements[id] = fakeElement();
+          } else {
+            return null;
+          }
+        }
+        return elements[id];
+      },
+      querySelectorAll: () => [],
     },
     Table: {
       formatMoney: v => `${Number(v).toFixed(2)} ₽`,
@@ -30,7 +50,13 @@ function loadClientProfile({ isAdmin = false } = {}) {
     API: {
       isAdmin: () => isAdmin,
       can: () => isAdmin,
-      get: async () => ({ data: [] }),
+      get: async (url) => {
+        if (!client) return { data: [] };
+        if (url === `/clients/${client.id}`) return client;
+        if (url.endsWith('/documents/stats')) return {};
+        if (url === '/client-statuses') return { data: [] };
+        return { data: [] };
+      },
     },
     Toast: { error: () => {}, success: () => {}, info: () => {} },
     Modal: { open: () => {}, close: () => {} },
@@ -108,4 +134,48 @@ test('карточка: размер файла показывается в уд
   assert.equal(page._formatSize(2048), '2 КБ');
   assert.equal(page._formatSize(5 * 1024 * 1024), '5.0 МБ');
   assert.equal(page._formatSize(null), '0 Б');
+});
+
+test('карточка: шапка и реквизиты показывают карточку организации целиком', async () => {
+  const client = {
+    id: 14,
+    name: 'ООО «РУАТ»',
+    full_name: 'Общество с ограниченной ответственностью «РуАуто Трейлер»',
+    full_name_en: 'RuAuto Trailer Limited Liability Company',
+    name_en: 'RUAT LLC',
+    client_type: 'ooo',
+    status_name: 'Новый',
+    status_color: '#3b82f6',
+    pricing_level_name: 'Крупный опт',
+    pricing_markup_pct: 5,
+    phone: '+7 492 442 70 07',
+    email: 'ruautotrailer@bk.ru',
+    address: '601446, Владимирская область, м.р-н Вязниковский, г. Вязники, ул. Железнодорожная, д. 13, помещ. 414',
+    legal_address: '601446, Владимирская область, м.р-н Вязниковский, г. Вязники, ул. Железнодорожная, д. 13, помещ. 414',
+    inn: '3300013912',
+    kpp: '330001001',
+    ogrn: '1243300005651',
+    okpo: '96134892',
+    okved: '29.20',
+    bank_account: '40702810524630001427',
+    bank_name: 'ФИЛИАЛ "ЦЕНТРАЛЬНЫЙ" БАНКА ВТБ (ПАО)',
+    corr_account: '30101810145250000411',
+    bik: '044525411',
+    director: 'Холов Наиль Хусанович',
+    director_position: 'Генеральный директор',
+    director_basis: 'Устава',
+  };
+
+  const { page, elements } = loadClientProfile({ client });
+  await page.render(client.id);
+
+  const html = elements['content-area'].innerHTML;
+  assert.match(html, /Общество с ограниченной ответственностью «РуАуто Трейлер»/);
+  assert.match(html, /RuAuto Trailer Limited Liability Company/);
+  assert.match(html, /ОКПО 96134892 · ОКВЭД 29\.20/);
+  assert.match(html, /Р\/С: 40702810524630001427/);
+  assert.match(html, /БИК: 044525411/);
+  assert.match(html, /Генеральный директор: Холов Наиль Хусанович \(действует на основании Устава\)/);
+  // Адрес в реквизитах не задваивается, если фактический совпадает с юридическим
+  assert.doesNotMatch(html, /Факт\. адрес/);
 });

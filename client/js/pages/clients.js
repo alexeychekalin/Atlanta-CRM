@@ -66,7 +66,10 @@ const ClientsPage = {
                 return `
                 <tr style="cursor:pointer" onclick="App.navigateTo('client-profile',${c.id})" title="Открыть карточку клиента">
                   <td>${avatar}</td>
-                  <td><a href="#" onclick="event.stopPropagation();App.navigateTo('client-profile',${c.id});return false" class="client-link"><strong>${esc(c.name)}</strong></a></td>
+                  <td>
+                    <a href="#" onclick="event.stopPropagation();App.navigateTo('client-profile',${c.id});return false" class="client-link"><strong>${esc(c.name)}</strong></a>
+                    ${c.full_name && c.full_name !== c.name ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.full_name)}">${esc(c.full_name)}</div>` : ''}
+                  </td>
                   <td>${statusBadge}</td>
                   <td>${c.pricing_level_name
                     ? `<span style="padding:2px 8px;border-radius:12px;background:var(--accent-teal)15;color:var(--accent-teal);font-size:0.75rem;font-weight:600;border:1px solid var(--accent-teal)30;white-space:nowrap">${esc(c.pricing_level_name)}</span>`
@@ -134,8 +137,8 @@ const ClientsPage = {
             </div>
           </div>
           <div class="form-group">
-            <label>Адрес</label>
-            <input type="text" class="form-control" id="client-address" value="${isEdit ? (esc(client.address) || '') : ''}">
+            <label>Фактический адрес</label>
+            <input type="text" class="form-control" id="client-address" value="${isEdit ? (esc(client.address) || '') : ''}" placeholder="Совпадает с юридическим, если не указано иное">
           </div>
           <div class="form-group">
             <label>Примечание</label>
@@ -177,6 +180,14 @@ const ClientsPage = {
               </div>
               <input type="hidden" id="client-type" value="${isEdit ? (client.client_type || 'ooo') : 'ooo'}">
             </div>
+            <div class="form-group">
+              <label>Полное наименование</label>
+              <input type="text" class="form-control" id="client-full-name" value="${isEdit ? (esc(client.full_name) || '') : ''}" placeholder="Общество с ограниченной ответственностью «…»">
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Полное наименование (англ.)</label><input type="text" class="form-control" id="client-full-name-en" value="${isEdit ? (esc(client.full_name_en) || '') : ''}" placeholder="… Limited Liability Company"></div>
+              <div class="form-group"><label>Сокращённое (англ.)</label><input type="text" class="form-control" id="client-name-en" value="${isEdit ? (esc(client.name_en) || '') : ''}" placeholder="… LLC"></div>
+            </div>
             <div class="form-row">
               <div class="form-group"><label>ИНН</label><input type="text" class="form-control" id="client-inn" value="${isEdit ? (esc(client.inn) || '') : ''}" placeholder="ИНН"></div>
               <div class="form-group" id="cl-kpp-wrap"><label>КПП</label><input type="text" class="form-control" id="client-kpp" value="${isEdit ? (esc(client.kpp) || '') : ''}" placeholder="КПП"></div>
@@ -184,6 +195,10 @@ const ClientsPage = {
             <div class="form-row">
               <div class="form-group" id="cl-ogrn-wrap"><label>ОГРН</label><input type="text" class="form-control" id="client-ogrn" value="${isEdit ? (esc(client.ogrn) || '') : ''}" placeholder="ОГРН (13 цифр)"></div>
               <div class="form-group" id="cl-ogrnip-wrap"><label>ОГРНИП</label><input type="text" class="form-control" id="client-ogrnip" value="${isEdit ? (esc(client.ogrnip) || '') : ''}" placeholder="ОГРНИП (15 цифр)"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>ОКПО</label><input type="text" class="form-control" id="client-okpo" value="${isEdit ? (esc(client.okpo) || '') : ''}" placeholder="ОКПО"></div>
+              <div class="form-group"><label>ОКВЭД</label><input type="text" class="form-control" id="client-okved" value="${isEdit ? (esc(client.okved) || '') : ''}" placeholder="29.20"></div>
             </div>
             <div class="form-group"><label>Юридический адрес</label><input type="text" class="form-control" id="client-legal-address" value="${isEdit ? (esc(client.legal_address) || '') : ''}" placeholder="Юридический адрес"></div>
             <div class="form-group" id="cl-postal-wrap"><label>Почтовый адрес</label><input type="text" class="form-control" id="client-postal-address" value="${isEdit ? (esc(client.postal_address) || '') : ''}" placeholder="Почтовый адрес"></div>
@@ -195,7 +210,11 @@ const ClientsPage = {
               <div class="form-group"><label>Банк</label><input type="text" class="form-control" id="client-bank-name" value="${isEdit ? (esc(client.bank_name) || '') : ''}" placeholder="Название банка"></div>
               <div class="form-group"><label>БИК</label><input type="text" class="form-control" id="client-bik" value="${isEdit ? (esc(client.bik) || '') : ''}" placeholder="БИК (9 цифр)"></div>
             </div>
-            <div class="form-group" id="cl-director-wrap"><label>Генеральный директор</label><input type="text" class="form-control" id="client-director" value="${isEdit ? (esc(client.director) || '') : ''}" placeholder="Фамилия И.О."></div>
+            <div class="form-row" id="cl-director-wrap">
+              <div class="form-group"><label>Руководитель</label><input type="text" class="form-control" id="client-director" value="${isEdit ? (esc(client.director) || '') : ''}" placeholder="Фамилия Имя Отчество"></div>
+              <div class="form-group"><label>Должность</label><input type="text" class="form-control" id="client-director-position" value="${isEdit ? (esc(client.director_position) || '') : ''}" placeholder="Генеральный директор"></div>
+            </div>
+            <div class="form-group" id="cl-director-basis-wrap"><label>Действует на основании</label><input type="text" class="form-control" id="client-director-basis" value="${isEdit ? (esc(client.director_basis) || '') : ''}" placeholder="Устава"></div>
           </div>
         </form>
       `,
@@ -229,6 +248,13 @@ const ClientsPage = {
       bik: document.getElementById('client-bik')?.value.trim() || '',
       corr_account: document.getElementById('client-corr-account')?.value.trim() || '',
       director: document.getElementById('client-director')?.value.trim() || '',
+      director_position: document.getElementById('client-director-position')?.value.trim() || '',
+      director_basis: document.getElementById('client-director-basis')?.value.trim() || '',
+      full_name: document.getElementById('client-full-name')?.value.trim() || '',
+      full_name_en: document.getElementById('client-full-name-en')?.value.trim() || '',
+      name_en: document.getElementById('client-name-en')?.value.trim() || '',
+      okpo: document.getElementById('client-okpo')?.value.trim() || '',
+      okved: document.getElementById('client-okved')?.value.trim() || '',
       pricing_level_id: document.getElementById('client-pricing-level')?.value || null,
     };
 
@@ -274,5 +300,6 @@ const ClientsPage = {
     show('cl-ogrnip-wrap', !isOOO);
     show('cl-postal-wrap', isOOO);
     show('cl-director-wrap', isOOO);
+    show('cl-director-basis-wrap', isOOO);
   },
 };

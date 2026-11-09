@@ -84,6 +84,10 @@ touch .catalog-enabled           # чтобы update.sh обновлял кат�
 Точечно: `npm run db:catalog` — только каталог, `npm run db:preseed` — только контрагенты.
 Контрагентов можно догрузить и в пустую версию: `npm run db:preseed`.
 
+Реквизиты уже заведённых карточек (`--refresh`) обновляются только по явной команде:
+`npm run db:preseed -- --refresh --dry-run` покажет расхождения, `--refresh` их запишет.
+Непустые значения из `clients.json` перезаписывают поля карточки, пустые — никогда.
+
 Без маркера `server/.catalog-enabled` скрипт обновления каталог не трогает. Обратная
 операция (убрать каталог) не предусмотрена — позиции удаляются только вручную.
 
@@ -457,6 +461,7 @@ sudo WITH_CATALOG=1 bash update.sh
 cd /opt/atlanta-crm/server
 node src/db/migrate.js      # новые миграции
 node src/db/preseed.js      # новые клиенты из предзаполнения
+node src/db/preseed.js -- --refresh   # ...и обновить реквизиты существующих карточек
 node src/db/catalog.js      # новые позиции каталога (цены сохраняются)
 sudo systemctl restart atlanta-crm
 ```

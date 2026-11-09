@@ -16,9 +16,10 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'dev-only-secret-change-me';
 process.env.NODE_ENV = process.env.NODE_ENV || 'development';
 
 const db = require('../src/db');
-const { run } = require('../src/db/preseed');
+const { run, parseArgs } = require('../src/db/preseed');
 
-run(db)
+// Флаги те же, что у db:preseed: --refresh (файл — эталон реквизитов) и --dry-run
+run(db, parseArgs(process.argv.slice(2)))
   .catch((err) => {
     console.error('❌ Ошибка предзаполнения:', err.message);
     process.exitCode = 1;
