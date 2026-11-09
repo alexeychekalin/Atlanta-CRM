@@ -40,14 +40,35 @@
   if (gallery) {
     var main = gallery.querySelector('[data-gallery-main]');
     var thumbs = gallery.querySelectorAll('[data-gallery-thumb]');
+
+    var show = function (src, alt) {
+      if (!src || !main) return;
+      main.src = src;
+      if (alt) main.alt = alt;
+      thumbs.forEach(function (item) {
+        item.setAttribute('aria-current', String(item.getAttribute('data-src') === src));
+      });
+    };
+
     thumbs.forEach(function (thumb) {
       thumb.addEventListener('click', function () {
-        thumbs.forEach(function (item) { item.setAttribute('aria-current', 'false'); });
-        thumb.setAttribute('aria-current', 'true');
-        main.src = thumb.getAttribute('data-src');
-        main.alt = thumb.getAttribute('data-alt') || main.alt;
+        show(thumb.getAttribute('data-src'), thumb.getAttribute('data-alt'));
       });
     });
+
+    /* фото исполнения из таблицы: подставляем в галерею и, если она не на
+       экране (телефон), подкручиваем к ней — иначе клик «ничего не делает» */
+    if (main) {
+      document.querySelectorAll('[data-gallery-jump]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          show(button.getAttribute('data-src'), button.getAttribute('data-alt'));
+          var box = main.getBoundingClientRect();
+          if (box.top < 0 || box.bottom > window.innerHeight) {
+            main.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        });
+      });
+    }
   }
 
   /* ------------------------------------------------------------ поиск по каталогу */

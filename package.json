@@ -10,6 +10,8 @@
     "db:migrate": "cd server && npm run db:migrate",
     "db:catalog": "cd server && npm run db:catalog",
     "db:export-gisp": "cd server && npm run db:export-gisp",
+    "db:export-images": "cd server && npm run db:export-images",
+    "db:export-site": "cd server && npm run db:export-site",
     "db:data": "cd server && npm run db:data",
     "db:preseed": "cd server && npm run db:preseed",
     "db:init:full": "cd server && npm run db:init:full",

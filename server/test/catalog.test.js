@@ -392,3 +392,56 @@ test('ГИСП: ссылки из базы переносятся в catalog.jso
   assert.deepEqual(pruned.removed, ['А.4']);
   assert.equal(components[3].gisp_url, undefined);
 });
+
+test('фото из CRM: новые снимки добавляются, старые не пропадают', () => {
+  const { applyImages, uploadName } = require('../scripts/catalog/export_images');
+
+  assert.equal(uploadName('/uploads/images/catalog_ab12.jpg'), 'catalog_ab12.jpg');
+  assert.equal(uploadName('https://example.org/x.jpg'), null);
+
+  const components = [
+    {
+      article: 'А.1',
+      image: 'cover-old.jpeg',
+      images: ['cover-old.jpeg', 'old-2.jpeg'],
+      modifications: [
+        { code: '01', images: ['mod-old.jpeg'] },
+        { code: '02', images: [] },
+      ],
+    },
+    { article: 'А.2', modifications: [] },
+  ];
+  const fromDb = new Map([
+    ['А.1', {
+      image: '/uploads/images/new-cover.jpg',
+      images: ['/uploads/images/old-2.jpg', '/uploads/images/new-3.jpg'],
+      mods: new Map([['01', ['/uploads/images/mod-new.jpg']], ['02', ['/uploads/images/mod-2.jpg']]]),
+    }],
+  ]);
+
+  const names = {
+    '/uploads/images/new-cover.jpg': 'a-1_newcover.jpg',
+    '/uploads/images/old-2.jpg': 'old-2.jpeg',
+    '/uploads/images/new-3.jpg': 'a-1_new3.jpg',
+    '/uploads/images/mod-new.jpg': 'a-1_modnew.jpg',
+    '/uploads/images/mod-2.jpg': 'a-1_mod2.jpg',
+  };
+  const report = applyImages(components, fromDb, { place: url => names[url] || null });
+
+  assert.equal(report.components, 1);
+  assert.equal(components[0].image, 'a-1_newcover.jpg');
+  // порядок каталога сохраняется, новые снимки — в конец
+  assert.deepEqual(components[0].images, ['cover-old.jpeg', 'old-2.jpeg', 'a-1_new3.jpg']);
+  assert.deepEqual(components[0].modifications[0].images, ['mod-old.jpeg', 'a-1_modnew.jpg']);
+  assert.deepEqual(components[0].modifications[1].images, ['a-1_mod2.jpg']);
+
+  // без --prune пустой ответ базы галерею не стирает
+  const empty = applyImages(components, new Map([['А.1', { image: null, images: [], mods: new Map() }]]),
+    { place: () => null });
+  assert.equal(empty.components, 0);
+  assert.equal(components[0].images.length, 3);
+
+  // --prune приводит галерею к тому, что в CRM
+  applyImages(components, fromDb, { place: url => names[url] || null, prune: true });
+  assert.deepEqual(components[0].images, ['old-2.jpeg', 'a-1_new3.jpg']);
+});

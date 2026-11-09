@@ -374,6 +374,12 @@ def build_images(components, out_dir, skip=False):
     return made, names, dims
 
 
+def cover(component):
+    """Обложка позиции: первое фото галереи, иначе поле image (так заводит CRM)."""
+    images = component.get('images') or []
+    return images[0] if images else component.get('image')
+
+
 def has_gisp(component):
     """Изделие внесено в реестр ГИСП — на сайте получает отметку «Сделано в России».
 
@@ -407,12 +413,70 @@ def gallery_images(component, files_dir=None):
                 digests.add(digest)
         images.append(name)
 
+    # обложка: у части позиций фото заведено только в поле image (так его
+    # показывает CRM), а массив images пуст — без этого карточка была «без фото»
+    add(component.get('image'))
     for name in component.get('images') or []:
         add(name)
     for mod in component.get('modifications') or []:
         for name in mod.get('images') or []:
             add(name)
     return images
+
+
+def thumbs_title(component, mod):
+    """Подпись миниатюры: обычное фото изделия или снимок исполнения."""
+    if not mod:
+        return component['name']
+    article = full_article(component['article'], mod.get('code'), mod.get('full_article'))
+    return f'Фото исполнения {article}'
+
+
+def mod_photo_map(component, images, files_dir):
+    """Снимки исполнений → фото галереи изделия.
+
+    Часть снимков исполнений побайтно совпадает с фото изделия — в галерее
+    остаётся один экземпляр, а из таблицы исполнений надо вести к нему же.
+    """
+    alias = {name: name for name in images}
+    digests = {}
+    for name in images:
+        try:
+            digests.setdefault(hashlib.md5((files_dir / name).read_bytes()).hexdigest(), name)
+        except OSError:
+            continue
+    for mod in component.get('modifications') or []:
+        for name in mod.get('images') or []:
+            if name in alias:
+                continue
+            try:
+                digest = hashlib.md5((files_dir / name).read_bytes()).hexdigest()
+            except OSError:
+                continue
+            if digest in digests:
+                alias[name] = digests[digest]
+    return alias
+
+
+def mod_photo_buttons(mod, mod_article, image_index, alias, limit=3):
+    """Миниатюры в строке исполнения: клик подставляет фото в галерею изделия."""
+    names, seen = [], set()
+    for name in mod.get('images') or []:
+        target = alias.get(name)
+        if target and target in image_index and target not in seen:
+            seen.add(target)
+            names.append(target)
+    if not names:
+        return '<span class="mods__nophoto" aria-hidden="true">—</span>'
+    buttons = ''.join(
+        f'<button type="button" class="mods__photo" data-gallery-jump="{image_index[name]}" '
+        f'data-src="{image_src(name, 1280)}" data-alt="{esc(mod_article)}" '
+        f'aria-label="Показать фото исполнения {esc(mod_article)}">'
+        f'<img src="{image_src(name, 640)}" alt="" loading="lazy"></button>'
+        for name in names[:limit])
+    more = (f'<span class="mods__more">+{len(names) - limit}</span>'
+            if len(names) > limit else '')
+    return f'<span class="mods__photos">{buttons}{more}</span>'
 
 
 def image_src(name, width=640):
@@ -727,6 +791,8 @@ class Site:
 
     def product_card(self, component, lazy=True):
         images = component.get('images') or []
+        if not images and component.get('image'):
+            images = [component['image']]
         if images:
             media = (f'<img src="{image_src(images[0], 640)}" alt="{esc(component["name"])}" '
                      f'loading="{"lazy" if lazy else "eager"}"'
@@ -770,8 +836,8 @@ class Site:
             return ''
         slug = CATEGORY_SLUGS.get(key, 'prochee')
         count = self.category_counts.get(key, 0)
-        photo = next((item['images'][0] for item in self.components
-                      if item['category'] == key and item.get('images')), None)
+        photo = next((cover(item) for item in self.components
+                      if item['category'] == key and cover(item)), None)
         media = (f'<img src="{image_src(photo, 640)}" alt="" loading="lazy"'
                  f'{size_attrs(self.dims, photo, 640)}>'
                  if photo else '')
@@ -821,15 +887,23 @@ class Site:
         content = self.content
         hero = content['hero']
 
-        hero_image = self.by_slug.get('a-3776-005l')
-        if not hero_image or not hero_image.get('images'):
-            hero_image = next((item for item in self.components if item.get('images')), None)
+        # на главной — фонарь задний А.3776.005: раньше бралась первая позиция
+        # каталога с фото, а это оказался защитный чехол
+        hero_image = self.by_slug.get(slugify('А.3776.005'))
+        if not hero_image or not cover(hero_image):
+            hero_image = next((item for item in self.components
+                               if cover(item) and item['category'] != 'accessory'), None)
         hero_html = ''
         if hero_image:
-            hero_photo = hero_image['images'][0]
+            hero_photo = cover(hero_image)
             hero_html = (f'<img src="{image_src(hero_photo, 1280)}" '
                          f'alt="{esc(hero_image["name"])}"'
                          f'{size_attrs(self.dims, hero_photo, 1280)}>')
+
+        hero_caption = hero['image_caption']
+        if hero_image and hero_image['article'] not in hero_caption:
+            # тексты в content.json могли отстать от каталога — подпись не врёт
+            hero_caption = f'{hero_image["name"]} {hero_image["article"]}'
 
         stats = ''.join(f'<div class="stat"><div class="stat__value">{esc(item["value"])}</div>'
                         f'<div class="stat__label">{esc(item["label"])}</div></div>'
@@ -889,7 +963,7 @@ class Site:
       <div class="hero__visual">
         {hero_html}
       </div>
-      <div class="hero__caption"><b>{esc(hero['image_caption'])}</b><span>Своё производство</span></div>
+      <div class="hero__caption"><b>{esc(hero_caption)}</b><span>Своё производство</span></div>
     </div>
   </div>
 </section>
@@ -1162,11 +1236,24 @@ class Site:
             main = '<span>Фото по запросу</span>'
             badge = ''
 
+        # какие фото принадлежат исполнениям: подписываем их в миниатюрах и
+        # даём переход из таблицы исполнений к нужному снимку
+        image_index = {name: index for index, name in enumerate(images)}
+        photo_alias = mod_photo_map(component, images, self.files_dir)
+        mod_by_image = {}
+        for mod in component.get('modifications') or []:
+            for name in mod.get('images') or []:
+                target = photo_alias.get(name)
+                if target in image_index and target not in mod_by_image:
+                    mod_by_image[target] = mod
+
         thumbs = ''
         if len(images) > 1:
             buttons = ''.join(
                 f'<button type="button" data-gallery-thumb data-src="{image_src(name, 1280)}" '
-                f'data-alt="{esc(component["name"])}" aria-current="{"true" if index == 0 else "false"}">'
+                f'data-alt="{esc(component["name"])}" '
+                f'title="{esc(thumbs_title(component, mod_by_image.get(name)))}" '
+                f'aria-current="{"true" if index == 0 else "false"}">'
                 f'<img src="{image_src(name, 640)}" alt="Фото {index + 1}" loading="lazy"></button>'
                 for index, name in enumerate(images))
             thumbs = f'<div class="gallery__thumbs" role="group" aria-label="Фотографии">{buttons}</div>'
@@ -1193,13 +1280,21 @@ class Site:
         mods_html = ''
         # если у всех исполнений в каталоге только служебная пометка — таблицу не показываем
         if mods and any(clean_mod_name(mod.get('name')) for mod in mods):
-            rows = ''.join(
-                f'<tr><td>{esc(full_article(component["article"], mod.get("code"), mod.get("full_article")))}</td>'
-                f'<td>{esc(clean_mod_name(mod.get("name")) or "Стандартное исполнение")}</td></tr>'
-                for mod in mods)
+            with_photos = any(photo_alias.get(name) in image_index
+                              for mod in mods for name in (mod.get('images') or []))
+            rows = ''
+            for mod in mods:
+                mod_article = full_article(component['article'], mod.get('code'), mod.get('full_article'))
+                rows += '<tr>'
+                if with_photos:
+                    rows += (f'<td class="mods__photo-cell">'
+                             f'{mod_photo_buttons(mod, mod_article, image_index, photo_alias)}</td>')
+                rows += (f'<td>{esc(mod_article)}</td>'
+                         f'<td>{esc(clean_mod_name(mod.get("name")) or "Стандартное исполнение")}</td></tr>')
+            photo_head = '<th class="mods__photo-head">Фото</th>' if with_photos else ''
             mods_html = f'''<div class="block"><h2>Исполнения ({len(mods)})</h2>
 <div class="mods__scroll"><table class="mods">
-<thead><tr><th>Артикул</th><th>Описание</th></tr></thead>
+<thead><tr>{photo_head}<th>Артикул</th><th>Описание</th></tr></thead>
 <tbody>{rows}</tbody></table></div></div>'''
 
         related = [item for item in self.components
