@@ -197,3 +197,51 @@ test('флаги командной строки: --refresh и --dry-run', () =>
   assert.deepEqual(parseArgs(['--refresh']), { refresh: true, dryRun: false });
   assert.deepEqual(parseArgs(['--refresh', '--dry-run']), { refresh: true, dryRun: true });
 });
+
+test('предзаполнение: Бонум Траст и Арсенал-Авто заведены по присланным реквизитам', () => {
+  const { clients } = readConfig();
+  const byInn = Object.fromEntries(clients.map(entry => [entry.inn, entry]));
+
+  const bonum = byInn['6150103172'];
+  assert.ok(bonum, 'нет ООО «Бонум Траст»');
+  assert.equal(bonum.name, 'ООО «Бонум Траст»');
+  assert.equal(bonum.full_name, 'Общество с ограниченной ответственностью «БОНУМ ТРАСТ»');
+  assert.equal(bonum.kpp, '615001001');
+  assert.equal(bonum.ogrn, '1226100033587');
+  assert.equal(bonum.okpo, '77280033');
+  assert.equal(bonum.okved, '29.20');
+  assert.match(bonum.legal_address, /^346404, Ростовская область.*Новочеркасск.*Харьковское шоссе, 10$/);
+  assert.equal(bonum.bank_account, '40702810612010952650');
+  assert.equal(bonum.bank_name, 'Филиал "Корпоративный" ПАО "Совкомбанк"');
+  assert.equal(bonum.corr_account, '30101810445250000360');
+  assert.equal(bonum.bik, '044525360');
+  assert.equal(bonum.director, 'Михайленко Василий Сергеевич');
+  assert.equal(bonum.director_basis, 'Устава');
+
+  const arsenal = byInn['7452021714'];
+  assert.ok(arsenal, 'нет ООО ПФ «Арсенал-Авто»');
+  assert.equal(arsenal.name, 'ООО ПФ «Арсенал-Авто»');
+  assert.equal(arsenal.full_name, 'Общество с ограниченной ответственностью производственная фирма «Арсенал-Авто»');
+  assert.equal(arsenal.kpp, '744801001');
+  assert.equal(arsenal.ogrn, '1027403778137');
+  assert.equal(arsenal.okved, '45.3');
+  assert.match(arsenal.address, /^454036, г\. Челябинск, ул\. Радонежская, 6, офис 204$/);
+  assert.equal(arsenal.phone, '+7 (351) 268-98-39');
+  assert.equal(arsenal.email, 'info@arsenalavto.ru');
+  assert.equal(arsenal.site, 'www.arsenalavto.ru');
+  assert.equal(arsenal.bank_account, '40702810972190053846');
+  assert.equal(arsenal.bank_name, 'Челябинское отделение №8597 ПАО Сбербанк');
+  assert.equal(arsenal.corr_account, '30101810700000000602');
+  assert.equal(arsenal.bik, '047501602');
+  assert.equal(arsenal.director, 'Соколов Андрей Анатольевич');
+  assert.equal(arsenal.director_position, 'Директор');
+});
+
+test('предзаполнение: к РУАТ приложена присланная карточка организации', () => {
+  const { clients } = readConfig();
+  const ruat = clients.find(entry => entry.inn === '3300013912');
+
+  const files = ruat.documents.map(doc => doc.file);
+  assert.ok(files.includes('ruat-org-card.pdf'), 'нет карточки организации');
+  assert.ok(files.includes('ruauto-trailer-egrul.pdf'), 'пропала выписка ЕГРЮЛ');
+});

@@ -43,7 +43,7 @@ function resolvePlan(env = process.env) {
 
 function describe(plan) {
   const parts = [];
-  parts.push(plan.preseed ? 'контрагенты (8 карточек предприятий)' : 'контрагенты — пропуск');
+  parts.push(plan.preseed ? 'контрагенты (10 карточек предприятий)' : 'контрагенты — пропуск');
   parts.push(plan.catalog ? 'каталог АТЛАНТА-26' : 'каталог — пропуск');
   return parts.join(', ');
 }
