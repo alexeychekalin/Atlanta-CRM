@@ -32,6 +32,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / 'site'
+STATIC = SITE / 'static'
 CATALOG_DIR = ROOT / 'server' / 'src' / 'db' / 'catalog'
 CATALOG_JSON = CATALOG_DIR / 'catalog.json'
 FILES_DIR = CATALOG_DIR / 'files'
@@ -527,6 +528,19 @@ def size_attrs(dims, name, width):
 
 # ---------------------------------------------------------------- каркас
 
+def asset_version(rel_path):
+    """Короткий хэш файла для ссылки: ?v=xxxxxxxx.
+
+    Статика отдаётся без версии в имени, поэтому браузер держит старый CSS
+    и после выкладки показывает страницу с прежними стилями. Смена хэша
+    меняет адрес — посетитель сразу получает новую вёрстку.
+    """
+    path = STATIC / rel_path
+    if not path.exists():
+        return ''
+    return hashlib.sha1(path.read_bytes()).hexdigest()[:8]
+
+
 class Site:
     def __init__(self, content, catalog, out_dir, dims=None):
         self.content = content
@@ -575,7 +589,7 @@ class Site:
 {robots}
 <link rel="icon" href="/static/img/favicon-64.png" type="image/png" sizes="64x64">
 <link rel="apple-touch-icon" href="/static/img/favicon-180.png" sizes="180x180">
-<link rel="stylesheet" href="/static/css/site.css">
+<link rel="stylesheet" href="/static/css/site.css?v={asset_version('css/site.css')}">
 <script>document.documentElement.className = "js";</script>
 {extra}
 </head>
@@ -670,7 +684,7 @@ class Site:
     </div>
   </div>
 </footer>
-<script src="/static/js/site.js" defer></script>
+<script src="/static/js/site.js?v={asset_version('js/site.js')}" defer></script>
 </body>
 </html>
 '''
