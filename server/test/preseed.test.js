@@ -304,3 +304,31 @@ test('предзаполнение: данные доставки Вологод
   assert.equal(sis.delivery_contact_phone, '+7 (919) 204-42-35');
   assert.notEqual(sis.delivery_contact_name, sis.director);
 });
+
+test('предзаполнение: доставка Бонум Траст, Барановской и ССТ', () => {
+  const { clients } = readConfig();
+  const byKey = Object.fromEntries(clients.map(entry => [entry.key, entry]));
+
+  // Бонум Траст — площадка на трассе М-4, телефон дали без ФИО получателя
+  const bonum = byKey['bonum-trust'];
+  assert.match(bonum.delivery_address, /Аксайский район, М-4 Дон, 1082-й километр, 1с4/);
+  assert.match(bonum.delivery_address, /Деловые линии/);
+  assert.equal(bonum.delivery_contact_phone, '+7 (928) 122-08-43');
+  assert.equal(bonum.delivery_contact_name, null);
+
+  // Барановская — пункт выдачи СДЭК в Курске, ФИО не давали
+  const bar = byKey['ip-baranovskaya'];
+  assert.match(bar.delivery_address, /Курск, ул\. Энгельса, 115\/2/);
+  assert.match(bar.delivery_address, /СДЭК/);
+  assert.equal(bar.delivery_contact_phone, '+7 (920) 736-58-88');
+  assert.equal(bar.delivery_contact_name, null);
+
+  // ССТ — Деловые линии до терминала Саранска, контакт Алексей Храмов
+  const sst = byKey['sst'];
+  assert.match(sst.delivery_address, /Саранск/);
+  assert.match(sst.delivery_address, /Деловые линии/);
+  assert.match(sst.delivery_address, /до терминала/);
+  assert.equal(sst.delivery_contact_name, 'Алексей Храмов');
+  assert.equal(sst.delivery_contact_phone, '+7 (927) 641-81-40');
+  assert.notEqual(sst.delivery_contact_name, sst.director);
+});
