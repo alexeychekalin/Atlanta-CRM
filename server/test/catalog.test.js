@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 
 const { readConfig, placeImage, expandArticles, fillEmptyFields, retireLegacyFlats, assertSchema,
-  indexDocuments, normalizeArticle, placeDocument, ensureComponentDocuments, ensureModifications,
+  indexDocuments, documentsFor, normalizeArticle, placeDocument, ensureComponentDocuments, ensureModifications,
   CATALOG_JSON, FILES_DIR, DOCS_DIR } = require('../src/db/catalog');
 const { fullArticle } = require('../src/utils/article');
 
@@ -660,4 +660,64 @@ test('каталог: rename_from меняет прежнее название, 
   await ensureModifications(runner, 3, entry);
   assert.deepEqual(updates, [{ id: 11, name: 'Провод без разъёма, длина провода 500 мм' }],
     'переименовать можно только точное прежнее каталожное название');
+});
+
+test('каталог: чертёж семейства А.3731.008 достаётся обеим позициям', () => {
+  const index = indexDocuments();
+
+  // вложенная папка «2» — исполнение А.3731.008.2
+  assert.ok(index.has(normalizeArticle('А.3731.008.2')),
+    'папка docs/Габаритные фонари/А.3731.008/2 должна давать артикул А.3731.008.2');
+  assert.ok(index.has(normalizeArticle('А.3731.008')));
+
+  // имя файла в архиве может быть в разложенном виде, поэтому проверяем по артикулу
+  const drawing = file => path.basename(file).includes('А.3731.008') && file.endsWith('.pdf');
+  const two = documentsFor(index, 'А.3731.008.2');
+  const three = documentsFor(index, 'А.3731.008.3');
+  assert.ok(two.some(drawing), 'у А.3731.008.2 нет чертежа');
+  assert.ok(three.some(drawing), 'у А.3731.008.3 нет чертежа');
+
+  // в чертеже одна таблица на обе позиции — файл один и тот же
+  const hash = file => require('crypto').createHash('sha1').update(fs.readFileSync(file)).digest('hex');
+  assert.equal(hash(two[0]), hash(three[0]), 'обе позиции должны получить один и тот же чертёж');
+
+  // чужие документы не прилипают: у А.3776.006 только своя папка
+  const rear = documentsFor(index, 'А.3776.006');
+  assert.equal(rear.length, 1);
+  assert.ok(rear[0].includes('А.3776.006'));
+
+  // позиция без документов — пустой список, а не падение
+  assert.deepEqual(documentsFor(index, 'А.9999.999'), []);
+});
+
+test('каталог: одинаковый чертёж не прикладывается к позиции дважды', async () => {
+  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'atlanta-docs2-'));
+  const index = indexDocuments();
+  const files = documentsFor(index, 'А.3731.008.2');
+  assert.ok(files.length >= 2, 'ожидались две копии чертежа: из папки семейства и из «2»');
+
+  const rows = [];
+  const runner = {
+    query: async (sql, params) => {
+      if (/^SELECT id FROM component_documents/.test(sql.trim())) {
+        // params: [component_id, original_name, file_path]
+        return { rows: rows.some(row => row[0] === params[0] && row[2] === params[1]) ? [{ id: 1 }] : [] };
+      }
+      if (/^INSERT INTO component_documents/.test(sql.trim())) {
+        rows.push(params);
+        return { rows: [], rowCount: 1 };
+      }
+      return { rows: [] };
+    },
+  };
+
+  assert.equal(await ensureComponentDocuments(runner, 42, files), 1,
+    'две одинаковые копии должны дать одну запись');
+  assert.equal(rows.length, 1);
+
+  for (const url of new Set(rows.map(row => path.basename(row[1])))) {
+    const leftover = path.resolve(__dirname, '../../uploads/files', url);
+    if (fs.existsSync(leftover)) fs.rmSync(leftover, { force: true });
+  }
+  fs.rmSync(target, { recursive: true, force: true });
 });

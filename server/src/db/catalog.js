@@ -103,21 +103,71 @@ function walkDirs(dir, depth, visit) {
  * Документы изготовителя по артикулам: { 'A3776006': [пути к PDF] }.
  * Габаритные чертежи и паспорта лежат в архиве рядом с описаниями —
  * при импорте они попадают в карточку позиции, вкладка «Документы».
+ *
+ * Вложенная папка с номером — исполнение изделия: «А.3731.008/2» → А.3731.008.2.
  */
 function indexDocuments(root = DOCS_DIR) {
   const index = new Map();
   walkDirs(root, 0, (dir) => {
     if (dir === root) return;
-    const key = normalizeArticle(path.basename(dir));
-    // папка изделия начинается с артикула (А.3776.006); вложенные «2», «100» — нет
-    if (!/^A\d{4}/.test(key)) return;
+    const name = path.basename(dir);
+    let key = normalizeArticle(name);
+    if (!/^A\d{4}/.test(key)) {
+      const parentName = path.basename(path.dirname(dir));
+      const parentKey = normalizeArticle(parentName);
+      if (!/^\d+$/.test(name) || !/^A\d{4}/.test(parentKey)) return;
+      key = normalizeArticle(`${parentName}.${name}`);
+    }
     const pdfs = fs.readdirSync(dir, { withFileTypes: true })
       .filter(entry => entry.isFile() && path.extname(entry.name).toLowerCase() === '.pdf')
       .map(entry => path.join(dir, entry.name));
     if (pdfs.length === 0) return;
     index.set(key, [...(index.get(key) || []), ...pdfs]);
   });
+
+  // общий чертёж на несколько отдельных позиций — только по явной карте
+  for (const [folder, articles] of Object.entries(readDocumentMap(root))) {
+    if (folder.startsWith('$') || !Array.isArray(articles)) continue;
+    const files = index.get(normalizeArticle(folder));
+    if (!files || files.length === 0) continue;
+    for (const article of articles) {
+      const key = normalizeArticle(article);
+      const merged = [...(index.get(key) || [])];
+      for (const file of files) {
+        if (!merged.includes(file)) merged.push(file);
+      }
+      index.set(key, merged);
+    }
+  }
   return index;
+}
+
+/** Явная карта «папка → артикулы»: общий документ на несколько позиций. */
+function readDocumentMap(root = DOCS_DIR) {
+  const file = path.join(root, '_map.json');
+  if (!fs.existsSync(file)) return {};
+  try {
+    const map = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return map && typeof map === 'object' ? map : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Документы для позиции. Обычно это своя папка артикула, но изготовитель
+ * кладёт один чертёж на семейство: в ГЧ А.3731.008 таблица описывает и
+ * А.3731.008.2 (2 огня), и А.3731.008.3 (3 огня) — позиции разные, чертёж
+ * общий, и его выдаёт карта docs/_map.json. Своя папка артикула идёт первой.
+ */
+function documentsFor(index, article) {
+  const files = index.get(normalizeArticle(article)) || [];
+  const seen = new Set();
+  return files.filter(file => {
+    if (seen.has(file)) return false;
+    seen.add(file);
+    return true;
+  });
 }
 
 /** Кладёт документ из репозитория в uploads/files под стабильным именем (хэш). */
@@ -146,14 +196,18 @@ function documentComment(fileName) {
 async function ensureComponentDocuments(runner, componentId, files) {
   let created = 0;
   for (const source of files) {
-    const originalName = path.basename(source);
+    // имя из архива может быть в разложенном виде («и» + бревис вместо «й»)
+    const originalName = path.basename(source).normalize('NFC');
+    // одинаковые чертежи лежат и в папке семейства, и в папке исполнения:
+    // имя файла-хэша у них одно, поэтому дубль видно и по пути
+    const placed = placeDocument(source);
     const existing = await runner.query(
-      'SELECT id FROM component_documents WHERE component_id = $1 AND original_name = $2 LIMIT 1',
-      [componentId, originalName]
+      `SELECT id FROM component_documents
+        WHERE component_id = $1 AND (original_name = $2 OR file_path = $3) LIMIT 1`,
+      [componentId, originalName, placed.url]
     );
     if (existing.rows.length > 0) continue;
 
-    const placed = placeDocument(source);
     await runner.query(
       `INSERT INTO component_documents
          (component_id, doc_type, file_path, original_name, file_type, file_size, comment)
@@ -442,7 +496,7 @@ async function run(db = require('../db')) {
   let createdComponentImages = 0;
   let createdDocuments = 0;
   const documents = indexDocuments();
-  const matchedDocuments = new Set();
+  const usedDocuments = new Set();
   const errors = [];
 
   for (const entry of components) {
@@ -478,10 +532,9 @@ async function run(db = require('../db')) {
       }
 
       // чертежи и паспорта изготовителя из архива — в карточку позиции
-      const docKey = normalizeArticle(entry.article);
-      const files = documents.get(docKey) || [];
+      const files = documentsFor(documents, entry.article);
       if (files.length > 0) {
-        matchedDocuments.add(docKey);
+        files.forEach(file => usedDocuments.add(file));
         createdDocuments += await ensureComponentDocuments(db, componentId, files);
       }
     } catch (err) {
@@ -507,7 +560,9 @@ async function run(db = require('../db')) {
   }
 
   // документы, для которых в каталоге нет позиции: не теряем их молча
-  const unmatched = [...documents.keys()].filter(key => !matchedDocuments.has(key));
+  const unmatched = [...documents.entries()]
+    .filter(([, list]) => !list.some(file => usedDocuments.has(file)))
+    .map(([key]) => key);
   if (unmatched.length > 0) {
     const names = unmatched.map((key) => {
       // папка изделия — та, чьё имя совпало с артикулом, а не вложенная «ревизия»
@@ -548,6 +603,8 @@ module.exports = {
   placeImage,
   expandArticles,
   indexDocuments,
+  documentsFor,
+  readDocumentMap,
   normalizeArticle,
   placeDocument,
   ensureComponentDocuments,
