@@ -49,6 +49,8 @@ const CLIENT_FIELDS = [
   'inn', 'kpp', 'ogrn', 'ogrnip', 'okpo', 'okved',
   'bank_account', 'bank_name', 'bik', 'corr_account',
   'director', 'director_position', 'director_basis', 'client_type',
+  // доставка: адрес терминала, ФИО и телефон получателя
+  'delivery_address', 'delivery_contact_name', 'delivery_contact_phone',
 ];
 
 /** Примечание клиента: полное наименование, коды, телефоны и источник данных. */

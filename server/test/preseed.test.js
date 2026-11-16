@@ -283,3 +283,24 @@ test('предзаполнение: СИС Плюс и ИП Гарипов за�
   // у ИП нет КПП и ОГРН — только ОГРНИП
   assert.ok(!garipov.kpp && !garipov.ogrn);
 });
+
+test('предзаполнение: данные доставки Вологодских машин и СИС Плюс', () => {
+  const { clients } = readConfig();
+  const byKey = Object.fromEntries(clients.map(entry => [entry.key, entry]));
+
+  const vol = byKey['vologodskie-mashiny'];
+  assert.match(vol.delivery_address, /^160004, Вологодская область, г\. Вологда, ул\. Маяковского, дом 38/);
+  assert.match(vol.delivery_address, /Деловые линии/);
+  assert.match(vol.delivery_address, /до терминала/);
+  assert.equal(vol.delivery_contact_name, 'Данилов Евгений Витальевич');
+  assert.equal(vol.delivery_contact_phone, '+7 (911) 520-01-26');
+  // контакт по доставке — начальник ОМТС, а не директор
+  assert.notEqual(vol.delivery_contact_name, vol.director);
+
+  const sis = byKey['sis-plus'];
+  assert.match(sis.delivery_address, /Орёл.*50 лет Октября, 17б/);
+  assert.match(sis.delivery_address, /СДЭК/);
+  assert.equal(sis.delivery_contact_name, 'Семёнов Андрей Юрьевич');
+  assert.equal(sis.delivery_contact_phone, '+7 (919) 204-42-35');
+  assert.notEqual(sis.delivery_contact_name, sis.director);
+});
