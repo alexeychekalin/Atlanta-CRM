@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 
 const { readConfig, placeImage, expandArticles, fillEmptyFields, retireLegacyFlats, assertSchema,
-  indexDocuments, normalizeArticle, placeDocument, ensureComponentDocuments,
+  indexDocuments, normalizeArticle, placeDocument, ensureComponentDocuments, ensureModifications,
   CATALOG_JSON, FILES_DIR, DOCS_DIR } = require('../src/db/catalog');
 const { fullArticle } = require('../src/utils/article');
 
@@ -589,4 +589,75 @@ test('каталог: документ копируется под стабил�
     const leftover = path.join(require('path').resolve(__dirname, '../../uploads/files'), name);
     if (fs.existsSync(leftover)) fs.rmSync(leftover, { force: true });
   }
+});
+
+test('каталог: у А.3776.006 — 25 исполнений по чертежу ГЧ изм. 3', () => {
+  const { components } = readConfig();
+  const entry = components.find(c => c.article === 'А.3776.006');
+  assert.ok(entry, 'нет позиции А.3776.006');
+
+  const mods = entry.modifications;
+  assert.equal(mods.length, 25, 'должно быть 5 способов подключения × 5 длин');
+
+  // пять групп подключения, в каждой — пять длин по порядку из чертежа
+  const lengths = ['50 мм', '500 мм', '1200 мм', '1500 мм', '200 мм'];
+  const groups = {
+    '02': 'Провод без разъёма',
+    '03': 'Штыревые контакты серии 6,3',
+    '05': 'Разъём-вилка А.3723.008 (СЦБ-7В)',
+    '06': 'Разъём-розетка А.3723.009 (СЦБ-7Р)',
+    '07': 'Колодка штыревая 502604 (45 7373 9008)',
+  };
+  for (const [group, title] of Object.entries(groups)) {
+    lengths.forEach((length, index) => {
+      const code = `${group}.0${index + 1}`;
+      const mod = mods.find(m => m.code === code);
+      assert.ok(mod, `нет исполнения ${code}`);
+      assert.equal(mod.name, `${title}, длина провода ${length}`,
+        `${code}: название должно быть как в чертеже`);
+    });
+  }
+
+  // артикулы собираются из базы и кода через дефис
+  assert.equal(fullArticle(entry.article, '02.01'), 'А.3776.006-02.01');
+  assert.equal(fullArticle(entry.article, '07.05'), 'А.3776.006-07.05');
+
+  // два исполнения переименованы из печатного каталога, и только они
+  const renamed = mods.filter(m => m.rename_from);
+  assert.deepEqual(renamed.map(m => m.code).sort(), ['02.02', '05.02']);
+  assert.deepEqual(renamed.find(m => m.code === '02.02').rename_from,
+    ['кабель 0,5 м с открытым концом']);
+});
+
+test('каталог: rename_from меняет прежнее название, правку из интерфейса не трогает', async () => {
+  const updates = [];
+  const rows = { '02.02': { id: 11, name: 'кабель 0,5 м с открытым концом' },
+                 '05.02': { id: 12, name: 'Своё название менеджера' } };
+  const runner = {
+    query: async (sql, params) => {
+      if (/^SELECT id, name FROM component_modifications/.test(sql.trim())) {
+        const row = rows[params[1]];
+        return { rows: row ? [row] : [] };
+      }
+      if (/^UPDATE component_modifications SET name/.test(sql.trim())) {
+        updates.push({ id: params[0], name: params[1] });
+        return { rows: [], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 1 };
+    },
+  };
+
+  const entry = {
+    article: 'А.3776.006',
+    modifications: [
+      { code: '02.02', name: 'Провод без разъёма, длина провода 500 мм',
+        rename_from: ['кабель 0,5 м с открытым концом'] },
+      { code: '05.02', name: 'Разъём-вилка А.3723.008 (СЦБ-7В), длина провода 500 мм',
+        rename_from: ['7-конт. вилка А.3723.008 (типа СЦБ-7В) с кабелем 0,5 м'] },
+    ],
+  };
+
+  await ensureModifications(runner, 3, entry);
+  assert.deepEqual(updates, [{ id: 11, name: 'Провод без разъёма, длина провода 500 мм' }],
+    'переименовать можно только точное прежнее каталожное название');
 });

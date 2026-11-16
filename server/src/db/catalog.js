@@ -234,11 +234,12 @@ async function ensureModifications(runner, componentId, entry) {
   for (let i = 0; i < mods.length; i += 1) {
     const mod = mods[i];
     const existing = await runner.query(
-      'SELECT id FROM component_modifications WHERE component_id = $1 AND lower(code) = lower($2) LIMIT 1',
+      'SELECT id, name FROM component_modifications WHERE component_id = $1 AND lower(code) = lower($2) LIMIT 1',
       [componentId, mod.code]
     );
     if (existing.rows.length > 0) {
-      const id = existing.rows[0].id;
+      const row = existing.rows[0];
+      const id = row.id;
       // артикул исполнения мог появиться в каталоге позже — дозаполняем пустой
       if (mod.full_article) {
         await runner.query(
@@ -246,6 +247,15 @@ async function ensureModifications(runner, componentId, entry) {
            WHERE id = $1 AND (full_article IS NULL OR full_article = '')`,
           [id, mod.full_article]
         );
+      }
+      // Переименование только по явному списку rename_from: если в базе всё ещё
+      // стоит прежнее каталожное название, меняем на новое из документа. Правку,
+      // сделанную в интерфейсе, не трогаем — она не совпадёт со списком.
+      if (mod.name && Array.isArray(mod.rename_from)
+          && mod.rename_from.includes(String(row.name || '').trim())
+          && String(row.name || '').trim() !== mod.name) {
+        await runner.query('UPDATE component_modifications SET name = $2 WHERE id = $1',
+          [id, mod.name]);
       }
       items.push({ id, mod });
       continue;
