@@ -355,3 +355,136 @@ test('фильтры: счётчики пересчитываются с учё�
   assert.match(chips, /Фонари задние \(1\)/);
   assert.match(chips, /Блоки \(0\)/);
 });
+
+// === Карточка просмотра: компактная раскладка ===
+
+/** Модификация в том виде, в каком её отдаёт API. */
+function makeMod(code, overrides = {}) {
+  return {
+    id: Number(code.replace(/\D/g, '')) || 1,
+    code,
+    name: `исполнение ${code}`,
+    price_override: null,
+    images: [],
+    ...overrides,
+  };
+}
+
+/** Мини-DOM для _applyModFilter: набор строк со classList и dataset. */
+function makeRowsDom(rows, nodes = {}) {
+  const byId = {
+    'mods-more': { textContent: '', classList: { values: new Set(), toggle(c, on) { on ? this.values.add(c) : this.values.delete(c); }, contains(c) { return this.values.has(c); } } },
+    'mods-empty': { hidden: false },
+    ...nodes,
+  };
+  return {
+    querySelectorAll: selector => (selector === '.mod-row' ? rows : []),
+    getElementById: id => byId[id] || null,
+    querySelector: () => null,
+    nodes: byId,
+  };
+}
+
+test('карточка компонента: название не дублируется в теле, шапка компактная', async () => {
+  const component = {
+    id: 21,
+    article: 'А.3731.013',
+    name: 'Фонарь габаритный',
+    // описание начинается с названия — в карточке оно уже стоит заголовком
+    description: 'Фонарь габаритный, с креплением на два болта',
+    price: 0,
+    is_active: true,
+    images: [],
+    modifications: [],
+  };
+  let modal = null;
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage', {
+    api: { get: async url => (url.endsWith('/documents') ? { data: [] } : component) },
+    globals: { Modal: { open: options => { modal = options; }, close: () => {} } },
+  });
+
+  await page.viewComponent(21);
+
+  assert.equal(modal.className, 'modal-comp', 'карточка открывается в компактном варианте модалки');
+  assert.equal(modal.autoFocus, false, 'фокус не прыгает в поиск по модификациям');
+  assert.match(modal.body, /comp-view__head/);
+  // название попало в заголовок окна, а не в тело
+  assert.equal(modal.title, 'Фонарь габаритный');
+  assert.ok(!/Фонарь габаритный, с креплением/.test(modal.body),
+    'описание не должно повторять название целиком');
+  assert.match(modal.body, /с креплением на два болта/);
+  // нулевая цена — это «не задана», а не ноль рублей
+  assert.match(modal.body, /не задана/);
+});
+
+test('карточка компонента: длинный список модификаций свёрнут по шесть', async () => {
+  const component = {
+    id: 22,
+    article: 'А.3731.027',
+    name: 'Фонарь',
+    description: '',
+    price: 1000,
+    is_active: true,
+    images: [],
+    modifications: ['01', '02', '03', '04', '05', '06', '07', '08'].map((code, i) => makeMod(code, { id: 100 + i })),
+  };
+  let modal = null;
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage', {
+    api: { get: async url => (url.endsWith('/documents') ? { data: [] } : component) },
+    globals: { Modal: { open: options => { modal = options; }, close: () => {} } },
+  });
+
+  await page.viewComponent(22);
+
+  assert.match(modal.body, /Модификации \(8\)/);
+  // первые шесть строк идут в разметке без «скрыто», остальные — с классом
+  const hidden = modal.body.match(/mod-row--hidden/g) || [];
+  assert.equal(hidden.length, 2, 'за лимитом остаются только две строки из восьми');
+  assert.match(modal.body, /comp-mods__more/, 'есть кнопка «Показать ещё»');
+  assert.match(modal.body, /Артикул, длина, потребитель/, 'поиск появляется при длинном списке');
+});
+
+test('карточка компонента: короткий список — без поиска и лишних элементов', async () => {
+  const component = {
+    id: 23,
+    article: 'А.3724.050',
+    name: 'Кабель',
+    description: '',
+    price: 500,
+    is_active: true,
+    images: [],
+    modifications: [makeMod('01.01')],
+  };
+  let modal = null;
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage', {
+    api: { get: async url => (url.endsWith('/documents') ? { data: [] } : component) },
+    globals: { Modal: { open: options => { modal = options; }, close: () => {} } },
+  });
+
+  await page.viewComponent(23);
+
+  assert.ok(!/comp-mods__search/.test(modal.body), 'при одной модификации поиск не нужен');
+  assert.ok(!/mod-row--hidden/.test(modal.body), 'все строки видны сразу');
+});
+
+test('карточка компонента: поиск по модификациям прячет несовпавшие строки', async () => {
+  const rows = [
+    { dataset: { search: 'А.3724.402-01.01 Жгут 0,6 м' }, classList: { set: new Set(), add(c) { this.set.add(c); }, remove(c) { this.set.delete(c); }, contains(c) { return this.set.has(c); }, toggle(c, on) { on ? this.set.add(c) : this.set.delete(c); } } },
+    { dataset: { search: 'А.3724.402-02.02 Блок 800 мм' }, classList: { set: new Set(), add(c) { this.set.add(c); }, remove(c) { this.set.delete(c); }, contains(c) { return this.set.has(c); }, toggle(c, on) { on ? this.set.add(c) : this.set.delete(c); } } },
+  ];
+  const doc = makeRowsDom(rows);
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage', { globals: { document: doc } });
+
+  page._modView = { query: '800', filter: 'all', limit: 6 };
+  page._applyModFilter();
+
+  assert.ok(rows[0].classList.contains('mod-row--hidden'), 'строка без совпадения скрыта');
+  assert.ok(!rows[1].classList.contains('mod-row--hidden'), 'строка с совпадением видна');
+
+  // «Показать ещё» показывает остальные
+  page._modView.query = '';
+  page._modView.limit = Number.POSITIVE_INFINITY;
+  page._applyModFilter();
+  assert.ok(!rows[0].classList.contains('mod-row--hidden'));
+  assert.equal(doc.nodes['mods-more'].classList.contains('is-visible'), false);
+});

@@ -1019,6 +1019,639 @@ textarea.form-control {
 }
 
 /* =============================================
+   КАРТОЧКА КОМПОНЕНТА — просмотр
+   Плотная раскладка: название живёт в заголовке окна, в теле — фото,
+   артикул, цена и список модификаций; фото и документы свёрнуты.
+   ============================================= */
+.modal-comp .modal-header {
+  padding: 16px 20px;
+}
+
+.modal-comp .modal-title {
+  font-size: 1.05rem;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.modal-comp .modal-body {
+  padding: 16px 20px;
+}
+
+.modal-comp .modal-footer {
+  padding: 12px 20px;
+}
+
+/* --- шапка: фото + артикул, бейджи, цена --- */
+.comp-view__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.comp-view__photo {
+  position: relative;
+  flex: none;
+  width: 96px;
+  height: 96px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.comp-view__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  padding: 4px;
+}
+
+/* фото не загрузилось — нейтральная подложка вместо значка поломки */
+.comp-view__photo .is-broken,
+.comp-photo .is-broken {
+  background: var(--bg-tertiary);
+}
+
+.comp-photo .is-broken::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--bg-tertiary);
+}
+
+.comp-view__photo--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+
+.comp-view__photo--empty:hover {
+  border-color: var(--accent-teal);
+  color: var(--accent-teal);
+}
+
+.comp-view__photo-count {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 0.68rem;
+  line-height: 1.6;
+}
+
+.comp-view__meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.comp-view__art {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent-teal);
+}
+
+.comp-view__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.comp-view__badges .badge {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+}
+
+.comp-view__gisp {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent-blue);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 20px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.comp-view__gisp:hover {
+  background: rgba(59, 130, 246, 0.2);
+}
+
+.comp-view__price {
+  margin-top: 8px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--accent-teal);
+  line-height: 1.25;
+}
+
+.comp-view__price-empty {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.comp-view__price-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.comp-view__price .vat-info {
+  font-size: 0.7rem;
+  margin: 0 0 0 6px;
+}
+
+/* --- описание и комментарий --- */
+.comp-view__desc {
+  margin-top: 12px;
+}
+
+.comp-view__desc-text {
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.comp-view__desc-text.is-clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.comp-view__link {
+  margin-top: 2px;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--accent-teal);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.comp-view__comment {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--border-hover);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* --- сворачиваемые блоки: фотографии, документы --- */
+.comp-view__group {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.comp-view__disclosure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.comp-view__disclosure:hover {
+  color: var(--accent-teal);
+}
+
+.comp-view__chev {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform var(--transition-fast);
+}
+
+.comp-view__disclosure[aria-expanded="true"] .comp-view__chev {
+  transform: rotate(180deg);
+}
+
+.comp-view__count {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.comp-view__group-body {
+  margin-top: 10px;
+}
+
+.comp-view__docs-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.comp-view__docs-bar[hidden] {
+  display: none;
+}
+
+.comp-docs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* --- миниатюры --- */
+.comp-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.comp-photo {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.comp-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.comp-photo--add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.comp-photo--add:hover {
+  border-color: var(--accent-teal);
+  color: var(--accent-teal);
+}
+
+.comp-photo__del,
+.comp-photo__cover {
+  position: absolute;
+  border: none;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.comp-photo__del {
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+}
+
+.comp-photo__cover {
+  left: 2px;
+  bottom: 2px;
+  padding: 1px 4px;
+  font-size: 9px;
+}
+
+/* --- модификации --- */
+.comp-mods {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.comp-mods__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.comp-mods__title {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.comp-mods__tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* поле ввода обёрнуто SearchClear в .search-clear-wrap — тянется обёртка */
+.comp-mods__tools .search-clear-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.comp-mods__search {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.comp-mods__search:focus {
+  outline: none;
+  border-color: var(--accent-teal);
+}
+
+.mod-chip {
+  flex: none;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.mod-chip:hover {
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+
+.mod-chip.is-active {
+  color: var(--accent-teal);
+  border-color: var(--accent-teal);
+  background: rgba(20, 184, 166, 0.1);
+}
+
+.comp-mods__list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+}
+
+.mod-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  border-bottom: 1px solid var(--border);
+}
+
+.mod-row:last-child {
+  border-bottom: none;
+}
+
+.mod-row--hidden {
+  display: none;
+}
+
+.mod-row--hit {
+  background: rgba(20, 184, 166, 0.08);
+  box-shadow: inset 2px 0 0 var(--accent-teal);
+  border-radius: var(--radius-sm);
+}
+
+.mod-row__main {
+  min-width: 0;
+  padding: 8px 0;
+  cursor: pointer;
+}
+
+.mod-row__line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mod-row__art {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent-teal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mod-row__flag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 20px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mod-row__flag--hit {
+  color: var(--accent-teal);
+  border: 1px solid var(--accent-teal);
+  background: transparent;
+}
+
+.mod-row__flag--off {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.mod-row__price {
+  margin-left: auto;
+  font-size: 0.76rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mod-row__chev {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-muted);
+  transition: transform var(--transition-fast);
+}
+
+.mod-row__price + .mod-row__chev {
+  margin-left: 4px;
+}
+
+.mod-row.is-open .mod-row__chev {
+  transform: rotate(180deg);
+}
+
+.mod-row__name {
+  margin-top: 2px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mod-row.is-open .mod-row__name {
+  display: block;
+  -webkit-line-clamp: none;
+  overflow: visible;
+}
+
+.mod-row__detail {
+  grid-column: 1 / -1;
+  padding: 2px 0 10px;
+}
+
+.mod-row__detail-acts {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.mod-row__detail-acts .btn svg {
+  flex: none;
+}
+
+.mod-row__detail-price {
+  margin-bottom: 6px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.comp-mods__more {
+  display: none;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.comp-mods__more:hover {
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+
+.comp-mods__more.is-visible {
+  display: block;
+}
+
+.comp-mods__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+/* display:flex перебивает атрибут hidden — гасим явно */
+.comp-mods__empty[hidden] {
+  display: none;
+}
+
+/* --- телефон: карточка шире, отступы меньше --- */
+@media (max-width: 640px) {
+  .modal-overlay--comp {
+    padding: 8px;
+  }
+
+  .modal-comp {
+    max-height: 96vh;
+  }
+
+  .modal-comp .modal-header {
+    padding: 12px 14px;
+  }
+
+  .modal-comp .modal-title {
+    font-size: 0.95rem;
+  }
+
+  /* карточка компонента: тело занимает всю высоту листа, а не 60vh —
+     иначе половина экрана уходит впустую, а список всё равно прокручивается */
+  .modal-comp .modal-body {
+    padding: 12px 14px;
+    max-height: none;
+  }
+
+  .modal-comp .modal-footer {
+    padding: 10px 14px;
+  }
+
+  .comp-view__head {
+    gap: 10px;
+  }
+
+  .comp-view__photo {
+    width: 76px;
+    height: 76px;
+  }
+
+  /* поиск — отдельной строкой, чипы под ним: иначе плейсхолдер обрезается */
+  .comp-mods__tools {
+    flex-wrap: wrap;
+  }
+
+  /* flex-shrink: 0 — иначе поле ужимается в одну строку с чипами и плейсхолдер режется */
+  .comp-mods__tools .search-clear-wrap {
+    flex: 0 0 100%;
+  }
+
+  .comp-view__price {
+    font-size: 1.1rem;
+  }
+
+  .comp-docs {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =============================================
    LIGHTBOX — просмотр фотографий поверх карточки
    z-index выше модального окна: закрытие просмотра
    возвращает к карточке, а не закрывает её
