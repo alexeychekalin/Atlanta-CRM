@@ -245,3 +245,41 @@ test('предзаполнение: к РУАТ приложена присла�
   assert.ok(files.includes('ruat-org-card.pdf'), 'нет карточки организации');
   assert.ok(files.includes('ruauto-trailer-egrul.pdf'), 'пропала выписка ЕГРЮЛ');
 });
+
+test('предзаполнение: СИС Плюс и ИП Гарипов заведены по присланным документам', () => {
+  const { clients } = readConfig();
+  const byInn = Object.fromEntries(clients.map(entry => [entry.inn, entry]));
+
+  const sis = byInn['5752200319'];
+  assert.ok(sis, 'нет ООО «СИС Плюс»');
+  assert.equal(sis.name, 'ООО «СИС Плюс»');
+  assert.equal(sis.full_name, 'Общество с ограниченной ответственностью «СТРОЙИНВЕСТСЕРВИС ПЛЮС»');
+  assert.equal(sis.kpp, '575101001');
+  assert.equal(sis.ogrn, '1135749001410');
+  assert.equal(sis.okpo, '11953571');
+  assert.equal(sis.okved, '28.30.7');
+  assert.match(sis.legal_address, /^302006, Орловская область.*Московская, д\. 155, помещ\. 4$/);
+  assert.equal(sis.bank_account, '40702810247000004419');
+  assert.equal(sis.bank_name, 'Орловское отделение №8595 ПАО Сбербанк');
+  assert.equal(sis.corr_account, '30101810300000000601');
+  assert.equal(sis.bik, '045402601');
+  assert.equal(sis.director, 'Семёнов Юрий Анатольевич');
+  assert.equal(sis.director_position, 'Генеральный директор');
+  assert.equal(sis.email, 'semenov-orel2010@yandex.ru');
+  assert.equal(sis.site, 'www.sis-plus.ru');
+
+  const garipov = byInn['164608092395'];
+  assert.ok(garipov, 'нет ИП Гарипов Р.Р.');
+  assert.equal(garipov.client_type, 'ip');
+  assert.equal(garipov.name, 'ИП Гарипов Р.Р.');
+  assert.equal(garipov.full_name, 'Индивидуальный предприниматель Гарипов Рамиль Рафисович');
+  assert.equal(garipov.ogrnip, '319169000044830');
+  assert.match(garipov.legal_address, /^423600, Республика Татарстан, г\. Елабуга.*проспект Мира, д\. 31, кв\. 106$/);
+  assert.equal(garipov.bank_account, '40802810901500219933');
+  assert.equal(garipov.bank_name, 'ООО «Банк Точка»');
+  assert.equal(garipov.corr_account, '30101810745374525104');
+  assert.equal(garipov.bik, '044525104');
+  assert.equal(garipov.director, 'Гарипов Рамиль Рафисович');
+  // у ИП нет КПП и ОГРН — только ОГРНИП
+  assert.ok(!garipov.kpp && !garipov.ogrn);
+});
