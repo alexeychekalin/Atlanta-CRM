@@ -5,7 +5,8 @@ const os = require('os');
 const path = require('path');
 
 const { readConfig, placeImage, expandArticles, fillEmptyFields, retireLegacyFlats, assertSchema,
-  CATALOG_JSON, FILES_DIR } = require('../src/db/catalog');
+  indexDocuments, normalizeArticle, placeDocument, ensureComponentDocuments,
+  CATALOG_JSON, FILES_DIR, DOCS_DIR } = require('../src/db/catalog');
 const { fullArticle } = require('../src/utils/article');
 
 test('артикул: код модификации приклеивается через дефис', () => {
@@ -522,4 +523,70 @@ test('ГИСП: семейство А.3776.001 и комплект с фонар
   // Соседние комплекты и А.3776.008 правило не задевает
   assert.equal(byArticle['А.3776.005/А.3731.002.3'], undefined);
   assert.equal(byArticle['А.3776.008'], undefined);
+});
+
+test('каталог: А кириллическая и A латинская в имени папки — один артикул', () => {
+  assert.equal(normalizeArticle('А.3776.006'), normalizeArticle('A.3776.006'));
+  assert.equal(normalizeArticle('A.3726.005'), 'A3726005');
+  assert.equal(normalizeArticle('а.3776.001.1-б'), 'A37760011Б');
+  assert.equal(normalizeArticle(''), '');
+});
+
+test('каталог: чертежи из архива находятся по артикулу', () => {
+  const index = indexDocuments();
+  const files = index.get(normalizeArticle('А.3776.006')) || [];
+  assert.ok(files.some(f => f.endsWith('KOMPAS - А.3776.006 ГЧ _ изм.3.pdf')),
+    'габаритный чертёж А.3776.006 изм.3 не найден в архиве');
+  // чертёж позиции с латинской A в имени папки тоже находится
+  assert.ok((index.get(normalizeArticle('А.3726.005')) || []).length > 0,
+    'документы позиции A.3726.005 не найдены');
+
+  for (const [key, list] of index) {
+    for (const file of list) {
+      assert.ok(fs.existsSync(file), `${key}: файл ${file} не существует`);
+      assert.equal(path.extname(file).toLowerCase(), '.pdf');
+    }
+  }
+  assert.ok(fs.existsSync(DOCS_DIR), 'нет архива документов src/db/catalog/docs');
+});
+
+test('каталог: документ копируется под стабильным именем и не дублируется', async () => {
+  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'atlanta-docs-'));
+  const source = (indexDocuments().get(normalizeArticle('А.3776.006')) || [])
+    .find(file => file.endsWith('.pdf'));
+
+  const first = placeDocument(source, target);
+  const second = placeDocument(source, target);
+  assert.equal(first.url, second.url, 'имя файла должно зависеть от содержимого');
+  assert.match(first.url, /^\/uploads\/files\/catalog_[0-9a-f]{16}\.pdf$/);
+  assert.deepEqual(fs.readdirSync(target), [path.basename(first.url)]);
+
+  // прикладывание к карточке идемпотентно: повтор не создаёт второй записи
+  const rows = [];
+  const runner = {
+    query: async (sql, params) => {
+      if (/^SELECT id FROM component_documents/.test(sql.trim())) {
+        // в вставке [component_id, file_path, original_name, …]
+        return { rows: rows.some(row => row[0] === params[0] && row[2] === params[1]) ? [{ id: 1 }] : [] };
+      }
+      if (/^INSERT INTO component_documents/.test(sql.trim())) {
+        rows.push(params);
+        return { rows: [], rowCount: 1 };
+      }
+      return { rows: [] };
+    },
+  };
+
+  assert.equal(await ensureComponentDocuments(runner, 7, [source]), 1);
+  assert.equal(await ensureComponentDocuments(runner, 7, [source]), 0, 'повторный импорт не дублирует');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0][1], first.url);
+  assert.equal(rows[0][2], path.basename(source));
+  assert.equal(rows[0][5], 'Габаритный чертёж изготовителя');
+
+  fs.rmSync(target, { recursive: true, force: true });
+  for (const name of new Set([path.basename(first.url)])) {
+    const leftover = path.join(require('path').resolve(__dirname, '../../uploads/files'), name);
+    if (fs.existsSync(leftover)) fs.rmSync(leftover, { force: true });
+  }
 });

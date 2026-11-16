@@ -28,9 +28,12 @@ const { describeDbError } = require('../utils/db-error');
 const CATALOG_DIR = path.join(__dirname, 'catalog');
 const FILES_DIR = path.join(CATALOG_DIR, 'files');
 const CATALOG_JSON = path.join(CATALOG_DIR, 'catalog.json');
+// Архив документов поставщика: папка на изделие внутри папки раздела
+const DOCS_DIR = path.join(CATALOG_DIR, 'docs');
 
 const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
 const IMAGES_DIR = path.join(UPLOADS_DIR, 'images');
+const DOCUMENTS_DIR = path.join(UPLOADS_DIR, 'files');
 
 function readConfig() {
   if (!fs.existsSync(CATALOG_JSON)) {
@@ -63,6 +66,104 @@ function placeImage(fileName, targetDir = IMAGES_DIR) {
   }
 
   return { url: `/uploads/images/${storedName}`, size: buffer.length };
+}
+
+/**
+ * Артикул для сравнения имён папок: «А» кириллическая и «A» латинская
+ * в документах поставщика означают одно и то же, точки и пробелы не важны.
+ */
+const HOMOGLYPHS = {
+  'А': 'A', 'В': 'B', 'Е': 'E', 'К': 'K', 'М': 'M', 'Н': 'H',
+  'О': 'O', 'Р': 'P', 'С': 'C', 'Т': 'T', 'У': 'Y', 'Х': 'X',
+};
+
+function normalizeArticle(value) {
+  return String(value || '')
+    .toUpperCase()
+    .replace(/[АВЕКМНОРСТУХ]/g, ch => HOMOGLYPHS[ch] || ch)
+    .replace(/[\s.\-_]/g, '');
+}
+
+/** Все папки архива: «<раздел>/<артикул>» и вложенные в них ревизии. */
+function walkDirs(dir, depth, visit) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  visit(dir, depth);
+  if (depth >= 4) return;
+  for (const entry of entries) {
+    if (entry.isDirectory()) walkDirs(path.join(dir, entry.name), depth + 1, visit);
+  }
+}
+
+/**
+ * Документы изготовителя по артикулам: { 'A3776006': [пути к PDF] }.
+ * Габаритные чертежи и паспорта лежат в архиве рядом с описаниями —
+ * при импорте они попадают в карточку позиции, вкладка «Документы».
+ */
+function indexDocuments(root = DOCS_DIR) {
+  const index = new Map();
+  walkDirs(root, 0, (dir) => {
+    if (dir === root) return;
+    const key = normalizeArticle(path.basename(dir));
+    // папка изделия начинается с артикула (А.3776.006); вложенные «2», «100» — нет
+    if (!/^A\d{4}/.test(key)) return;
+    const pdfs = fs.readdirSync(dir, { withFileTypes: true })
+      .filter(entry => entry.isFile() && path.extname(entry.name).toLowerCase() === '.pdf')
+      .map(entry => path.join(dir, entry.name));
+    if (pdfs.length === 0) return;
+    index.set(key, [...(index.get(key) || []), ...pdfs]);
+  });
+  return index;
+}
+
+/** Кладёт документ из репозитория в uploads/files под стабильным именем (хэш). */
+function placeDocument(absolutePath, targetDir = DOCUMENTS_DIR) {
+  const buffer = fs.readFileSync(absolutePath);
+  const hash = crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 16);
+  const ext = path.extname(absolutePath).toLowerCase();
+  const storedName = `catalog_${hash}${ext}`;
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+  const target = path.join(targetDir, storedName);
+  if (!fs.existsSync(target)) {
+    fs.writeFileSync(target, buffer);
+  }
+  return { url: `/uploads/files/${storedName}`, size: buffer.length };
+}
+
+function documentComment(fileName) {
+  if (/ГЧ|габарит/i.test(fileName)) return 'Габаритный чертёж изготовителя';
+  if (/паспорт/i.test(fileName)) return 'Паспорт изделия';
+  return 'Документ изготовителя';
+}
+
+/** Прикладывает документы изготовителя к карточке; повторный импорт не дублирует. */
+async function ensureComponentDocuments(runner, componentId, files) {
+  let created = 0;
+  for (const source of files) {
+    const originalName = path.basename(source);
+    const existing = await runner.query(
+      'SELECT id FROM component_documents WHERE component_id = $1 AND original_name = $2 LIMIT 1',
+      [componentId, originalName]
+    );
+    if (existing.rows.length > 0) continue;
+
+    const placed = placeDocument(source);
+    await runner.query(
+      `INSERT INTO component_documents
+         (component_id, doc_type, file_path, original_name, file_type, file_size, comment)
+       VALUES ($1, 'info', $2, $3, $4, $5, $6)`,
+      [componentId, placed.url, originalName, path.extname(originalName).slice(1).toLowerCase(),
+        placed.size, documentComment(originalName)]
+    );
+    created += 1;
+  }
+  return created;
 }
 
 async function ensureCategory(runner, category) {
@@ -329,6 +430,9 @@ async function run(db = require('../db')) {
   let createdModifications = 0;
   let createdModificationImages = 0;
   let createdComponentImages = 0;
+  let createdDocuments = 0;
+  const documents = indexDocuments();
+  const matchedDocuments = new Set();
   const errors = [];
 
   for (const entry of components) {
@@ -362,6 +466,14 @@ async function run(db = require('../db')) {
       for (const item of mods.items) {
         createdModificationImages += await ensureModificationImages(db, item);
       }
+
+      // чертежи и паспорта изготовителя из архива — в карточку позиции
+      const docKey = normalizeArticle(entry.article);
+      const files = documents.get(docKey) || [];
+      if (files.length > 0) {
+        matchedDocuments.add(docKey);
+        createdDocuments += await ensureComponentDocuments(db, componentId, files);
+      }
     } catch (err) {
       errors.push(`${entry.article}: ${err.message}`);
       console.error(`✗ ${entry.article}: ${err.message}`);
@@ -374,13 +486,28 @@ async function run(db = require('../db')) {
     `✅ Каталог: категорий создано ${createdCategories}, ` +
     `позиций создано ${createdComponents}, дополнено ${updatedComponents}, ` +
     `без изменений ${skippedComponents}, модификаций создано ${createdModifications}, ` +
-    `фото в галерею ${createdComponentImages}, фото исполнений ${createdModificationImages}`
+    `фото в галерею ${createdComponentImages}, фото исполнений ${createdModificationImages}` +
+    (createdDocuments > 0 ? `, документов приложено ${createdDocuments}` : '')
   );
   if (legacy.removed > 0 || legacy.disabled > 0) {
     console.log(
       `↪️  Прежние артикулы (жгуты, семейства фонарей): удалено ${legacy.removed}, ` +
       `погашено (есть ссылки) ${legacy.disabled}`
     );
+  }
+
+  // документы, для которых в каталоге нет позиции: не теряем их молча
+  const unmatched = [...documents.keys()].filter(key => !matchedDocuments.has(key));
+  if (unmatched.length > 0) {
+    const names = unmatched.map((key) => {
+      // папка изделия — та, чьё имя совпало с артикулом, а не вложенная «ревизия»
+      const folder = [...documents.get(key)]
+        .map(file => path.dirname(file).split(path.sep).reverse()
+          .find(part => normalizeArticle(part) === key))
+        .find(Boolean);
+      return folder || key;
+    });
+    console.warn(`⚠️  Документы без позиции в каталоге: ${names.join('; ')}`);
   }
 
   if (errors.length > 0) {
@@ -410,6 +537,10 @@ module.exports = {
   readConfig,
   placeImage,
   expandArticles,
+  indexDocuments,
+  normalizeArticle,
+  placeDocument,
+  ensureComponentDocuments,
   ensureModifications,
   ensureComponentImages,
   assertSchema,
@@ -417,4 +548,5 @@ module.exports = {
   fillEmptyFields,
   CATALOG_JSON,
   FILES_DIR,
+  DOCS_DIR,
 };
