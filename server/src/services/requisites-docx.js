@@ -120,7 +120,10 @@ function formatDate(value) {
 async function buildRequisitesDocx(client = {}, options = {}) {
   const { full, short } = officeTitle(client);
   const rows = clientRequisites(client);
-  if (rows.length === 0) {
+  // телефон и сайт есть почти у всех, но карточкой предприятия они не являются:
+  // без ИНН, адреса или счёта выгружать нечего
+  const legal = ['inn', 'kpp', 'ogrn', 'ogrnip', 'legal_address', 'bank_account', 'director'];
+  if (rows.length === 0 || !legal.some(field => text(client[field]))) {
     throw new Error('у клиента не заполнены реквизиты — выгружать нечего');
   }
 
