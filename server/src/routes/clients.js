@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
+const { buildRequisitesDocx, requisitesFileName } = require('../services/requisites-docx');
 
 const router = express.Router();
 
@@ -70,6 +71,38 @@ router.get('/:id', auth, async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Ошибка получения клиента:', err);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// GET /api/clients/:id/requisites.docx — карточка предприятия для бухгалтерии
+// и отправки контрагенту. Данные — из карточки клиента, без ручного набора.
+router.get('/:id/requisites.docx', auth, async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM clients WHERE id = $1', [req.params.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Клиент не найден' });
+    }
+
+    const client = result.rows[0];
+    let buffer;
+    try {
+      buffer = await buildRequisitesDocx(client);
+    } catch (err) {
+      // нечего выгружать — это не сбой сервера, а незаполненная карточка
+      return res.status(400).json({ error: err.message });
+    }
+
+    const filename = requisitesFileName(client);
+    res.setHeader('Content-Type',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="requisites.docx"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    res.setHeader('Content-Length', buffer.length);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(buffer);
+  } catch (err) {
+    console.error('Ошибка выгрузки реквизитов:', err);
     res.status(500).json({ error: 'Внутренняя ошибка сервера' });
   }
 });

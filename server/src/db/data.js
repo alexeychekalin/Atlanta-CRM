@@ -74,7 +74,10 @@ async function run(db = require('../db'), env = process.env) {
   console.log(`\n📦 Наполнение базы: ${describe(plan)}`);
 
   if (plan.preseed) {
-    await preseed.run(db);
+    // Карточки уже заведённых клиентов не перезаписываем, но пустые поля
+    // (в первую очередь банковские реквизиты из присланных карточек)
+    // дополняем: иначе новые реквизиты приезжали бы только на новую базу.
+    await preseed.run(db, { fillEmpty: true });
   }
   if (plan.catalog) {
     await catalog.run(db);

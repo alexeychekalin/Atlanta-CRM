@@ -99,11 +99,17 @@ const ClientProfilePage = {
           ${(c.inn || c.kpp || c.legal_address || c.bank_details || c.ogrnip || c.ogrn || c.bank_account
              || c.full_name || c.okpo || c.okved || c.bank_name || c.director) ? `
             <div style="margin-top:10px;padding:10px 14px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border)">
-              <div onclick="ClientProfilePage.toggleRequisites()" style="display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer;user-select:none" title="Показать или скрыть реквизиты">
-                <div style="font-size:0.78rem;color:var(--text-muted);font-weight:600">
-                  🏛️ Реквизиты ${c.client_type === 'ip' ? '<span style="color:#f59e0b">(ИП)</span>' : '<span style="color:#3b82f6">(ООО)</span>'}${c.inn ? `<span style="color:var(--text-secondary);font-weight:500"> · ИНН ${esc(c.inn)}</span>` : ''}
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+                <div onclick="ClientProfilePage.toggleRequisites()" style="display:flex;align-items:center;gap:10px;flex:1;min-width:180px;flex-wrap:wrap;cursor:pointer;user-select:none" title="Показать или скрыть реквизиты">
+                  <div style="font-size:0.78rem;color:var(--text-muted);font-weight:600">
+                    🏛️ Реквизиты ${c.client_type === 'ip' ? '<span style="color:#f59e0b">(ИП)</span>' : '<span style="color:#3b82f6">(ООО)</span>'}${c.inn ? `<span style="color:var(--text-secondary);font-weight:500"> · ИНН ${esc(c.inn)}</span>` : ''}
+                  </div>
+                  <span id="requisites-toggle-label" style="font-size:0.78rem;color:var(--accent-teal)">Развернуть ▾</span>
                 </div>
-                <span id="requisites-toggle-label" style="font-size:0.78rem;color:var(--accent-teal)">Развернуть ▾</span>
+                <button class="btn btn-secondary btn-sm" onclick="ClientProfilePage.downloadRequisites()"
+                        title="Скачать реквизиты в Word (.docx) — карточка предприятия для бухгалтерии и контрагента">
+                  ⤓ Скачать DOCX
+                </button>
               </div>
               <div id="client-requisites-body" class="profile-contacts" style="display:none;margin-top:8px">
                 ${c.full_name ? `<span class="profile-contact-item">Полное наименование: ${esc(c.full_name)}</span>` : ''}
@@ -222,6 +228,27 @@ const ClientProfilePage = {
     } catch {
       /* приватный режим — просто не запоминаем */
     }
+  },
+
+  // === Реквизиты: выгрузка в Word ===
+  async downloadRequisites() {
+    try {
+      const blob = await API.getBlob(`/clients/${this.clientId}/requisites.docx`);
+      downloadBlob(blob, this.requisitesFileName());
+      Toast.success('Реквизиты скачаны в Word');
+    } catch (err) {
+      Toast.error('Не удалось скачать реквизиты: ' + err.message);
+    }
+  },
+
+  /** Имя файла как у сервера: без кавычек и запрещённых в именах символов. */
+  requisitesFileName() {
+    const name = String((this.client && this.client.name) || 'контрагент')
+      .replace(/[«»"']/g, '')
+      .replace(/[\\/:*?<>|]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return `Реквизиты ${name || 'контрагента'}.docx`;
   },
 
   // === Сайт клиента ===

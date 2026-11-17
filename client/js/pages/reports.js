@@ -342,7 +342,7 @@ const ReportsPage = {
   async exportExcel() {
     try {
       const blob = await API.getBlob('/reports/export/excel?' + this.buildParams());
-      this._downloadBlob(blob, `report_${Date.now()}.xlsx`);
+      downloadBlob(blob, `report_${Date.now()}.xlsx`);
       Toast.success('Excel отчёт скачан');
     } catch (err) {
       Toast.error('Ошибка экспорта Excel');
@@ -352,21 +352,10 @@ const ReportsPage = {
   async exportPDF() {
     try {
       const blob = await API.getBlob('/reports/export/pdf?' + this.buildParams());
-      this._downloadBlob(blob, `report_${Date.now()}.pdf`);
+      downloadBlob(blob, `report_${Date.now()}.pdf`);
       Toast.success('PDF отчёт скачан');
     } catch (err) {
       Toast.error('Ошибка экспорта PDF');
     }
-  },
-
-  _downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   },
 };

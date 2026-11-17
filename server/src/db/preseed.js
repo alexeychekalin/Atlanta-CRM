@@ -12,9 +12,13 @@
  *   npm run db:preseed -- --refresh  # обновить реквизиты уже заведённых карточек
  *   npm run db:preseed -- --refresh --dry-run
  *
- * Без флага --refresh существующие карточки не трогаются: правки из интерфейса
- * важнее файла. С флагом файл считается эталоном: непустые значения из него
+ * Без флага --refresh у существующей карточки дополняются только пустые поля:
+ * правки из интерфейса важнее файла, но присланные реквизиты (например,
+ * банковские) доезжают до базы, даже если карточка была заведена раньше.
+ * С флагом --refresh файл считается эталоном: непустые значения из него
  * перезаписывают поля карточки, пустые — никогда (не стираем то, чего нет в файле).
+ * Заполнять только пустые поля можно и явно — флагом --fill-empty; его же
+ * использует npm run db:data (деплой и update.sh).
  *
  * Запускается автоматически в deploy.sh и demo:init.
  */
@@ -116,6 +120,21 @@ function diffClient(entry, row) {
   return changes;
 }
 
+/**
+ * Что можно дополнить, не трогая правки из интерфейса: пустое поле карточки,
+ * для которого в файле есть значение. Заполненное поле не трогаем никогда —
+ * это либо правка менеджера, либо более свежие данные.
+ */
+function fillEmptyChanges(entry, row) {
+  const changes = {};
+  for (const field of CLIENT_FIELDS) {
+    const want = entry[field] == null ? '' : String(entry[field]).trim();
+    const have = row && row[field] != null ? String(row[field]).trim() : '';
+    if (want && !have) changes[field] = { from: null, to: want };
+  }
+  return changes;
+}
+
 async function updateClient(runner, clientId, changes) {
   const fields = Object.keys(changes);
   if (fields.length === 0) return 0;
@@ -183,12 +202,13 @@ async function attachDocuments(runner, clientId, entry) {
 function parseArgs(argv = []) {
   return {
     refresh: argv.includes('--refresh'),
+    fillEmpty: argv.includes('--fill-empty'),
     dryRun: argv.includes('--dry-run'),
   };
 }
 
 async function run(db = require('../db'), options = {}) {
-  const { refresh, dryRun } = { refresh: false, dryRun: false, ...options };
+  const { refresh, fillEmpty, dryRun } = { refresh: false, fillEmpty: false, dryRun: false, ...options };
   const { clients } = readConfig();
   if (clients.length === 0) {
     console.log('ℹ️  Предзаполнение: нет данных в src/db/preseed/clients.json');
@@ -197,11 +217,13 @@ async function run(db = require('../db'), options = {}) {
 
   console.log(`\n📥 Предзаполнение клиентами: ${clients.length} в источнике`
     + (refresh ? ' (режим --refresh: реквизиты обновляются из файла)' : '')
+    + (fillEmpty && !refresh ? ' (пустые поля дополняются из файла)' : '')
     + (dryRun ? ' [--dry-run: база не меняется]' : ''));
 
   let created = 0;
   let skipped = 0;
   let updated = 0;
+  let filled = 0;
   let files = 0;
   const errors = [];
 
@@ -235,7 +257,22 @@ async function run(db = require('../db'), options = {}) {
             console.log(`↻  ${entry.name} — обновлено полей: ${fields.length} (${fields.join(', ')})`);
           }
         } else {
-          console.log(`↷  ${entry.name} — уже есть (id ${clientId})`);
+          const current = fillEmpty
+            ? await db.query('SELECT * FROM clients WHERE id = $1', [clientId])
+            : { rows: [] };
+          const changes = fillEmpty ? fillEmptyChanges(entry, current.rows[0]) : {};
+          const fields = Object.keys(changes);
+
+          if (fields.length === 0) {
+            console.log(`↷  ${entry.name} — уже есть (id ${clientId})`);
+          } else if (dryRun) {
+            const shown = fields.map(field => `${field}: ${changes[field].to}`);
+            console.log(`+  ${entry.name} — дополнилось бы (${fields.length}): ${shown.join('; ')}`);
+          } else {
+            await updateClient(db, clientId, changes);
+            filled += 1;
+            console.log(`+  ${entry.name} — дополнено полей: ${fields.length} (${fields.join(', ')})`);
+          }
         }
       } else {
         clientId = await insertClient(db, entry, statusId, pricingLevelId);
@@ -255,7 +292,7 @@ async function run(db = require('../db'), options = {}) {
   }
 
   console.log(`✅ Предзаполнение: создано ${created}, уже было ${skipped}, `
-    + `обновлено ${updated}, вложений ${files}`);
+    + `обновлено ${updated}, дополнено ${filled}, вложений ${files}`);
   if (errors.length > 0) {
     console.error(`⚠️  Ошибки: ${errors.join('; ')}`);
     process.exitCode = 1;
@@ -279,6 +316,7 @@ if (require.main === module) {
 }
 
 module.exports = {
-  buildNotes, diffClient, updateClient, insertClient, parseArgs, placeDocument, readConfig, run,
+  buildNotes, diffClient, fillEmptyChanges, updateClient, insertClient, parseArgs,
+  placeDocument, readConfig, run,
   CLIENT_FIELDS, CLIENTS_JSON, FILES_DIR,
 };

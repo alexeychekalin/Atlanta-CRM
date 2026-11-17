@@ -179,3 +179,51 @@ test('карточка: шапка и реквизиты показывают к
   // Адрес в реквизитах не задваивается, если фактический совпадает с юридическим
   assert.doesNotMatch(html, /Факт\. адрес/);
 });
+
+test('карточка: реквизиты скачиваются в Word одним нажатием', async () => {
+  const client = {
+    id: 13,
+    name: 'ООО «Вологодские машины»',
+    full_name: 'Общество с ограниченной ответственностью «Вологодские машины»',
+    client_type: 'ooo',
+    status_name: 'Новый',
+    status_color: '#3b82f6',
+    pricing_level_name: 'Крупный опт',
+    pricing_markup_pct: 5,
+    inn: '3525232448',
+    kpp: '352501001',
+    ogrn: '1093525017277',
+    bank_account: '40702810112000009669',
+    bank_name: 'Мурманское отделение № 8627 ПАО Сбербанк',
+    bik: '044705615',
+    director: 'Кузнецов Василий Петрович',
+  };
+
+  const { page, elements, sandbox } = loadClientProfile({ client });
+  await page.render(client.id);
+
+  const html = elements['content-area'].innerHTML;
+  assert.match(html, /Скачать DOCX/, 'в блоке реквизитов нужна кнопка выгрузки');
+  assert.match(html, /ClientProfilePage\.downloadRequisites\(\)/);
+  // кнопка не должна заодно сворачивать блок: она вне обработчика раскрытия
+  assert.ok(!/onclick="ClientProfilePage\.toggleRequisites\(\)"[^>]*>[^<]*Скачать DOCX/.test(html));
+
+  // Сам вызов: файл берётся с сервера, а не собирается в браузере
+  let requested = null;
+  let saved = null;
+  sandbox.API.getBlob = async (path) => { requested = path; return { size: 10 }; };
+  sandbox.downloadBlob = (blob, fileName) => { saved = { blob, fileName }; };
+  page.client = client;
+  page.clientId = client.id;
+
+  await page.downloadRequisites();
+  assert.equal(requested, '/clients/13/requisites.docx');
+  assert.deepEqual(saved, { blob: { size: 10 }, fileName: 'Реквизиты ООО Вологодские машины.docx' });
+
+  // Ошибка сервера не роняет карточку, а показывается тостом
+  let errorText = '';
+  sandbox.API.getBlob = async () => { throw new Error('у клиента не заполнены реквизиты'); };
+  sandbox.Toast.error = (text) => { errorText = text; };
+  await page.downloadRequisites();
+  assert.match(errorText, /не заполнены реквизиты/);
+});

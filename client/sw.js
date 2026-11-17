@@ -1,7 +1,7 @@
 /* Service Worker — CRM «Атланта» PWA */
 // Меняйте версию при правках клиентского JS: activate удалит старый кэш,
 // и браузер не будет отдавать пользователю устаревшие файлы.
-const CACHE_NAME = 'atlanta-crm-v9';
+const CACHE_NAME = 'atlanta-crm-v10';
 const STATIC_ASSETS = [
   '/',
   '/css/styles.css',
@@ -16,6 +16,7 @@ const STATIC_ASSETS = [
   '/js/components/confirm-dialog.js',
   '/js/components/search-clear.js',
   '/js/components/clipboard.js',
+  '/js/components/download.js',
   '/js/components/article.js',
   '/js/pages/login.js',
   '/js/pages/dashboard.js',

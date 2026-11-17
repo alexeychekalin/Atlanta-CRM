@@ -4,8 +4,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { buildNotes, diffClient, updateClient, parseArgs, placeDocument, readConfig,
-  CLIENT_FIELDS, CLIENTS_JSON, FILES_DIR } = require('../src/db/preseed');
+const { buildNotes, diffClient, fillEmptyChanges, updateClient, parseArgs, placeDocument,
+  readConfig, CLIENT_FIELDS, CLIENTS_JSON, FILES_DIR } = require('../src/db/preseed');
 
 test('предзаполнение: файл данных есть и корректно разбирается', () => {
   assert.ok(fs.existsSync(CLIENTS_JSON), 'нет src/db/preseed/clients.json');
@@ -192,10 +192,39 @@ test('--refresh: UPDATE собирается только из полей кар
   assert.equal(await updateClient(runner, 42, {}), 0, 'пустой набор не должен ходить в базу');
 });
 
-test('флаги командной строки: --refresh и --dry-run', () => {
-  assert.deepEqual(parseArgs([]), { refresh: false, dryRun: false });
-  assert.deepEqual(parseArgs(['--refresh']), { refresh: true, dryRun: false });
-  assert.deepEqual(parseArgs(['--refresh', '--dry-run']), { refresh: true, dryRun: true });
+test('флаги командной строки: --refresh, --fill-empty и --dry-run', () => {
+  assert.deepEqual(parseArgs([]), { refresh: false, fillEmpty: false, dryRun: false });
+  assert.deepEqual(parseArgs(['--refresh']), { refresh: true, fillEmpty: false, dryRun: false });
+  assert.deepEqual(parseArgs(['--fill-empty']), { refresh: false, fillEmpty: true, dryRun: false });
+  assert.deepEqual(parseArgs(['--refresh', '--dry-run']),
+    { refresh: true, fillEmpty: false, dryRun: true });
+});
+
+test('дополнение пустых полей: правки из интерфейса не затираются', () => {
+  // Банковские реквизиты пришли отдельным PDF уже после того, как карточка
+  // была заведена: пустые поля дополняем, заполненные не трогаем.
+  const entry = {
+    name: 'ООО «Вологодские машины»',
+    bank_account: '40702810112000009669',
+    bik: '044705615',
+    phone: '+7 (8172) 54-70-70',
+  };
+  const row = {
+    name: 'ООО «Вологодские машины»',
+    bank_account: null,
+    bik: '044705615',
+    phone: '',
+  };
+
+  const changes = fillEmptyChanges(entry, row);
+  assert.deepEqual(Object.keys(changes).sort(), ['bank_account', 'phone']);
+  assert.equal(changes.bank_account.to, '40702810112000009669');
+  assert.equal(changes.phone.to, '+7 (8172) 54-70-70');
+
+  // всё уже заполнено — обновлять нечего
+  assert.deepEqual(fillEmptyChanges(entry, { ...entry }), {});
+  // пустое значение в файле ничего не стирает
+  assert.deepEqual(fillEmptyChanges({ name: '', phone: '' }, {}), {});
 });
 
 test('предзаполнение: Бонум Траст и Арсенал-Авто заведены по присланным реквизитам', () => {
@@ -331,4 +360,27 @@ test('предзаполнение: доставка Бонум Траст, Ба
   assert.equal(sst.delivery_contact_name, 'Алексей Храмов');
   assert.equal(sst.delivery_contact_phone, '+7 (927) 641-81-40');
   assert.notEqual(sst.delivery_contact_name, sst.director);
+});
+
+test('предзаполнение: Вологодские машины — банковские реквизиты из карточки предприятия', () => {
+  const { clients } = readConfig();
+  const vol = clients.find(entry => entry.inn === '3525232448');
+  assert.ok(vol, 'нет ООО «Вологодские машины»');
+
+  // Карточка предприятия пришла отдельным PDF уже после выписки ЕГРЮЛ:
+  // банк, счета и ОКПО есть только в ней.
+  assert.equal(vol.postal_address, '160004, Вологодская обл., г. Вологда, ул. Маяковского, д. 38');
+  assert.match(vol.legal_address, /Маяковского, д\. 38, здание 4, 5, 6$/);
+  assert.equal(vol.bank_account, '40702810112000009669');
+  assert.equal(vol.bank_name, 'Мурманское отделение № 8627 ПАО Сбербанк');
+  assert.equal(vol.corr_account, '30101810300000000615');
+  assert.equal(vol.bik, '044705615');
+  assert.equal(vol.okpo, '64611764');
+  assert.equal(vol.okved, '29.20.4');
+  assert.equal(vol.phone, '+7 (8172) 54-70-70');
+  assert.equal(vol.director, 'Кузнецов Василий Петрович');
+  assert.equal(vol.director_position, 'Директор');
+  assert.equal(vol.director_basis, 'Устава');
+  assert.ok(vol.documents.some(doc => doc.file === 'vologodskie-mashiny-requisites.pdf'),
+    'карточка предприятия должна быть приложена к карточке клиента');
 });
