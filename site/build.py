@@ -558,6 +558,27 @@ class Site:
             component['_cat_slug'] = CATEGORY_SLUGS.get(component['category'], 'prochee')
             component['_url'] = f"/catalog/{component['_cat_slug']}/{component['_slug']}/"
             self.by_slug[component['_slug']] = component
+        # семейство, разделённое по стороне: обзорная страница на прежнем
+        # адресе изделия и ссылки на стороны из карточек
+        self.family_pages = []
+        self.families_by_article = {}
+        self.siblings = {}
+        for family in catalog.get('families') or []:
+            children = [item for item in self.components if item.get('split_from') == family['article']]
+            if not children:
+                continue
+            order = {'front': 0, 'rear': 1, 'side': 2}
+            children.sort(key=lambda item: order.get(item.get('side'), 9))
+            record = dict(family)
+            record['_children'] = children
+            record['_cat_slug'] = CATEGORY_SLUGS.get(family['category'], 'prochee')
+            record['_slug'] = slugify(family['article'])
+            record['_url'] = f"/catalog/{record['_cat_slug']}/{record['_slug']}/"
+            self.family_pages.append(record)
+            self.families_by_article[family['article']] = record
+            for child in children:
+                self.siblings[child['article']] = [item for item in children if item is not child]
+
         self.gisp_components = [item for item in self.components if has_gisp(item)]
         self.counts_text = counts(len(self.components),
                                   sum(len(item.get('modifications') or []) for item in self.components))
@@ -1308,6 +1329,81 @@ class Site:
                          schemas=[self.schema_breadcrumbs(
                              [('Главная', '/'), ('Каталог', '/catalog/'), (category['name'], f'/catalog/{slug}/')])])
 
+    def siblings_nav(self, component):
+        """Другие стороны того же изделия: перед / зад / бок."""
+        siblings = self.siblings.get(component['article']) or []
+        if not siblings:
+            return ''
+        labels = {'front': 'передняя', 'rear': 'задняя', 'side': 'боковая'}
+        links = ''.join(
+            f'<a href="{item["_url"]}">{esc(item["article"])} — '
+            f'{labels.get(item.get("side"), "сторона")}</a>'
+            for item in siblings)
+        family = self.families_by_article.get(component.get('split_from'))
+        back = (f'<a href="{family["_url"]}">{esc(family["article"])} — все стороны</a>'
+                if family else '')
+        return f'<div class="sides-nav"><span>Другие стороны:</span> {links}{back}</div>'
+
+    def family_page(self, family):
+        """Обзорная страница изделия, разделённого по стороне установки.
+
+        Живёт на прежнем адресе изделия («а-3731-010»), поэтому старые ссылки
+        из каталогов дилеров и распечаток ведут сюда, а не в 404. Внутри —
+        карточки сторон и общие характеристики.
+        """
+        category = self.categories.get(family['category'], {'name': 'Каталог'})
+        cat_slug = family['_cat_slug']
+        children = family['_children']
+        labels = {'front': 'переднее', 'rear': 'заднее', 'side': 'боковое'}
+        sides = [labels.get(item.get('side'), 'исполнение') for item in children]
+        articles = ', '.join(item['article'] for item in children)
+        cards = ''.join(self.product_card(item) for item in children)
+
+        rows = spec_rows(family)
+        specs_html = ''
+        if rows:
+            body_rows = ''.join(f'<tr><th scope="row">{esc(key)}</th><td>{esc(value)}</td></tr>'
+                                for key, value in rows)
+            specs_html = (f'<div class="block"><h2>Общие характеристики</h2>'
+                          f'<table class="specs">{body_rows}</table></div>')
+
+        body = f'''
+{self.crumbs([('Главная', '/'), ('Каталог', '/catalog/'), (category['name'], f'/catalog/{cat_slug}/'),
+              (family['article'], None)])}
+<div class="page-head">
+  <div class="wrap">
+    <div class="eyebrow">Изделие по стороне установки</div>
+    <h1 style="margin-top:14px">{esc(family['name'])}</h1>
+    <p>{esc(family['article'])} выпускается отдельными изделиями по стороне установки:
+       {esc(', '.join(sides))}. Выберите сторону — в карточке все варианты подключения
+       и длины кабеля.</p>
+    <p class="sides-nav"><span>Артикулы сторон:</span> {esc(articles)}</p>
+  </div>
+</div>
+<section class="section section--tight">
+  <div class="wrap">
+    <div class="product-grid">{cards}</div>
+  </div>
+</section>
+<section class="section section--tight">
+  <div class="wrap">
+    {specs_html}
+  </div>
+</section>
+'''
+        body += self.request_block(family['article'])
+
+        description = clip(
+            f"{family['name']} {family['article']}: изделия по стороне установки — "
+            f"{', '.join(sides)}. Характеристики, варианты подключения, цена по запросу.", 165)
+        title = f"{clean_name(family['name'])} {family['article']}"
+        return self.page(title, description, family['_url'], body,
+                         current='catalog',
+                         schemas=[self.schema_breadcrumbs(
+                             [('Главная', '/'), ('Каталог', '/catalog/'),
+                              (category['name'], f'/catalog/{cat_slug}/'),
+                              (family['article'], family['_url'])])])
+
     def product_page(self, component):
         category = self.categories.get(component['category'], {'name': 'Каталог'})
         cat_slug = component['_cat_slug']
@@ -1433,6 +1529,7 @@ class Site:
         <a class="btn btn--ghost" href="#docs">Документы</a>
       </div>
       <p class="product__note">Цены не публикуем: стоимость зависит от исполнения и объёма партии.</p>
+      {self.siblings_nav(component)}
     </div>
     {specs_html}
     {functions_html}
@@ -1682,6 +1779,10 @@ class Site:
 
         for component in self.components:
             pages[component['_url']] = self.product_page(component)
+
+        # обзорные страницы разделённых семейств — на прежнем адресе изделия
+        for family in self.family_pages:
+            pages[family['_url']] = self.family_page(family)
 
         # прежние артикулы слитых семейств: А.3731.027-01 → А.3731.027
         redirects = set()

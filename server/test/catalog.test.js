@@ -56,12 +56,15 @@ test('каталог: артикулы уникальны, коды модифи
     // полный артикул собирается в одном месте: самим артикулом или полем full_article.
     // У изделия-комплекта артикул печатается через слэш (А.3776.005/А.3731.007),
     // а исполнение встаёт между половинами: А.3776.005Л-01/А.3731.007.
-    const [head, tail] = entry.article.split('/');
+    // у изделия, разделённого по стороне, печатный артикул стороны может быть
+    // из другой серии: у А.3731.018-21 передние — не только «-21», но и «-41.xx»
+    const base = entry.split_from || entry.article;
+    const [head, tail] = base.split('/');
     for (const mod of entry.modifications || []) {
       const full = fullArticle(entry.article, mod.code, mod.full_article);
       const ok = tail
         ? full.startsWith(head) && full.endsWith(`/${tail}`)
-        : full.startsWith(entry.article);
+        : full.startsWith(base);
       assert.ok(ok, `${entry.article}: код ${mod.code} даёт ${full}`);
     }
   }
@@ -240,26 +243,29 @@ test('каталог: прежние плоские артикулы жгуто�
   }
 });
 
-test('каталог: изделие с цветными исполнениями — одна позиция, прежние артикулы в supersedes', () => {
+test('каталог: габаритные фонари разделены по стороне, печатные артикулы сохранены', () => {
   const { components } = readConfig();
   const byArticle = new Map(components.map(c => [c.article, c]));
 
-  // А.3731.027 — изделие, А.3731.027-01/-02/-03 — его исполнения по цвету
-  const family = byArticle.get('А.3731.027');
-  assert.ok(family, 'нет изделия А.3731.027');
-  assert.deepEqual(family.supersedes, ['А.3731.027-01', 'А.3731.027-02', 'А.3731.027-03']);
-  assert.equal(family.modifications.length, 78, 'исполнений А.3731.027');
+  // А.3731.027 разделён по стороне: -01 перед, -02 зад, -03 бок,
+  // по 26 исполнений, суммарно те же 78
+  const sides = ['-01', '-02', '-03'].map(suffix => byArticle.get(`А.3731.027${suffix}`));
+  sides.forEach((item, index) => assert.ok(item, `нет изделия А.3731.027-0${index + 1}`));
+  assert.deepEqual(sides.map(item => item.modifications.length), [26, 26, 26], 'исполнения сторон');
+  assert.deepEqual(sides.map(item => item.side), ['front', 'rear', 'side']);
   for (const code of ['01.01', '02.45', '03.85']) {
-    assert.ok(family.modifications.some(m => m.code === code), `А.3731.027: нет исполнения ${code}`);
+    const [suffix] = code.split('.');
+    const item = byArticle.get(`А.3731.027-${suffix}`);
+    assert.ok(item.modifications.some(m => m.code === code),
+      `А.3731.027-${suffix}: нет исполнения ${code}`);
   }
-
-  for (const article of family.supersedes) {
-    assert.ok(!byArticle.has(article), `${article}: остался отдельной позицией`);
-  }
+  assert.ok(!byArticle.has('А.3731.027'), 'прежнее изделие осталось отдельной позицией');
+  assert.ok(sides[0].supersedes.includes('А.3731.027'),
+    'прежний артикул семейства должен гаситься импортом');
 
   // печатный артикул не всегда собирается как «изделие-код»: он в full_article
-  const arm = byArticle.get('А.3731.023');
-  assert.ok(arm, 'нет изделия А.3731.023');
+  const arm = byArticle.get('А.3731.023.3');
+  assert.ok(arm, 'нет изделия А.3731.023.3');
   const printed = arm.modifications.find(m => m.full_article === 'А.3731.023.3-03.06-150');
   assert.ok(printed, 'А.3731.023.3-03.06-150: исполнение потерялось');
   assert.equal(fullArticle(arm.article, printed.code, printed.full_article), 'А.3731.023.3-03.06-150');
@@ -267,10 +273,11 @@ test('каталог: изделие с цветными исполнениям�
     'поиск по печатному артикулу не находит изделие');
 
   for (const entry of components) {
-    const [head, tail] = entry.article.split('/');
+    const base = entry.split_from || entry.article;
+    const [head, tail] = base.split('/');
     for (const mod of entry.modifications || []) {
       const full = fullArticle(entry.article, mod.code, mod.full_article);
-      assert.ok(full.includes(tail ? head : entry.article), `${entry.article}: ${mod.code} даёт ${full}`);
+      assert.ok(full.includes(tail ? head : base), `${entry.article}: ${mod.code} даёт ${full}`);
       if (tail) assert.ok(full.endsWith(`/${tail}`), `${entry.article}: ${mod.code} даёт ${full}`);
     }
   }

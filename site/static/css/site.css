@@ -1743,6 +1743,30 @@ ul {
   color: var(--muted-light);
 }
 
+/* Стороны одного изделия: из карточки — на соседние стороны, на обзорной
+   странице семейства — артикулы сторон. */
+.sides-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.sides-nav > span {
+  color: var(--muted);
+}
+
+.sides-nav a {
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.sides-nav a:hover {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
 .block {
   margin-top: 32px;
   padding-top: 26px;

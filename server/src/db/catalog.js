@@ -24,6 +24,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { fullArticle } = require('../utils/article');
 const { describeDbError } = require('../utils/db-error');
+const { adoptSplitFamilies } = require('./side-families');
 
 const CATALOG_DIR = path.join(__dirname, 'catalog');
 const FILES_DIR = path.join(CATALOG_DIR, 'files');
@@ -43,6 +44,8 @@ function readConfig() {
   return {
     categories: Array.isArray(config.categories) ? config.categories : [],
     components: Array.isArray(config.components) ? config.components : [],
+    // семейства, разделённые на отдельные изделия (габаритные фонари по стороне)
+    families: Array.isArray(config.families) ? config.families : [],
   };
 }
 
@@ -467,7 +470,7 @@ function expandArticles(entry) {
 }
 
 async function run(db = require('../db')) {
-  const { categories, components } = readConfig();
+  const { categories, components, families } = readConfig();
   if (components.length === 0) {
     console.log('ℹ️  Каталог: нет данных в src/db/catalog/catalog.json');
     return;
@@ -543,6 +546,11 @@ async function run(db = require('../db')) {
     }
   }
 
+  // семейство, разделённое на изделия по стороне: цены, правки интерфейса,
+  // фото и документы прежнего изделия переносим до того, как retireLegacyFlats
+  // его удалит
+  const split = await adoptSplitFamilies(db, families, { log: console.log });
+
   const legacy = await retireLegacyFlats(db, components);
 
   console.log(
@@ -550,6 +558,7 @@ async function run(db = require('../db')) {
     `позиций создано ${createdComponents}, дополнено ${updatedComponents}, ` +
     `без изменений ${skippedComponents}, модификаций создано ${createdModifications}, ` +
     `фото в галерею ${createdComponentImages}, фото исполнений ${createdModificationImages}` +
+    (split.families > 0 ? `, разделено по стороне семейств ${split.families}` : '') +
     (createdDocuments > 0 ? `, документов приложено ${createdDocuments}` : '')
   );
   if (legacy.removed > 0 || legacy.disabled > 0) {
@@ -610,6 +619,7 @@ module.exports = {
   ensureComponentDocuments,
   ensureModifications,
   ensureComponentImages,
+  adoptSplitFamilies,
   assertSchema,
   retireLegacyFlats,
   fillEmptyFields,
