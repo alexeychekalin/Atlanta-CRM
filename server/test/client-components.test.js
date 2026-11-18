@@ -462,6 +462,113 @@ test('модификации: артикул строки копируется �
   assert.ok(!/copyable/.test(html), 'текст артикула не должен быть кнопкой копирования');
 });
 
+test('карточка компонента: раскрытый список фото не сворачивается после удаления', async () => {
+  const component = {
+    id: 7, article: 'А.3731.013', name: 'Фонарь габаритный', description: '',
+    price: 990, is_active: true,
+    image_path: '/uploads/images/a.jpg',
+    images: [
+      { id: 11, image_path: '/uploads/images/a.jpg' },
+      { id: 12, image_path: '/uploads/images/b.jpg' },
+      { id: 13, image_path: '/uploads/images/c.jpg' },
+    ],
+    modifications: [],
+  };
+  const other = { ...component, id: 8, article: 'А.3731.014', images: component.images };
+
+  let modal = null;
+  // перерисовка идёт в открытой карточке: модалка на экране
+  const overlay = { style: { display: 'flex' } };
+  const modalBody = { scrollTop: 180 };
+  const group = { hidden: true };
+  const document = {
+    getElementById: (id) => ({
+      'modal-overlay': overlay,
+      'modal-body': modalBody,
+      'comp-photos': group,
+    }[id] || null),
+    querySelector: () => null,
+    querySelectorAll: () => [],
+  };
+
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage', {
+    api: {
+      get: async (url) => {
+        const path = String(url);
+        if (path.endsWith('/documents')) return { data: [] };
+        // обновление списка после удаления — без этого filterAndRender падает
+        if (!/\/\d+$/.test(path)) return { data: [], categories: [] };
+        return path.endsWith('/8') ? other : component;
+      },
+    },
+    globals: {
+      document,
+      Modal: { open: options => { modal = options; }, close: () => {} },
+    },
+  });
+
+  // 1. карточка открывается со свёрнутым списком фото
+  await page.viewComponent(7);
+  assert.match(modal.body, /aria-expanded="false" onclick="ComponentsCatalogPage\.toggleGroup\(this, 'comp-photos'\)"/);
+  assert.match(modal.body, /id="comp-photos" hidden>/);
+
+  // 2. пользователь раскрыл список
+  page.toggleGroup({ setAttribute() {} }, 'comp-photos');
+  assert.equal(page.isGroupOpen('comp-photos'), true, 'раскрытие должно запоминаться');
+
+  // список после удаления перерисовывается отдельно — здесь важен только просмотр
+  page.filterAndRender = () => {};
+
+  // 3. после удаления фото карточка перерисовывается — список остаётся раскрытым
+  await page.deleteComponentImage(7, 12);
+  // удаление перерисовывает карточку без await — даём рендеру завершиться
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.match(modal.body, /aria-expanded="true" onclick="ComponentsCatalogPage\.toggleGroup\(this, 'comp-photos'\)"/,
+    'после удаления фото список снова свернулся');
+  assert.match(modal.body, /id="comp-photos">/, 'блок фото должен остаться раскрытым');
+
+  // 4. в другой карточке состояние своё — там список снова свёрнут
+  await page.viewComponent(8);
+  assert.match(modal.body, /aria-expanded="false" onclick="ComponentsCatalogPage\.toggleGroup\(this, 'comp-photos'\)"/);
+  assert.match(modal.body, /id="comp-photos" hidden>/);
+});
+
+test('карточка компонента: раскрытые документы тоже переживают перерисовку', async () => {
+  const component = {
+    id: 7, article: 'А.3731.013', name: 'Фонарь габаритный', description: '',
+    price: 990, is_active: true, images: [], modifications: [],
+  };
+
+  let modal = null;
+  const group = { hidden: true };
+  const document = {
+    getElementById: (id) => ({
+      'modal-overlay': { style: { display: 'flex' } },
+      'modal-body': { scrollTop: 0 },
+      'comp-docs': group,
+    }[id] || null),
+    querySelector: () => null,
+    querySelectorAll: () => [],
+  };
+
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage', {
+    api: { get: async url => (String(url).endsWith('/documents') ? { data: [] } : component) },
+    globals: {
+      document,
+      Modal: { open: options => { modal = options; }, close: () => {} },
+    },
+  });
+
+  await page.viewComponent(7);
+  assert.match(modal.body, /id="comp-docs" hidden>/);
+
+  page.toggleGroup({ setAttribute() {} }, 'comp-docs');
+  await page.viewComponent(7);
+
+  assert.match(modal.body, /aria-expanded="true" onclick="ComponentsCatalogPage\.toggleGroup\(this, 'comp-docs'\)"/);
+  assert.match(modal.body, /id="comp-docs">/);
+});
+
 test('карточка компонента: длинный список модификаций свёрнут по шесть', async () => {
   const component = {
     id: 22,

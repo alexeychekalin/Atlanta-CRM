@@ -528,6 +528,11 @@ const ComponentsCatalogPage = {
   /** Раскрытые строки модификаций — переживают перерисовку карточки (загрузка фото). */
   _openMods: null,
 
+  /** Раскрытые блоки карточки (фотографии изделия, документы). Тоже переживают
+   *  перерисовку: иначе после каждого удалённого фото список сворачивался и его
+   *  приходилось раскрывать заново. */
+  _openGroups: null,
+
   /** Какая карточка открыта: по нему понимаем, что это повторная отрисовка той же. */
   _viewCompId: null,
 
@@ -541,8 +546,9 @@ const ComponentsCatalogPage = {
       // не должна сворачивать раскрытые строки и прыгать в начало списка.
       const overlay = document.getElementById('modal-overlay');
       const cardOpen = Boolean(overlay && overlay.style.display === 'flex');
-      const sameComp = cardOpen && this._viewCompId === id;
+      const sameComp = cardOpen && String(this._viewCompId) === String(id);
       if (!sameComp || !this._openMods) this._openMods = new Set();
+      if (!sameComp || !this._openGroups) this._openGroups = new Set();
       if (!sameComp) this._modView = { query: '', filter: 'all', limit: this.MOD_PAGE_SIZE };
 
       const bodyBefore = document.getElementById('modal-body');
@@ -611,14 +617,16 @@ const ComponentsCatalogPage = {
       const commentHtml = comp.comment ? `
         <div class="comp-view__comment" title="${esc(comp.comment)}">${esc(comp.comment)}</div>` : '';
 
-      // --- Фотографии изделия: полоса миниатюр свёрнута, чтобы не занимать экран.
+      // --- Фотографии изделия: по умолчанию свёрнуты, чтобы не занимать экран,
+      //     но раскрытое состояние переживает удаление/загрузку фото.
       const gallery = (comp.images || []).filter(img => img.image_path);
+      const photosOpen = this.isGroupOpen('comp-photos');
       const photosHtml = photos.length > 1 ? `
         <div class="comp-view__group">
-          <button type="button" class="comp-view__disclosure" aria-expanded="false" onclick="ComponentsCatalogPage.toggleGroup(this, 'comp-photos')">
+          <button type="button" class="comp-view__disclosure" aria-expanded="${photosOpen ? 'true' : 'false'}" onclick="ComponentsCatalogPage.toggleGroup(this, 'comp-photos')">
             <span>Фотографии изделия (${gallery.length})</span>${chevron}
           </button>
-          <div class="comp-view__group-body" id="comp-photos" hidden>
+          <div class="comp-view__group-body" id="comp-photos"${photosOpen ? '' : ' hidden'}>
             <div class="comp-photos">
               ${gallery.map(img => `
                 <div class="comp-photo" onclick="ComponentsCatalogPage.viewComponentImage(${photos.indexOf(img.image_path)})">
@@ -667,12 +675,13 @@ const ComponentsCatalogPage = {
       ` : '');
 
       // --- Документы: свёрнутый блок, количество подставляется после загрузки.
+      const docsOpen = this.isGroupOpen('comp-docs');
       const docsHtml = `
         <div class="comp-view__group">
-          <button type="button" class="comp-view__disclosure" aria-expanded="false" onclick="ComponentsCatalogPage.toggleGroup(this, 'comp-docs')">
+          <button type="button" class="comp-view__disclosure" aria-expanded="${docsOpen ? 'true' : 'false'}" onclick="ComponentsCatalogPage.toggleGroup(this, 'comp-docs')">
             <span>Документы <span class="comp-view__count" id="comp-docs-count"></span></span>${chevron}
           </button>
-          <div class="comp-view__group-body" id="comp-docs" hidden>
+          <div class="comp-view__group-body" id="comp-docs"${docsOpen ? '' : ' hidden'}>
             <div class="comp-view__docs-bar" id="comp-docs-bar" hidden>
               <button type="button" class="btn btn-sm btn-secondary" onclick="window.open('/api/components/${comp.id}/documents/download-all','_blank')" title="Скачать все документы ZIP">📦 Скачать ZIP</button>
             </div>
@@ -802,12 +811,20 @@ const ComponentsCatalogPage = {
     else this._openMods.delete(modId);
   },
 
+  /** Раскрыт ли блок карточки (фотографии, документы). */
+  isGroupOpen(id) {
+    return Boolean(this._openGroups && this._openGroups.has(id));
+  },
+
   /** Раскрыть/свернуть блок карточки (фотографии, документы). */
   toggleGroup(button, id) {
     const body = document.getElementById(id);
     if (!body) return;
     const open = body.hidden;
     body.hidden = !open;
+    if (!this._openGroups) this._openGroups = new Set();
+    if (open) this._openGroups.add(id);
+    else this._openGroups.delete(id);
     if (button && button.setAttribute) button.setAttribute('aria-expanded', open ? 'true' : 'false');
   },
 
