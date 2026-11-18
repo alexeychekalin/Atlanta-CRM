@@ -6,6 +6,7 @@ const ClientProfilePage = {
   workStatuses: [],
   // Состояние блока «Реквизиты» запоминаем между открытиями карточки
   REQUISITES_KEY: 'atlanta_crm_requisites_open',
+  DELIVERY_KEY: 'atlanta_crm_delivery_open',
 
   eventTypes: {
     call: { icon: '📞', label: 'Звонок', color: '#3b82f6' },
@@ -39,20 +40,32 @@ const ClientProfilePage = {
     }
 
     const c = this.client;
-    const s = this.stats;
+    const stats = this.stats || {};
     const canEdit = API.can('clients', 'edit');
+
+    // Шапка компактная: тип и ИНН — рядом с названием, доставка и реквизиты — в чипах.
+    const metaBits = [
+      c.client_type === 'ip' ? 'ИП' : 'ООО',
+      c.inn ? `ИНН ${esc(c.inn)}` : '',
+    ].filter(Boolean);
+    const hasDelivery = Boolean(c.delivery_address || c.delivery_contact_name || c.delivery_contact_phone);
+    const hasRequisites = Boolean(c.inn || c.kpp || c.legal_address || c.bank_details || c.ogrnip || c.ogrn
+      || c.bank_account || c.full_name || c.okpo || c.okved || c.bank_name || c.director);
+    const ordersCount = Number(stats.total_orders) || 0;
+    const drawingsCount = Number(stats.drawings_count) || 0;
+    const eventsCount = Number(stats.timeline_count) || 0;
 
     const avatarContent = c.avatar_path 
       ? `<img src="${esc(c.avatar_path)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
       : (c.name || '?').charAt(0).toUpperCase();
 
     const statusBadge = c.status_name 
-      ? `<span class="badge" style="background:${esc(c.status_color)}20;color:${esc(c.status_color)};border:1px solid ${esc(c.status_color)}40;font-size:0.8rem;padding:4px 12px;border-radius:20px">${esc(c.status_name)}</span>`
+      ? `<span class="badge" style="background:${esc(c.status_color)}20;color:${esc(c.status_color)};border:1px solid ${esc(c.status_color)}40;font-size:0.74rem;padding:3px 10px;border-radius:20px">${esc(c.status_name)}</span>`
       : '<span style="color:var(--text-muted);font-size:0.85rem">Статус не задан</span>';
 
     const pricingBadge = c.pricing_level_name
-      ? `<span class="badge" style="background:var(--accent-teal)15;color:var(--accent-teal);border:1px solid var(--accent-teal)40;font-size:0.8rem;padding:4px 12px;border-radius:20px">💰 ${esc(c.pricing_level_name)} (${c.pricing_markup_pct > 0 ? '+' : ''}${c.pricing_markup_pct}%)</span>`
-      : '<span class="badge" style="background:var(--accent-red)15;color:var(--accent-red);border:1px solid var(--accent-red)40;font-size:0.8rem;padding:4px 12px;border-radius:20px">⚠️ Уровень цен не задан</span>';
+      ? `<span class="badge" style="background:var(--accent-teal)15;color:var(--accent-teal);border:1px solid var(--accent-teal)40;font-size:0.74rem;padding:3px 10px;border-radius:20px">💰 ${esc(c.pricing_level_name)} (${c.pricing_markup_pct > 0 ? '+' : ''}${c.pricing_markup_pct}%)</span>`
+      : '<span class="badge" style="background:var(--accent-red)15;color:var(--accent-red);border:1px solid var(--accent-red)40;font-size:0.74rem;padding:3px 10px;border-radius:20px">⚠️ Уровень цен не задан</span>';
 
     content.innerHTML = `
       <!-- Кнопка назад -->
@@ -61,100 +74,82 @@ const ClientProfilePage = {
         К списку клиентов
       </button>
 
-      <!-- Профиль-хедер -->
-      <div class="profile-header">
+      <!-- Профиль-хедер: компактный, чтобы заказы были видны с первого экрана.
+           Всё на виду, кроме доставки и реквизитов — они раскрываются чипами. -->
+      <div class="profile-header profile-header--compact">
         <div class="profile-avatar" ${canEdit ? 'style="cursor:pointer;position:relative" onclick="ClientProfilePage.uploadAvatar()" title="Нажмите чтобы загрузить фото"' : ''}>
           ${avatarContent}
           ${canEdit ? '<div style="position:absolute;bottom:-2px;right:-2px;background:var(--accent-teal);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:0.7rem;border:2px solid var(--bg-card)">📷</div>' : ''}
         </div>
         <div class="profile-info">
-          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <h2 class="profile-name" style="margin:0">${esc(c.name)}</h2>
-            <div id="client-status-badge" style="cursor:${canEdit ? 'pointer' : 'default'}" ${canEdit ? 'onclick="ClientProfilePage.openStatusPicker()"' : ''}>
+          <div class="profile-title-row">
+            <h2 class="profile-name">${esc(c.name)}</h2>
+            <div id="client-status-badge" style="cursor:${canEdit ? 'pointer' : 'default'}" ${canEdit ? 'onclick="ClientProfilePage.openStatusPicker()" title="Изменить статус клиента"' : ''}>
               ${statusBadge}
             </div>
             <div>${pricingBadge}</div>
+            <span class="profile-meta">${metaBits.join(' · ')}</span>
           </div>
-          ${c.full_name && c.full_name !== c.name ? `<div style="font-size:0.9rem;color:var(--text-secondary);margin-top:4px">
-            ${esc(c.full_name)}${c.full_name_en ? `<span style="color:var(--text-muted);font-size:0.8rem"> · ${esc(c.full_name_en)}</span>` : ''}
-          </div>` : ''}
-          <div class="profile-contacts" style="margin-top:6px">
+          <div class="profile-contacts profile-contacts--line">
             ${c.phone ? `<span class="profile-contact-item"><a href="tel:${esc(c.phone)}" style="color:inherit;text-decoration:none">📞 ${esc(c.phone)}</a></span>` : ''}
             ${c.email ? `<span class="profile-contact-item"><a href="mailto:${esc(c.email)}" style="color:inherit;text-decoration:none">✉️ ${esc(c.email)}</a></span>` : ''}
             ${this.siteHref(c.site) ? `<span class="profile-contact-item"><a href="${this.siteHref(c.site)}" target="_blank" rel="noopener" style="color:var(--accent-teal);text-decoration:none;font-weight:500" title="Сайт клиента">🌐 ${esc(c.site)}</a></span>` : ''}
-            ${c.address ? `<span class="profile-contact-item">📍 ${esc(c.address)}</span>` : ''}
+            ${c.address ? `<span class="profile-contact-item profile-contact-item--address" title="${esc(c.address)}">📍 ${esc(c.address)}</span>` : ''}
             ${c.telegram ? `<span class="profile-contact-item"><a href="https://t.me/${esc(String(c.telegram).replace('@','').replace(/[^A-Za-z0-9_]/g,''))}" target="_blank" rel="noopener" style="color:#29b6f6;text-decoration:none;font-weight:500" title="Telegram">✈️ ${esc(c.telegram)}</a></span>` : ''}
-            ${c.max_messenger ? `<span class="profile-contact-item">${safeUrl(c.max_messenger) ? `<a href="${safeUrl(c.max_messenger)}" target="_blank" rel="noopener" style="color:#7c4dff;text-decoration:none;font-weight:500" title="MAX">💬 MAX</a>` : ''}</span>` : ''}
+            ${c.max_messenger && safeUrl(c.max_messenger) ? `<span class="profile-contact-item"><a href="${safeUrl(c.max_messenger)}" target="_blank" rel="noopener" style="color:#7c4dff;text-decoration:none;font-weight:500" title="MAX">💬 MAX</a></span>` : ''}
           </div>
-          ${(c.delivery_address || c.delivery_contact_name || c.delivery_contact_phone) ? `
-            <div style="margin-top:10px;padding:10px 14px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border)">
-              <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;font-weight:600">📦 Данные доставки</div>
-              <div class="profile-contacts" style="margin-top:2px">
-                ${c.delivery_address ? `<span class="profile-contact-item">🏢 ${esc(c.delivery_address)}</span>` : ''}
-                ${c.delivery_contact_name ? `<span class="profile-contact-item">👤 ${esc(c.delivery_contact_name)}</span>` : ''}
-                ${c.delivery_contact_phone ? `<span class="profile-contact-item">📱 ${esc(c.delivery_contact_phone)}</span>` : ''}
-              </div>
-            </div>
-          ` : ''}
-          ${(c.inn || c.kpp || c.legal_address || c.bank_details || c.ogrnip || c.ogrn || c.bank_account
-             || c.full_name || c.okpo || c.okved || c.bank_name || c.director) ? `
-            <div style="margin-top:10px;padding:10px 14px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border)">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-                <div onclick="ClientProfilePage.toggleRequisites()" style="display:flex;align-items:center;gap:10px;flex:1;min-width:180px;flex-wrap:wrap;cursor:pointer;user-select:none" title="Показать или скрыть реквизиты">
-                  <div style="font-size:0.78rem;color:var(--text-muted);font-weight:600">
-                    🏛️ Реквизиты ${c.client_type === 'ip' ? '<span style="color:#f59e0b">(ИП)</span>' : '<span style="color:#3b82f6">(ООО)</span>'}${c.inn ? `<span style="color:var(--text-secondary);font-weight:500"> · ИНН ${esc(c.inn)}</span>` : ''}
-                  </div>
-                  <span id="requisites-toggle-label" style="font-size:0.78rem;color:var(--accent-teal)">Развернуть ▾</span>
-                </div>
-                <button class="btn btn-secondary btn-sm" onclick="ClientProfilePage.downloadRequisites()"
-                        title="Скачать реквизиты в Word (.docx) — карточка предприятия для бухгалтерии и контрагента">
-                  ⤓ Скачать DOCX
-                </button>
-              </div>
-              <div id="client-requisites-body" class="profile-contacts" style="display:none;margin-top:8px">
-                ${c.full_name ? `<span class="profile-contact-item">Полное наименование: ${esc(c.full_name)}</span>` : ''}
-                ${c.full_name_en ? `<span class="profile-contact-item">На английском: ${esc(c.full_name_en)}${c.name_en ? ` (${esc(c.name_en)})` : ''}</span>` : ''}
-                ${c.inn ? `<span class="profile-contact-item">ИНН ${esc(c.inn)}${c.kpp ? ' / КПП ' + esc(c.kpp) : ''}</span>` : ''}
-                ${c.ogrn ? `<span class="profile-contact-item">ОГРН ${esc(c.ogrn)}</span>` : ''}
-                ${c.ogrnip ? `<span class="profile-contact-item">ОГРНИП ${esc(c.ogrnip)}</span>` : ''}
-                ${(c.okpo || c.okved) ? `<span class="profile-contact-item">${[c.okpo ? 'ОКПО ' + esc(c.okpo) : '', c.okved ? 'ОКВЭД ' + esc(c.okved) : ''].filter(Boolean).join(' · ')}</span>` : ''}
-                ${c.legal_address ? `<span class="profile-contact-item">📍 Юр. адрес: ${esc(c.legal_address)}</span>` : ''}
-                ${c.address && c.address !== c.legal_address ? `<span class="profile-contact-item">🏢 Факт. адрес: ${esc(c.address)}</span>` : ''}
-                ${c.postal_address ? `<span class="profile-contact-item">📮 Почт. адрес: ${esc(c.postal_address)}</span>` : ''}
-                ${c.bank_account ? `<span class="profile-contact-item">💳 Р/С: ${esc(c.bank_account)}</span>` : ''}
-                ${c.corr_account ? `<span class="profile-contact-item">К/С: ${esc(c.corr_account)}</span>` : ''}
-                ${c.bank_name ? `<span class="profile-contact-item">🏦 ${esc(c.bank_name)}${c.bik ? ', БИК: ' + esc(c.bik) : ''}</span>` : ''}
-                ${c.director ? `<span class="profile-contact-item">👤 ${c.client_type === 'ip' ? '' : `${esc(c.director_position || 'Руководитель')}: `}${esc(c.director)}${c.director_basis ? ` (действует на основании ${esc(c.director_basis)})` : ''}</span>` : ''}
-                ${c.bank_details ? `<span class="profile-contact-item" style="color:var(--text-muted);font-size:0.78rem">📋 ${esc(c.bank_details)}</span>` : ''}
-              </div>
-            </div>
-          ` : ''}
+
+          <div class="profile-chips">
+            ${hasDelivery ? `
+              <button type="button" class="profile-chip" id="delivery-toggle" aria-expanded="false"
+                      onclick="ClientProfilePage.toggleDelivery()" title="Показать или скрыть данные доставки">
+                <span>📦 Доставка</span><span class="profile-chip__caret" aria-hidden="true">▾</span>
+              </button>` : ''}
+            ${hasRequisites ? `
+              <button type="button" class="profile-chip" id="requisites-toggle" aria-expanded="false"
+                      onclick="ClientProfilePage.toggleRequisites()" title="Показать или скрыть реквизиты">
+                <span>🏛️ Реквизиты</span><span class="profile-chip__caret" aria-hidden="true">▾</span>
+              </button>
+              <button type="button" class="profile-chip profile-chip--docx" onclick="ClientProfilePage.downloadRequisites()"
+                      title="Скачать реквизиты в Word (.docx) — карточка предприятия для бухгалтерии и контрагента">⤓ DOCX</button>` : ''}
+          </div>
+
+          ${hasDelivery ? `
+            <div class="profile-fold" id="client-delivery-body" hidden>
+              <div class="profile-fold__title">📦 Данные доставки</div>
+              ${c.delivery_address ? `<span class="profile-contact-item">🏢 ${esc(c.delivery_address)}</span>` : ''}
+              ${c.delivery_contact_name ? `<span class="profile-contact-item">👤 ${esc(c.delivery_contact_name)}</span>` : ''}
+              ${c.delivery_contact_phone ? `<span class="profile-contact-item">📱 ${esc(c.delivery_contact_phone)}</span>` : ''}
+            </div>` : ''}
+
+          ${hasRequisites ? `
+            <div class="profile-fold" id="client-requisites-body" hidden>
+              ${c.full_name ? `<span class="profile-contact-item">Полное наименование: ${esc(c.full_name)}</span>` : ''}
+              ${c.full_name_en ? `<span class="profile-contact-item">На английском: ${esc(c.full_name_en)}${c.name_en ? ` (${esc(c.name_en)})` : ''}</span>` : ''}
+              ${c.inn ? `<span class="profile-contact-item">ИНН ${esc(c.inn)}${c.kpp ? ' / КПП ' + esc(c.kpp) : ''}</span>` : ''}
+              ${c.ogrn ? `<span class="profile-contact-item">ОГРН ${esc(c.ogrn)}</span>` : ''}
+              ${c.ogrnip ? `<span class="profile-contact-item">ОГРНИП ${esc(c.ogrnip)}</span>` : ''}
+              ${(c.okpo || c.okved) ? `<span class="profile-contact-item">${[c.okpo ? 'ОКПО ' + esc(c.okpo) : '', c.okved ? 'ОКВЭД ' + esc(c.okved) : ''].filter(Boolean).join(' · ')}</span>` : ''}
+              ${c.legal_address ? `<span class="profile-contact-item">📍 Юр. адрес: ${esc(c.legal_address)}</span>` : ''}
+              ${c.address && c.address !== c.legal_address ? `<span class="profile-contact-item">🏢 Факт. адрес: ${esc(c.address)}</span>` : ''}
+              ${c.postal_address ? `<span class="profile-contact-item">📮 Почт. адрес: ${esc(c.postal_address)}</span>` : ''}
+              ${c.bank_account ? `<span class="profile-contact-item">💳 Р/С: ${esc(c.bank_account)}</span>` : ''}
+              ${c.corr_account ? `<span class="profile-contact-item">К/С: ${esc(c.corr_account)}</span>` : ''}
+              ${c.bank_name ? `<span class="profile-contact-item">🏦 ${esc(c.bank_name)}${c.bik ? ', БИК: ' + esc(c.bik) : ''}</span>` : ''}
+              ${c.director ? `<span class="profile-contact-item">👤 ${c.client_type === 'ip' ? '' : `${esc(c.director_position || 'Руководитель')}: `}${esc(c.director)}${c.director_basis ? ` (действует на основании ${esc(c.director_basis)})` : ''}</span>` : ''}
+              ${c.bank_details ? `<span class="profile-contact-item" style="color:var(--text-muted);font-size:0.78rem">📋 ${esc(c.bank_details)}</span>` : ''}
+            </div>` : ''}
+
+          <!-- Показатели одной строкой: цифры видны сразу, но не занимают полэкрана -->
+          <div class="profile-strip">
+            <span class="profile-strip__item"><b>${ordersCount}</b> ${this.plural(ordersCount, 'заказ', 'заказа', 'заказов')}</span>
+            <span class="profile-strip__item"><b>${Table.formatMoney(stats.total_amount || 0)}</b> общая сумма</span>
+            <span class="profile-strip__item"><b>${Table.formatMoney(stats.total_commission || 0)}</b> комиссия</span>
+            <span class="profile-strip__item"><b>${drawingsCount}</b> ${this.plural(drawingsCount, 'чертёж', 'чертежа', 'чертежей')}</span>
+            <span class="profile-strip__item"><b>${eventsCount}</b> ${this.plural(eventsCount, 'событие', 'события', 'событий')}</span>
+          </div>
         </div>
         ${canEdit ? `<button class="btn btn-secondary btn-sm" onclick="ClientProfilePage.editClient()">✏️ Редактировать</button>` : ''}
-      </div>
-
-      <!-- KPI -->
-      <div class="profile-kpi">
-        <div class="kpi-card">
-          <div class="kpi-value">${s.total_orders}</div>
-          <div class="kpi-label">Заказов</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-value">${Table.formatMoney(s.total_amount)}</div>
-          <div class="kpi-label">Общая сумма</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-value">${Table.formatMoney(s.total_commission)}</div>
-          <div class="kpi-label">Комиссия</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-value">${s.drawings_count}</div>
-          <div class="kpi-label">Чертежей</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-value">${s.timeline_count}</div>
-          <div class="kpi-label">Событий</div>
-        </div>
       </div>
 
       <!-- Табы -->
@@ -178,7 +173,7 @@ const ClientProfilePage = {
     `;
 
     // Реквизиты по умолчанию свёрнуты — состояние помним в localStorage
-    this.applyRequisitesState();
+    this.applyHeaderState();
 
     // Привязка загрузки аватара
     document.getElementById('avatar-upload-input').addEventListener('change', async (e) => {
@@ -203,31 +198,66 @@ const ClientProfilePage = {
     return '<button class="tab-btn tab-btn-admin" data-tab="files" onclick="ClientProfilePage.switchTab(\'files\')" title="Доступно только администратору">📁 Файлы</button>';
   },
 
-  // === Реквизиты: свёрнутый блок ===
+  // === Свёрнутые блоки шапки: доставка и реквизиты ===
+  // Состояние запоминаем между открытиями карточки: раскрыл один раз — так и открывается.
   requisitesOpen() {
+    return this.groupOpen(this.REQUISITES_KEY);
+  },
+
+  deliveryOpen() {
+    return this.groupOpen(this.DELIVERY_KEY);
+  },
+
+  groupOpen(key) {
     try {
-      return localStorage.getItem(this.REQUISITES_KEY) === '1';
+      return localStorage.getItem(key) === '1';
     } catch {
       return false;
     }
   },
 
-  applyRequisitesState() {
-    this.toggleRequisites(this.requisitesOpen());
-  },
-
-  toggleRequisites(force) {
-    const body = document.getElementById('client-requisites-body');
-    const label = document.getElementById('requisites-toggle-label');
-    if (!body) return;
-    const open = force === undefined ? body.style.display === 'none' : !!force;
-    body.style.display = open ? '' : 'none';
-    if (label) label.textContent = open ? 'Свернуть ▴' : 'Развернуть ▾';
+  rememberGroup(key, open) {
     try {
-      localStorage.setItem(this.REQUISITES_KEY, open ? '1' : '0');
+      localStorage.setItem(key, open ? '1' : '0');
     } catch {
       /* приватный режим — просто не запоминаем */
     }
+  },
+
+  /** Вернуть чипы и блоки в состояние из localStorage (после перерисовки карточки). */
+  applyHeaderState() {
+    this.toggleDelivery(this.deliveryOpen());
+    this.toggleRequisites(this.requisitesOpen());
+  },
+
+  /** Раскрыть/свернуть блок шапки. force — чтобы задать состояние без клика. */
+  _toggleFold(bodyId, chipId, key, force) {
+    const body = document.getElementById(bodyId);
+    if (!body) return;
+    const open = force === undefined ? Boolean(body.hidden) : Boolean(force);
+    body.hidden = !open;
+    const chip = document.getElementById(chipId);
+    if (chip && chip.setAttribute) chip.setAttribute('aria-expanded', open ? 'true' : 'false');
+    this.rememberGroup(key, open);
+    return open;
+  },
+
+  toggleDelivery(force) {
+    return this._toggleFold('client-delivery-body', 'delivery-toggle', this.DELIVERY_KEY, force);
+  },
+
+  toggleRequisites(force) {
+    return this._toggleFold('client-requisites-body', 'requisites-toggle', this.REQUISITES_KEY, force);
+  },
+
+  /** Русские окончания: 1 заказ, 2 заказа, 5 заказов. */
+  plural(count, one, few, many) {
+    const value = Math.abs(Number(count) || 0);
+    const mod10 = value % 10;
+    const mod100 = value % 100;
+    if (mod10 === 1 && mod100 !== 11) return one;
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+    return many;
   },
 
   // === Реквизиты: выгрузка в Word ===

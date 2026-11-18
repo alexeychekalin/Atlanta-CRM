@@ -96,24 +96,61 @@ test('карточка: файлы клиента недоступны не-ад
   assert.match(container.innerHTML, /только администратору/);
 });
 
-test('карточка: реквизиты свёрнуты по умолчанию и запоминают состояние', () => {
+test('карточка: доставка и реквизиты свёрнуты по умолчанию и запоминают состояние', () => {
   const { page, elements, storage } = loadClientProfile();
-  elements['client-requisites-body'] = { style: { display: 'none' }, textContent: '' };
-  elements['requisites-toggle-label'] = { textContent: '' };
+  const body = { hidden: true };
+  const chip = { attrs: {}, setAttribute(name, value) { this.attrs[name] = value; } };
+  elements['client-requisites-body'] = body;
+  elements['requisites-toggle'] = chip;
 
   // По умолчанию localStorage пуст — блок остаётся свёрнутым
-  page.applyRequisitesState();
-  assert.equal(elements['client-requisites-body'].style.display, 'none');
-  assert.equal(elements['requisites-toggle-label'].textContent, 'Развернуть ▾');
+  page.applyHeaderState();
+  assert.equal(body.hidden, true);
+  assert.equal(chip.attrs['aria-expanded'], 'false');
 
   page.toggleRequisites();
-  assert.equal(elements['client-requisites-body'].style.display, '');
-  assert.equal(elements['requisites-toggle-label'].textContent, 'Свернуть ▴');
+  assert.equal(body.hidden, false);
+  assert.equal(chip.attrs['aria-expanded'], 'true');
   assert.equal(storage[page.REQUISITES_KEY], '1');
 
-  // Состояние «развёрнуто» переживает перерисовку карточки
-  const reopened = loadClientProfile();
-  assert.equal(reopened.page.requisitesOpen(), false);
+  page.toggleRequisites();
+  assert.equal(body.hidden, true);
+  assert.equal(chip.attrs['aria-expanded'], 'false');
+  assert.equal(storage[page.REQUISITES_KEY], '0');
+});
+
+test('карточка: раскрытые блоки шапки переживают перерисовку', () => {
+  const { page, elements } = loadClientProfile();
+  const requisites = { hidden: true };
+  const delivery = { hidden: true };
+  elements['client-requisites-body'] = requisites;
+  elements['client-delivery-body'] = delivery;
+  elements['requisites-toggle'] = { setAttribute() {} };
+  elements['delivery-toggle'] = { setAttribute() {} };
+
+  page.applyHeaderState();
+  page.toggleRequisites();
+  page.toggleDelivery();
+
+  // Карточка перерисовалась: разметка пришла свёрнутой, состояние вернули из localStorage
+  requisites.hidden = true;
+  delivery.hidden = true;
+  page.applyHeaderState();
+
+  assert.equal(requisites.hidden, false, 'реквизиты снова свернулись после перерисовки');
+  assert.equal(delivery.hidden, false, 'доставка снова свернулась после перерисовки');
+});
+
+test('карточка: показатели склоняются по-русски', () => {
+  const { page } = loadClientProfile();
+  const orders = (n) => page.plural(n, 'заказ', 'заказа', 'заказов');
+
+  assert.equal(orders(1), 'заказ');
+  assert.equal(orders(2), 'заказа');
+  assert.equal(orders(5), 'заказов');
+  assert.equal(orders(11), 'заказов');
+  assert.equal(orders(21), 'заказ');
+  assert.equal(orders(0), 'заказов');
 });
 
 test('карточка: сайт клиента превращается в безопасную ссылку', () => {
@@ -203,10 +240,10 @@ test('карточка: реквизиты скачиваются в Word одн
   await page.render(client.id);
 
   const html = elements['content-area'].innerHTML;
-  assert.match(html, /Скачать DOCX/, 'в блоке реквизитов нужна кнопка выгрузки');
+  assert.match(html, /⤓ DOCX/, 'в строке чипов нужна кнопка выгрузки');
   assert.match(html, /ClientProfilePage\.downloadRequisites\(\)/);
-  // кнопка не должна заодно сворачивать блок: она вне обработчика раскрытия
-  assert.ok(!/onclick="ClientProfilePage\.toggleRequisites\(\)"[^>]*>[^<]*Скачать DOCX/.test(html));
+  // кнопка не должна заодно сворачивать блок: у неё свой обработчик
+  assert.ok(!/toggleRequisites\(\)[^>]*>[^<]*DOCX/.test(html));
 
   // Сам вызов: файл берётся с сервера, а не собирается в браузере
   let requested = null;
@@ -226,4 +263,60 @@ test('карточка: реквизиты скачиваются в Word одн
   sandbox.Toast.error = (text) => { errorText = text; };
   await page.downloadRequisites();
   assert.match(errorText, /не заполнены реквизиты/);
+});
+
+test('карточка: компактная шапка — всё на виду, доставка и реквизиты в чипах', async () => {
+  const client = {
+    id: 15,
+    name: 'ООО «ТД «ССТ»»',
+    full_name: 'Общество с ограниченной ответственностью «Торговый дом «СаранскСпецТехника»»',
+    client_type: 'ooo',
+    status_name: 'Новый',
+    status_color: '#38bdf8',
+    pricing_level_name: 'Крупный опт',
+    pricing_markup_pct: 15,
+    phone: '+7 (8342) 38-04-27',
+    email: 'info@sstrm.ru',
+    site: 'www.sstrm.ru',
+    address: '430030, Республика Мордовия, г. Саранск, ул. Строительная, д. 11, этаж 2',
+    delivery_address: 'г. Саранск — ТК «Деловые линии», до терминала',
+    delivery_contact_name: 'Алексей Храмов',
+    delivery_contact_phone: '+7 (927) 641-81-40',
+    inn: '1326206104',
+    kpp: '132601001',
+    ogrn: '1151326001234',
+    legal_address: '430030, Республика Мордовия, г. Саранск, ул. Строительная, д. 11',
+    bank_account: '40702810524630001427',
+    bank_name: 'ПАО Сбербанк',
+    bik: '044525225',
+  };
+
+  const { page, elements } = loadClientProfile({ client });
+  await page.render(client.id);
+  const html = elements['content-area'].innerHTML;
+
+  // Старых плиток KPI больше нет — показатели идут одной строкой
+  assert.doesNotMatch(html, /profile-kpi/);
+  assert.match(html, /class="profile-header profile-header--compact"/);
+  assert.match(html, /class="profile-strip"/);
+  assert.match(html, /<b>0<\/b> заказов/);
+
+  // Тип и ИНН — рядом с названием, а не отдельным блоком
+  assert.match(html, /class="profile-meta">ООО · ИНН 1326206104/);
+
+  // Доставка и реквизиты — чипы, блоки свёрнуты до нажатия
+  assert.match(html, /id="delivery-toggle" aria-expanded="false"/);
+  assert.match(html, /id="requisites-toggle" aria-expanded="false"/);
+  assert.match(html, /id="client-delivery-body" hidden/);
+  assert.match(html, /id="client-requisites-body" hidden/);
+  assert.match(html, /📦 Доставка/);
+  assert.match(html, /🏛️ Реквизиты/);
+
+  // Контакты и адрес на месте, адрес обрезается «…» и целиком живёт в подсказке
+  assert.match(html, /info@sstrm\.ru/);
+  assert.match(html, /profile-contact-item--address" title="430030/);
+
+  // Реквизиты по-прежнему доступны — они просто спрятаны в раскрывающемся блоке
+  assert.match(html, /ИНН 1326206104 \/ КПП 132601001/);
+  assert.match(html, /, БИК: 044525225/);
 });
