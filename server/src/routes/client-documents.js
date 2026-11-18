@@ -5,6 +5,7 @@ const fs = require('fs');
 const { normalizeUploadPath, safeUploadPath, fileSha256 } = require('../utils/files');
 const { round2, priceForClient } = require('../services/drawings');
 const { BOM_SUBTOTAL_SQL, RAW_BASE_SQL } = require('../services/drawings-sql');
+const { monthlyStats } = require('../services/client-stats');
 
 const router = express.Router({ mergeParams: true });
 
@@ -172,6 +173,19 @@ router.delete('/drawings/:drawingId', auth, async (req, res) => {
 });
 
 // === Статистика клиента ===
+
+// GET /api/clients/:id/documents/stats/monthly?month=YYYY-MM
+// Сводка за месяц: заказы, суммы, выплаты агенту, разбивка по принципалам.
+// Без параметра отдаёт месяц, где были заказы, и текущий календарный.
+router.get('/stats/monthly', auth, async (req, res) => {
+  try {
+    res.json(await monthlyStats(req.params.id, req.query.month));
+  } catch (err) {
+    if (err.status === 404) return res.status(404).json({ error: err.message });
+    console.error('Ошибка статистики по месяцам:', err);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
 
 // GET /api/clients/:id/stats
 router.get('/stats', auth, async (req, res) => {

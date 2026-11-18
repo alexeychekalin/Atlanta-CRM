@@ -147,6 +147,8 @@ const ClientProfilePage = {
             <span class="profile-strip__item"><b>${Table.formatMoney(stats.total_commission || 0)}</b> комиссия</span>
             <span class="profile-strip__item"><b>${drawingsCount}</b> ${this.plural(drawingsCount, 'чертёж', 'чертежа', 'чертежей')}</span>
             <span class="profile-strip__item"><b>${eventsCount}</b> ${this.plural(eventsCount, 'событие', 'события', 'событий')}</span>
+            <button type="button" class="profile-strip__stats" onclick="ClientProfilePage.openMonthStats()"
+                    title="Заказы, суммы и выплаты агенту за выбранный месяц">📊 По месяцам</button>
           </div>
         </div>
         ${canEdit ? `<button class="btn btn-secondary btn-sm" onclick="ClientProfilePage.editClient()">✏️ Редактировать</button>` : ''}
@@ -248,6 +250,177 @@ const ClientProfilePage = {
 
   toggleRequisites(force) {
     return this._toggleFold('client-requisites-body', 'requisites-toggle', this.REQUISITES_KEY, force);
+  },
+
+  // === Статистика по месяцам ===
+  // Открывается из строки показателей: месяц, заказы, суммы, выплаты агенту.
+  async openMonthStats(month) {
+    try {
+      const url = `/clients/${this.clientId}/documents/stats/monthly${month ? `?month=${encodeURIComponent(month)}` : ''}`;
+      const data = await API.get(url);
+      this._monthStats = data;
+      Modal.open({
+        title: 'Статистика по месяцам',
+        wide: true,
+        body: `<div id="month-stats-body">${this._monthStatsBody(data)}</div>`,
+        footer: '<button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>',
+        autoFocus: false,
+      });
+    } catch (err) {
+      Toast.error(err.message);
+    }
+  },
+
+  /** Переключить месяц в открытом окне (стрелки, список, столбик графика). */
+  async setMonthStats(month) {
+    // Запоминаем запрошенный месяц: по нему работают стрелки и тесты
+    this._lastMonthRequest = month;
+    const body = document.getElementById('month-stats-body');
+    if (!body) return;
+    body.innerHTML = '<div style="padding:28px;text-align:center;color:var(--text-muted)">Загрузка…</div>';
+    try {
+      const data = await API.get(`/clients/${this.clientId}/documents/stats/monthly?month=${encodeURIComponent(month)}`);
+      this._monthStats = data;
+      body.innerHTML = this._monthStatsBody(data);
+    } catch (err) {
+      body.innerHTML = `<div style="padding:24px;text-align:center;color:var(--accent-red)">${esc(err.message)}</div>`;
+    }
+  },
+
+  /** Соседний месяц: −1 — предыдущий, +1 — следующий. */
+  changeMonth(delta) {
+    const current = this._monthStats && this._monthStats.month;
+    if (!current) return;
+    const [year, mon] = current.split('-').map(Number);
+    const date = new Date(year, mon - 1 + Number(delta || 0), 1);
+    const next = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    this.setMonthStats(next);
+  },
+
+  _monthStatsBody(data) {
+    const s = data.summary || {};
+    const extras = data.extras || {};
+    const orders = data.orders || [];
+    const principals = data.principals || [];
+    const months = data.months || [];
+    const chart = data.chart || [];
+    const money = (value) => Table.formatMoney(value || 0);
+
+    // Склонения для подписей под цифрами
+    const plural = (n, one, few, many) => this.plural(n, one, few, many);
+    const statusBits = [
+      s.new ? `${s.new} ${plural(s.new, 'новый', 'новых', 'новых')}` : '',
+      s.in_progress ? `${s.in_progress} в работе` : '',
+      s.paid ? `${s.paid} оплачено` : '',
+      s.completed ? `${s.completed} выполнено` : '',
+      s.cancelled ? `${s.cancelled} отменено` : '',
+    ].filter(Boolean);
+
+    const card = (value, label, sub) => `
+      <div class="mstats-card">
+        <div class="mstats-card__value">${value}</div>
+        <div class="mstats-card__label">${label}</div>
+        ${sub ? `<div class="mstats-card__sub">${sub}</div>` : ''}
+      </div>
+    `;
+
+    const options = months.map(item => `
+      <option value="${item.month}" ${item.month === data.month ? 'selected' : ''}>${esc(item.label)}</option>
+    `).join('');
+
+    const maxTotal = Math.max(...chart.map(item => Number(item.total) || 0), 1);
+    const bars = chart.map(item => {
+      const height = item.total > 0 ? Math.max(4, Math.round(item.total / maxTotal * 100)) : 2;
+      const active = item.month === data.month ? ' is-active' : '';
+      return `
+        <button type="button" class="mstats-bar${active}" onclick="ClientProfilePage.setMonthStats('${item.month}')"
+                title="${esc(item.label)}: ${Table.formatMoneyRaw(item.total)} · ${item.orders} ${plural(item.orders, 'заказ', 'заказа', 'заказов')}">
+          <span class="mstats-bar__fill" style="height:${height}%"></span>
+          <span class="mstats-bar__label">${esc(item.short)}</span>
+        </button>
+      `;
+    }).join('');
+
+    const principalRows = principals.length === 0 ? '' : `
+      <div class="mstats-block">
+        <div class="mstats-block__title">По принципалам</div>
+        <div class="mstats-principals">
+          ${principals.map(item => `
+            <div class="mstats-principal">
+              <span class="mstats-principal__name" title="${esc(item.name)}">${esc(item.name)}</span>
+              <span class="mstats-principal__num">${item.orders} ${plural(item.orders, 'заказ', 'заказа', 'заказов')}</span>
+              <span class="mstats-principal__sum">${money(item.total)}</span>
+              <span class="mstats-principal__comm" title="Выплаты агенту">🤝 ${money(item.commission)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+
+    const ordersTable = orders.length === 0 ? `
+      <div class="mstats-empty">За этот месяц заказов нет</div>
+    ` : `
+      <div class="mstats-block">
+        <div class="mstats-block__title">Заказы за месяц <span class="mstats-block__count">${orders.length}</span></div>
+        <div class="mstats-orders">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Заказ</th><th>Дата</th><th>Статус</th>
+                <th class="text-right">Сумма</th><th class="text-right">Агенту</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${orders.map(order => `
+                <tr>
+                  <td><span class="font-mono" style="color:var(--accent-teal);font-size:0.8rem">${esc(order.number)}</span></td>
+                  <td style="white-space:nowrap">${Table.formatDate(order.date)}</td>
+                  <td>${Table.statusBadge(order.status)}</td>
+                  <td class="text-right">${money(order.total)}</td>
+                  <td class="text-right" style="color:var(--text-secondary)">${money(order.commission)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    const extrasBits = [
+      extras.proposals ? `${extras.proposals} ${plural(extras.proposals, 'КП', 'КП', 'КП')}` : '',
+      extras.drawings ? `${extras.drawings} ${plural(extras.drawings, 'чертёж', 'чертежа', 'чертежей')}` : '',
+      extras.events ? `${extras.events} ${plural(extras.events, 'событие', 'события', 'событий')}` : '',
+    ].filter(Boolean);
+
+    return `
+      <div class="mstats-head">
+        <button type="button" class="mstats-nav" onclick="ClientProfilePage.changeMonth(-1)" title="Предыдущий месяц">←</button>
+        <select class="form-control mstats-select" onchange="ClientProfilePage.setMonthStats(this.value)" aria-label="Месяц статистики">
+          ${options}
+        </select>
+        <button type="button" class="mstats-nav" onclick="ClientProfilePage.changeMonth(1)" title="Следующий месяц">→</button>
+        <span class="mstats-head__hint">${esc(data.client?.name || '')}</span>
+      </div>
+
+      <div class="mstats-cards">
+        ${card(s.orders || 0, plural(s.orders || 0, 'заказ', 'заказа', 'заказов'),
+          statusBits.length ? statusBits.join(' · ') : 'Заказов за месяц нет')}
+        ${card(money(s.total), 'Сумма заказов', s.vat ? `в т.ч. НДС ${money(s.vat)}` : 'Без НДС')}
+        ${card(money(s.commission), 'Выплаты агенту',
+          s.total > 0 ? `${Number(s.commission_pct || 0).toFixed(1)}% от суммы` : 'Комиссия принципала')}
+        ${card(money(s.avg), 'Средний чек', orders.length ? 'На один заказ' : '—')}
+      </div>
+
+      <div class="mstats-block">
+        <div class="mstats-block__title">Последние 12 месяцев</div>
+        <div class="mstats-chart">${bars}</div>
+      </div>
+
+      ${principalRows}
+      ${ordersTable}
+
+      ${extrasBits.length ? `<div class="mstats-extras">За месяц также: ${extrasBits.join(' · ')}</div>` : ''}
+    `;
   },
 
   /** Русские окончания: 1 заказ, 2 заказа, 5 заказов. */
