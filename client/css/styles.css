@@ -978,14 +978,23 @@ textarea.form-control {
 .modal-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   padding: 20px 24px;
   border-bottom: 1px solid var(--border-color);
 }
 
 .modal-title {
+  flex: 1;
+  min-width: 0;
   font-size: 1.15rem;
   font-weight: 700;
+}
+
+/* кнопка рядом с заголовком: копирование артикула, не задевая сам текст */
+.modal-header__action {
+  flex: none;
+  display: flex;
+  align-items: center;
 }
 
 .modal-close {
@@ -1028,8 +1037,12 @@ textarea.form-control {
 }
 
 .modal-comp .modal-title {
-  font-size: 1.05rem;
-  line-height: 1.3;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.02rem;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--accent-teal);
+  line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1118,11 +1131,16 @@ textarea.form-control {
   min-width: 0;
 }
 
-.comp-view__art {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--accent-teal);
+/* название изделия: артикул стоит заголовком окна, поэтому здесь — имя */
+.comp-view__name {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .comp-view__badges {
@@ -1961,27 +1979,60 @@ input.search-clear-host,
     padding: 5px 10px;
     font-size: 0.75rem;
   }
+
+  /* палец не должен попадать мимо иконки копирования */
+  .copy-btn {
+    width: 26px;
+    height: 26px;
+    margin-left: 2px;
+    opacity: 0.55;
+  }
 }
 
-/* =============================================
-   COPYABLE — артикул копируется кликом
-   ============================================= */
-.copyable {
-  cursor: copy;
-  border-radius: 4px;
-  transition: background 0.15s, color 0.15s;
+/* Маленькая кнопка «скопировать» рядом с артикулом. Приглушена, чтобы не
+   спорить с текстом: наводит на себя внимание только под курсором/фокусом. */
+.copy-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-left: 3px;
+  vertical-align: middle;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0.4;
+  cursor: pointer;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
 }
-.copyable:hover {
-  background: rgba(45, 212, 191, 0.14);
+
+/* в строках-флексах отступ уже задаёт gap — лишний margin ломает ритм */
+.mod-row__line .copy-btn,
+.comp-card-article .copy-btn {
+  margin-left: 0;
+}
+
+.copy-btn:hover,
+.copy-btn:focus-visible {
+  opacity: 1;
   color: var(--accent-teal);
+  background: rgba(45, 212, 191, 0.14);
 }
-.copyable.is-copied {
-  background: rgba(34, 197, 94, 0.22);
+
+.copy-btn.is-copied {
+  opacity: 1;
   color: #22c55e;
+  background: rgba(34, 197, 94, 0.18);
 }
-.copyable.is-copy-failed {
-  background: rgba(239, 68, 68, 0.18);
+
+.copy-btn.is-copy-failed {
+  opacity: 1;
   color: #ef4444;
+  background: rgba(239, 68, 68, 0.16);
 }
 
 /* =============================================

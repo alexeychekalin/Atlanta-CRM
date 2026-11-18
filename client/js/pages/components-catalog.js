@@ -1,5 +1,23 @@
 /* Components Catalog Page — Каталог компонентов */
 const ComponentsCatalogPage = {
+  /** Иконка копирования: маленькая и не мешает читать артикулы глазами. */
+  COPY_ICON: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/>' +
+    '<path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>',
+
+  /** Кнопка «скопировать» рядом с артикулом.
+   *  Раньше копирование висело на самом тексте: артикул подсвечивался под
+   *  курсором и мешал вычитывать список. Теперь артикул — обычный текст,
+   *  а копирование — отдельная маленькая кнопка. */
+  _copyButton(text, label = 'Артикул') {
+    const value = String(text === null || text === undefined ? '' : text).trim();
+    if (!value) return '';
+    const title = `Скопировать ${label.toLowerCase()}`;
+    return `<button type="button" class="copy-btn" data-copy="${esc(value)}" ` +
+      `data-copy-label="${esc(label)}" title="${esc(title)}" ` +
+      `aria-label="${esc(title)} ${esc(value)}">${this.COPY_ICON}</button>`;
+  },
+
   activeTab: 'components',
   viewMode: 'grid', // 'grid' | 'table'
   categories: [],
@@ -93,17 +111,29 @@ const ComponentsCatalogPage = {
           opacity:0.3;
         }
         .comp-card-body { padding:14px; }
+        /* артикул — первым и крупнее: по нему менеджеры ищут изделие */
         .comp-card-article {
+          display:flex;
+          align-items:center;
+          gap:2px;
           font-family:'JetBrains Mono',monospace;
-          font-size:0.75rem;
+          font-size:0.9rem;
+          font-weight:700;
           color:var(--accent-teal);
-          letter-spacing:0.5px;
-          margin-bottom:4px;
+          letter-spacing:0.3px;
+          margin-bottom:3px;
+        }
+        .comp-card-art {
+          min-width:0;
+          overflow:hidden;
+          text-overflow:ellipsis;
+          white-space:nowrap;
         }
         .comp-card-name {
-          font-weight:600;
-          font-size:0.92rem;
-          line-height:1.3;
+          font-weight:500;
+          font-size:0.82rem;
+          line-height:1.35;
+          color:var(--text-secondary);
           margin-bottom:6px;
           display:-webkit-box;
           -webkit-line-clamp:2;
@@ -419,7 +449,9 @@ const ComponentsCatalogPage = {
               <div class="comp-card-status" style="background:${c.is_active !== false ? '#22c55e' : '#ef4444'}"></div>
             </div>
             <div class="comp-card-body">
-              <div class="comp-card-article"><span class="copyable" data-copy="${esc(c.article)}" title="Скопировать артикул">${esc(c.article)}</span></div>
+              <div class="comp-card-article">
+                <span class="comp-card-art">${esc(c.article)}</span>${this._copyButton(c.article)}
+              </div>
               <div class="comp-card-name">${esc(c.name)}</div>
               ${c.description ? `<div class="comp-card-desc">${esc(c.description)}</div>` : ''}
               ${this._modHitHtml(this._searchHits && this._searchHits.get(c.id))}
@@ -467,7 +499,7 @@ const ComponentsCatalogPage = {
                     ? `<img src="${esc(c.image_path)}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">`
                     : '<div style="width:40px;height:40px;border-radius:6px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:16px">📦</div>'}
                 </td>
-                <td class="font-mono" style="color:var(--accent-teal)"><span class="copyable" data-copy="${esc(c.article)}" title="Скопировать артикул">${esc(c.article)}</span></td>
+                <td class="font-mono" style="color:var(--accent-teal)"><span class="comp-art">${esc(c.article)}</span>${this._copyButton(c.article)}</td>
                 <td><strong>${esc(c.name)}</strong>${c.description ? `<div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px">${esc(c.description.substring(0, 60))}</div>` : ''}${parseInt(c.modifications_count) > 0 ? `<span style="display:inline-block;margin-top:2px;padding:1px 7px;border-radius:8px;font-size:0.7rem;font-weight:600;background:var(--accent-teal);color:#fff">${c.modifications_count} мод.</span>` : ''}${this._modHitHtml(this._searchHits && this._searchHits.get(c.id))}</td>
                 <td><span class="badge badge-in_progress">${esc(c.category_name) || '—'}</span></td>
                 <td class="text-right" style="font-weight:600">${Table.formatMoney(c.price)}</td>
@@ -555,7 +587,7 @@ const ComponentsCatalogPage = {
             <button type="button" class="comp-view__photo comp-view__photo--empty" onclick="ComponentsCatalogPage.uploadComponentImage(${comp.id})" title="Добавить фото">+</button>
           ` : '')}
           <div class="comp-view__meta">
-            <div class="comp-view__art"><span class="copyable" data-copy="${esc(comp.article)}" title="Скопировать артикул">${esc(comp.article)}</span></div>
+            <div class="comp-view__name">${esc(comp.name)}</div>
             <div class="comp-view__badges">
               ${comp.category_name ? `<span class="badge badge-in_progress">${esc(comp.category_name)}</span>` : ''}
               <span class="badge ${comp.is_active !== false ? 'badge-completed' : 'badge-cancelled'}">${comp.is_active !== false ? 'Активен' : 'Неактивен'}</span>
@@ -649,7 +681,9 @@ const ComponentsCatalogPage = {
         </div>`;
 
       Modal.open({
-        title: comp.name,
+        // артикул — первым: менеджеры ищут изделие по нему, название — ниже
+        title: comp.article,
+        titleAction: this._copyButton(comp.article),
         wide: true,
         className: 'modal-comp',
         autoFocus: false,
@@ -720,7 +754,7 @@ const ComponentsCatalogPage = {
            data-search="${esc(searchable)}">
         <div class="mod-row__main" onclick="ComponentsCatalogPage.toggleMod(${m.id})">
           <div class="mod-row__line">
-            <span class="mod-row__art copyable" data-copy="${esc(modArticle)}" title="Скопировать артикул">${esc(modArticle)}</span>
+            <span class="mod-row__art">${esc(modArticle)}</span>${this._copyButton(modArticle)}
             ${images.length > 0 ? `<span class="mod-row__flag" title="Есть фото: ${images.length}">${images.length} фото</span>` : ''}
             ${isHit ? '<span class="mod-row__flag mod-row__flag--hit">совпадение</span>' : ''}
             ${m.is_active === false ? '<span class="mod-row__flag mod-row__flag--off">неактивна</span>' : ''}

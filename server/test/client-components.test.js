@@ -110,7 +110,9 @@ test('модификации: код подставляется и когда м
 
   await page.viewComponent(8);
 
-  assert.match(modal.body, /А\.3716\.002/);
+  // артикул — в заголовке окна, название — в шапке карточки
+  assert.equal(modal.title, 'А.3716.002');
+  assert.match(modal.body, /Фонарь противотуманный/);
   assert.match(modal.body, /Нет модификаций/);
 });
 
@@ -385,7 +387,7 @@ function makeRowsDom(rows, nodes = {}) {
   };
 }
 
-test('карточка компонента: название не дублируется в теле, шапка компактная', async () => {
+test('карточка компонента: артикул в заголовке, название ниже, копирование — иконкой', async () => {
   const component = {
     id: 21,
     article: 'А.3731.013',
@@ -408,13 +410,56 @@ test('карточка компонента: название не дублир�
   assert.equal(modal.className, 'modal-comp', 'карточка открывается в компактном варианте модалки');
   assert.equal(modal.autoFocus, false, 'фокус не прыгает в поиск по модификациям');
   assert.match(modal.body, /comp-view__head/);
-  // название попало в заголовок окна, а не в тело
-  assert.equal(modal.title, 'Фонарь габаритный');
+  // местами: артикул — заголовок окна, название — первая строка в шапке
+  assert.equal(modal.title, 'А.3731.013', 'в заголовке карточки — артикул');
+  assert.match(modal.body, /comp-view__name[^>]*>Фонарь габаритный</);
+  assert.ok(!/copyable/.test(modal.body), 'артикул больше не копируется кликом по тексту');
+  assert.match(modal.titleAction, /class="copy-btn"/, 'рядом с артикулом — кнопка копирования');
+  assert.match(modal.titleAction, /data-copy="А\.3731\.013"/);
+  assert.match(modal.titleAction, /aria-label="Скопировать артикул А\.3731\.013"/);
   assert.ok(!/Фонарь габаритный, с креплением/.test(modal.body),
     'описание не должно повторять название целиком');
   assert.match(modal.body, /с креплением на два болта/);
   // нулевая цена — это «не задана», а не ноль рублей
   assert.match(modal.body, /не задана/);
+});
+
+test('список компонентов: артикул первым, копирование — отдельной иконкой', () => {
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage');
+  const component = {
+    id: 5, article: 'А.3731.010', name: 'Фонарь габаритный',
+    price: 0, is_active: true, modifications_count: 3,
+    category_name: 'Габаритные фонари', image_path: null, description: 'маркер 10',
+  };
+
+  const grid = { innerHTML: '' };
+  page._renderGrid(grid, [component]);
+  assert.match(grid.innerHTML, /comp-card-art">А\.3731\.010</);
+  assert.match(grid.innerHTML, /class="copy-btn"[^>]*data-copy="А\.3731\.010"/);
+  assert.match(grid.innerHTML, /aria-label="Скопировать артикул А\.3731\.010"/);
+  assert.ok(!/class="copyable"/.test(grid.innerHTML),
+    'артикул должен быть обычным текстом, а не кнопкой копирования');
+  assert.ok(grid.innerHTML.indexOf('А.3731.010') < grid.innerHTML.indexOf('Фонарь габаритный'),
+    'артикул идёт перед названием');
+
+  const table = { innerHTML: '' };
+  page._renderTable(table, [component]);
+  assert.match(table.innerHTML, /comp-art">А\.3731\.010</);
+  assert.match(table.innerHTML, /class="copy-btn"[^>]*data-copy="А\.3731\.010"/);
+  assert.ok(!/class="copyable"/.test(table.innerHTML));
+  // название — обычный текст, артикул — моноширинный и выделен цветом
+  assert.ok(!/<td[^>]*><strong>А\.3731\.010/.test(table.innerHTML));
+});
+
+test('модификации: артикул строки копируется иконкой, а не кликом по тексту', () => {
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage');
+  const component = { id: 5, article: 'А.3731.010', name: 'Фонарь габаритный' };
+  const mod = { id: 11, code: '01.09', name: 'передний', price_override: null, images: [] };
+
+  const html = page._modRowHtml(component, mod, false, 0, false);
+  assert.match(html, /class="mod-row__art">А\.3731\.010-01\.09</);
+  assert.match(html, /class="copy-btn"[^>]*data-copy="А\.3731\.010-01\.09"/);
+  assert.ok(!/copyable/.test(html), 'текст артикула не должен быть кнопкой копирования');
 });
 
 test('карточка компонента: длинный список модификаций свёрнут по шесть', async () => {

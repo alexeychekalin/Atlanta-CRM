@@ -1932,6 +1932,234 @@ ul {
   color: var(--muted);
 }
 
+.mods__photo--extra {
+  display: none;
+}
+
+/* Строка исполнения с фотографиями открывает галерею снимков: подсвечиваем
+   её при наведении, но артикул остаётся обычным текстом, чтобы глазами
+   можно было вычитывать список. */
+.mods__row--photo {
+  cursor: zoom-in;
+}
+
+.mods__row--photo:hover td,
+.mods__row--photo:focus-within td {
+  background: var(--accent-wash);
+}
+
+.mods__article {
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: zoom-in;
+}
+
+.mods__article:hover,
+.mods__article:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.mods__hint {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* --------------------------------------------------------------- галерея исполнения */
+
+.photobox {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(8, 22, 38, 0.82);
+  backdrop-filter: blur(4px);
+}
+
+.photobox.is-open {
+  display: flex;
+}
+
+.photobox__dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(1080px, 100%);
+  max-height: calc(100vh - 48px);
+  padding: 14px 16px 16px;
+  background: var(--paper);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.photobox__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.photobox__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.photobox__count {
+  flex: none;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.photobox__close {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.photobox__close:hover,
+.photobox__close:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.photobox__stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 0;
+}
+
+.photobox__img {
+  display: block;
+  max-width: 100%;
+  max-height: min(72vh, 760px);
+  margin: 0 auto;
+  padding: 6px;
+  background: var(--paper-soft);
+  border-radius: var(--radius);
+  object-fit: contain;
+}
+
+.photobox__nav {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.photobox__nav:hover,
+.photobox__nav:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.photobox__thumbs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 0 4px;
+  scrollbar-width: thin;
+}
+
+.photobox__thumb {
+  flex: none;
+  width: 62px;
+  height: 62px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  cursor: pointer;
+}
+
+.photobox__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.photobox__thumb[aria-current='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-wash);
+}
+
+@media (max-width: 640px) {
+  .photobox {
+    padding: 0;
+  }
+
+  .photobox__dialog {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    padding: 10px 12px 12px;
+    border-radius: 0;
+  }
+
+  .photobox__title {
+    font-size: 13.5px;
+  }
+
+  .photobox__img {
+    max-height: 66vh;
+  }
+
+  .photobox__nav {
+    position: absolute;
+    top: 50%;
+    z-index: 2;
+    transform: translateY(-50%);
+    border-color: transparent;
+    background: rgba(9, 27, 46, 0.55);
+    color: #fff;
+  }
+
+  .photobox__nav--prev {
+    left: 4px;
+  }
+
+  .photobox__nav--next {
+    right: 4px;
+  }
+
+  .photobox__thumb {
+    width: 54px;
+    height: 54px;
+  }
+}
+
 .specs {
   max-width: 100%;
 }

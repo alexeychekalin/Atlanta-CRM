@@ -365,8 +365,6 @@ IMAGE_SIZES = (640, 1280)
 
 def build_images(components, out_dir, skip=False):
     """Пережать фото в два размера: карточки и галерея."""
-    from PIL import Image, ImageOps
-
     img_dir = out_dir / 'img'
     img_dir.mkdir(parents=True, exist_ok=True)
     names = set()
@@ -378,13 +376,18 @@ def build_images(components, out_dir, skip=False):
     made = 0
     dims = {}
     if skip:
-        # без пережатия — отдаём оригиналы под теми же именами
+        # без пережатия: оригиналы под именами, которые ждёт разметка, — страницу
+        # можно собрать и посмотреть, даже если Pillow не установлен
         for name in sorted(names):
             source = FILES_DIR / name
-            if source.exists():
-                shutil.copy2(source, img_dir / name)
-                made += 1
+            if not source.exists():
+                continue
+            for width in IMAGE_SIZES:
+                shutil.copy2(source, img_dir / f'{Path(name).stem}-{width}.jpg')
+            made += 1
         return made, names, dims
+
+    from PIL import Image, ImageOps
 
     for name in sorted(names):
         source = FILES_DIR / name
@@ -495,24 +498,36 @@ def mod_photo_map(component, images, files_dir):
     return alias
 
 
-def mod_photo_buttons(mod, mod_article, image_index, alias, limit=3):
-    """Миниатюры в строке исполнения: клик подставляет фото в галерею изделия."""
-    names, seen = [], set()
+def mod_photo_list(mod, mod_article, image_index, alias):
+    """Снимки исполнения, которые есть в галерее изделия: [(файл, подпись)]."""
+    photos, seen = [], set()
     for name in mod.get('images') or []:
         target = alias.get(name)
         if target and target in image_index and target not in seen:
             seen.add(target)
-            names.append(target)
-    if not names:
+            photos.append((target, mod_article))
+    return photos
+
+
+def mod_photo_buttons(mod, mod_article, image_index, alias, limit=3):
+    """Миниатюры в строке исполнения: клик открывает галерею его снимков.
+
+    Снимков бывает больше, чем помещается в строке. Лишние остаются в
+    разметке скрытыми (--extra), чтобы галерея знала о них и листала все.
+    """
+    photos = mod_photo_list(mod, mod_article, image_index, alias)
+    if not photos:
         return '<span class="mods__nophoto" aria-hidden="true">—</span>'
     buttons = ''.join(
-        f'<button type="button" class="mods__photo" data-gallery-jump="{image_index[name]}" '
-        f'data-src="{image_src(name, 1280)}" data-alt="{esc(mod_article)}" '
-        f'aria-label="Показать фото исполнения {esc(mod_article)}">'
+        f'<button type="button" class="mods__photo'
+        f'{" mods__photo--extra" if index >= limit else ""}" '
+        f'data-photo-src="{image_src(name, 1280)}" data-photo-alt="{esc(alt)}" '
+        f'data-photo-index="{index}" '
+        f'aria-label="Фото {index + 1} исполнения {esc(alt)}">'
         f'<img src="{image_src(name, 640)}" alt="" loading="lazy"></button>'
-        for name in names[:limit])
-    more = (f'<span class="mods__more">+{len(names) - limit}</span>'
-            if len(names) > limit else '')
+        for index, (name, alt) in enumerate(photos))
+    more = (f'<span class="mods__more">+{len(photos) - limit}</span>'
+            if len(photos) > limit else '')
     return f'<span class="mods__photos">{buttons}{more}</span>'
 
 
@@ -1468,17 +1483,26 @@ class Site:
             rows = ''
             for mod in mods:
                 mod_article = full_article(component['article'], mod.get('code'), mod.get('full_article'))
-                rows += '<tr>'
+                photos = mod_photo_list(mod, mod_article, image_index, photo_alias)
+                # у исполнения с фотографиями вся строка кликабельна и открывает
+                # галерею его снимков; без фото — обычная строка таблицы
+                attrs = (' class="mods__row mods__row--photo" data-mod-gallery'
+                         f' title="Фото исполнения {esc(mod_article)}"') if photos else ''
+                article_cell = (f'<button type="button" class="mods__article">{esc(mod_article)}</button>'
+                                if photos else esc(mod_article))
+                rows += f'<tr{attrs}>'
                 if with_photos:
                     rows += (f'<td class="mods__photo-cell">'
                              f'{mod_photo_buttons(mod, mod_article, image_index, photo_alias)}</td>')
-                rows += (f'<td>{esc(mod_article)}</td>'
+                rows += (f'<td>{article_cell}</td>'
                          f'<td>{esc(clean_mod_name(mod.get("name")) or "Стандартное исполнение")}</td></tr>')
             photo_head = '<th class="mods__photo-head">Фото</th>' if with_photos else ''
+            hint = ('<p class="mods__hint">Нажмите на исполнение с фотографиями — '
+                    'откроется его галерея.</p>') if with_photos else ''
             mods_html = f'''<div class="block"><h2>Исполнения ({len(mods)})</h2>
 <div class="mods__scroll"><table class="mods">
 <thead><tr>{photo_head}<th>Артикул</th><th>Описание</th></tr></thead>
-<tbody>{rows}</tbody></table></div></div>'''
+<tbody>{rows}</tbody></table></div>{hint}</div>'''
 
         related = [item for item in self.components
                    if item['category'] == component['category'] and item is not component]
