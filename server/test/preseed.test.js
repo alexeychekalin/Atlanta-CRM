@@ -266,6 +266,45 @@ test('предзаполнение: Бонум Траст и Арсенал-Ав
   assert.equal(arsenal.director_position, 'Директор');
 });
 
+test('предзаполнение: ООО «БОНУМ» — отдельное юрлицо, заведено по карточке предприятия', () => {
+  const { clients } = readConfig();
+  const bonum = clients.find(entry => entry.inn === '6141046070');
+
+  assert.ok(bonum, 'нет ООО «БОНУМ» (ИНН 6141046070)');
+  assert.equal(bonum.name, 'ООО «БОНУМ»');
+  assert.equal(bonum.full_name, 'Общество с ограниченной ответственностью «БОНУМ»');
+  assert.equal(bonum.kpp, '616801001');
+  assert.equal(bonum.ogrn, '1146181001757');
+  assert.equal(bonum.okpo, '24235179');
+  assert.equal(bonum.okved, '29.20');
+  assert.equal(bonum.extra['ОКАТО'], '60407000000');
+  assert.match(bonum.legal_address, /^344091, .*Ростов-на-Дону, ул\. Пескова, зд\. 1, стр\. 1$/);
+  assert.match(bonum.postal_address, /этаж 2, комната 180$/);
+  assert.equal(bonum.bank_account, '40702810212010143270');
+  assert.equal(bonum.bank_name, 'Филиал "Корпоративный" ПАО "Совкомбанк"');
+  assert.equal(bonum.corr_account, '30101810445250000360');
+  assert.equal(bonum.bik, '044525360');
+  assert.equal(bonum.director, 'Михайленко Александр Сергеевич');
+  assert.equal(bonum.director_position, 'Генеральный директор');
+  assert.equal(bonum.director_basis, 'Устава');
+  assert.equal(bonum.phone, '8 800 550 01 61, 8 (863) 310 01 22');
+
+  // в документе названы оба филиала и главный бухгалтер
+  const notes = bonum.extra_notes.join('\n');
+  assert.match(notes, /Аксайский филиал: 346703/);
+  assert.match(notes, /Новочеркасский филиал: 346439/);
+  assert.match(notes, /Щербаков Леонид Константинович/);
+
+  assert.ok(bonum.documents.some(doc => doc.file === 'bonum-card.pdf'), 'нет карточки предприятия');
+
+  // не путается с ООО «Бонум Траст» — это другое юрлицо
+  const trust = clients.find(entry => entry.inn === '6150103172');
+  assert.ok(trust, 'пропало ООО «Бонум Траст»');
+  assert.notEqual(trust.name, bonum.name);
+  assert.notEqual(trust.ogrn, bonum.ogrn);
+  assert.notEqual(trust.director, bonum.director);
+});
+
 test('предзаполнение: к РУАТ приложена присланная карточка организации', () => {
   const { clients } = readConfig();
   const ruat = clients.find(entry => entry.inn === '3300013912');
