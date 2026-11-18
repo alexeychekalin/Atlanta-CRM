@@ -131,11 +131,13 @@ router.post('/', auth, async (req, res) => {
     for (const item of calculation.items) {
       await pgClient.query(
         `INSERT INTO proposal_items (proposal_id, product_id, product_name, description, unit_price, quantity,
-         line_total, is_drawing, drawing_id, image_path, base_price, markup_pct, markup_rub, level_markup_pct)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+         line_total, is_drawing, drawing_id, image_path, base_price, markup_pct, markup_rub, level_markup_pct,
+         no_level_markup)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
         [proposal.id, item.product_id, item.product_name, item.description || null,
          item.unit_price, item.quantity, item.line_total, item.is_drawing,
-         item.drawing_id, item.image_path ? normalizeUploadPath(item.image_path) : null, item.base_price, item.markup_pct, item.markup_rub, item.level_markup_pct]
+         item.drawing_id, item.image_path ? normalizeUploadPath(item.image_path) : null, item.base_price, item.markup_pct, item.markup_rub,
+         item.level_markup_pct, item.no_level_markup]
       );
     }
 
@@ -189,11 +191,13 @@ router.put('/:id', auth, async (req, res) => {
     for (const item of calculation.items) {
       await pgClient.query(
         `INSERT INTO proposal_items (proposal_id, product_id, product_name, description, unit_price, quantity,
-         line_total, is_drawing, drawing_id, image_path, base_price, markup_pct, markup_rub, level_markup_pct)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+         line_total, is_drawing, drawing_id, image_path, base_price, markup_pct, markup_rub, level_markup_pct,
+         no_level_markup)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
         [req.params.id, item.product_id, item.product_name, item.description || null,
          item.unit_price, item.quantity, item.line_total, item.is_drawing,
-         item.drawing_id, item.image_path ? normalizeUploadPath(item.image_path) : null, item.base_price, item.markup_pct, item.markup_rub, item.level_markup_pct]
+         item.drawing_id, item.image_path ? normalizeUploadPath(item.image_path) : null, item.base_price, item.markup_pct, item.markup_rub,
+         item.level_markup_pct, item.no_level_markup]
       );
     }
 
@@ -330,11 +334,12 @@ router.post('/:id/convert', auth, async (req, res) => {
 
       await pgClient.query(
         `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, line_total,
-         base_price, markup_pct, markup_rub, level_markup_pct, is_drawing, drawing_id, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+         base_price, markup_pct, markup_rub, level_markup_pct, no_level_markup, is_drawing, drawing_id, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         [order.id, item.product_id, item.product_name, item.unit_price, item.quantity, item.line_total,
          item.base_price !== null && item.base_price !== undefined ? item.base_price : item.unit_price,
          item.markup_pct || 0, item.markup_rub || 0, item.level_markup_pct || 0,
+         item.no_level_markup || false,
          item.is_drawing || false, item.drawing_id || null,
          metadata ? JSON.stringify(metadata) : null]
       );

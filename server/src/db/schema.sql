@@ -153,6 +153,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   level_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
   is_drawing BOOLEAN NOT NULL DEFAULT false,
   drawing_id INT,
+  no_level_markup BOOLEAN NOT NULL DEFAULT false,
   metadata JSONB
 );
 
@@ -457,7 +458,8 @@ CREATE TABLE IF NOT EXISTS proposal_items (
   base_price NUMERIC(14,2),
   markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
   markup_rub NUMERIC(14,2) NOT NULL DEFAULT 0,
-  level_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0
+  level_markup_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+  no_level_markup BOOLEAN NOT NULL DEFAULT false
 );
 
 -- Типы техники (настраиваемый справочник)

@@ -38,6 +38,26 @@ test('обычная позиция: базовая цена + уровень к
   assert.equal(item.quantity, 2);
 });
 
+test('позиция без наценки клиента: уровень не применяется, ручная остаётся', () => {
+  const item = normalizeItem(
+    { product_name: 'БК-101', base_price: 1000, markup_pct: 10, quantity: 1, no_level_markup: true },
+    30
+  );
+
+  assert.equal(item.base_price, 1000);
+  assert.equal(item.markup_pct, 10);
+  assert.equal(item.level_markup_pct, 0);
+  assert.equal(item.no_level_markup, true);
+  assert.equal(item.unit_price, 1100); // 1000 * 1.1, без уровня
+});
+
+test('флаг отключения наценки приходит и строкой из формы', () => {
+  assert.equal(normalizeItem({ product_name: 'x', base_price: 1000, no_level_markup: 'true' }, 30).unit_price, 1000);
+  assert.equal(normalizeItem({ product_name: 'x', base_price: 1000, no_level_markup: 1 }, 30).unit_price, 1000);
+  // без флага — уровень снова применяется
+  assert.equal(normalizeItem({ product_name: 'x', base_price: 1000 }, 30).unit_price, 1300);
+});
+
 test('чертёж: итоговая цена не облагается наценками', () => {
   const item = normalizeItem(
     {

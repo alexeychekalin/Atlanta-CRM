@@ -178,10 +178,10 @@ router.post('/', auth, async (req, res) => {
     for (const item of calculation.items) {
       await client.query(
         `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, line_total,
-         base_price, markup_pct, markup_rub, level_markup_pct, is_drawing, drawing_id, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+         base_price, markup_pct, markup_rub, level_markup_pct, no_level_markup, is_drawing, drawing_id, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         [order.id, item.product_id, item.product_name, item.unit_price, item.quantity, item.line_total,
-         item.base_price, item.markup_pct, item.markup_rub, item.level_markup_pct,
+         item.base_price, item.markup_pct, item.markup_rub, item.level_markup_pct, item.no_level_markup,
          item.is_drawing, item.drawing_id, item.metadata ? JSON.stringify(item.metadata) : null]
       );
     }
@@ -303,10 +303,10 @@ router.put('/:id', auth, async (req, res) => {
       const metadata = item.metadata || oldMetadata.get(key) || null;
       await pgClient.query(
         `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, line_total,
-         base_price, markup_pct, markup_rub, level_markup_pct, is_drawing, drawing_id, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+         base_price, markup_pct, markup_rub, level_markup_pct, no_level_markup, is_drawing, drawing_id, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         [req.params.id, item.product_id, item.product_name, item.unit_price, item.quantity, item.line_total,
-         item.base_price, item.markup_pct, item.markup_rub, item.level_markup_pct,
+         item.base_price, item.markup_pct, item.markup_rub, item.level_markup_pct, item.no_level_markup,
          item.is_drawing, item.drawing_id, metadata ? JSON.stringify(metadata) : null]
       );
     }

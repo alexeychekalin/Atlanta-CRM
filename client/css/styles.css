@@ -3970,3 +3970,70 @@ input.search-clear-host,
     font-size: 0.88rem;
   }
 }
+
+/* === Наценка клиента в КП и заказах ===
+   Общий переключатель в форме и тумблер на каждую позицию: наценка
+   уровня клиента из его карточки применяется, только пока включена. */
+.markup-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.markup-switch input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent-teal);
+  cursor: pointer;
+}
+
+.markup-switch input:disabled {
+  cursor: not-allowed;
+}
+
+.markup-switch input:disabled + span,
+.markup-switch input:not(:checked) + span {
+  color: var(--text-muted);
+}
+
+.markup-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.markup-toggle.is-on {
+  color: var(--accent-teal);
+  border-color: rgba(20, 184, 166, 0.45);
+  background: rgba(20, 184, 166, 0.1);
+}
+
+.markup-toggle.is-off {
+  color: var(--text-muted);
+  border-style: dashed;
+  text-decoration: line-through;
+}
+
+.markup-toggle.is-disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.markup-toggle:hover:not(.is-disabled) {
+  border-color: var(--border-hover);
+}

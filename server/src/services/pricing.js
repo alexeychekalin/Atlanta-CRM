@@ -4,6 +4,11 @@ function round2(value) {
   return Math.round((Number(value) || 0) * 100) / 100;
 }
 
+/** Флаг из JSON/формы: true, "true", 1, "1". */
+function isTruthy(value) {
+  return value === true || value === 'true' || value === 1 || value === '1';
+}
+
 function isDrawingItem(item) {
   if (item.is_drawing === true || item.is_drawing === 'true' || item.is_drawing === 1) return true;
   const type = item.metadata && item.metadata.type;
@@ -57,8 +62,11 @@ function normalizeItem(item, levelMarkupPct) {
   const markupPct = isDrawing ? 0 : (Number(item.markup_pct) || 0);
   const markupRub = isDrawing ? 0 : round2(item.markup_rub);
 
-  // Для чертежей цена уже итоговая (внутри неё наценки калькулятора)
-  const appliedLevel = isDrawing ? 0 : levelMarkupPct;
+  // Менеджер может отключить наценку уровня клиента — на весь документ
+  // или на отдельную позицию. Для чертежей цена уже итоговая: внутри неё
+  // наценки калькулятора, поэтому уровень к ней не применяется никогда.
+  const noLevelMarkup = !isDrawing && isTruthy(item.no_level_markup);
+  const appliedLevel = isDrawing || noLevelMarkup ? 0 : levelMarkupPct;
   const unitPrice = hasBasePrice
     ? round2(basePrice * (1 + appliedLevel / 100) * (1 + markupPct / 100) + markupRub)
     : round2(item.unit_price); // старый клиент/API: цена уже итоговая
@@ -72,6 +80,7 @@ function normalizeItem(item, levelMarkupPct) {
     markup_pct: markupPct,
     markup_rub: markupRub,
     level_markup_pct: appliedLevel,
+    no_level_markup: noLevelMarkup,
     unit_price: unitPrice,
     line_total: round2(unitPrice * quantity),
     is_drawing: isDrawing,
@@ -113,6 +122,7 @@ function calculateVat(subtotal, vatSettings) {
 
 module.exports = {
   round2,
+  isTruthy,
   isDrawingItem,
   getClientLevelMarkup,
   getVatSettings,
