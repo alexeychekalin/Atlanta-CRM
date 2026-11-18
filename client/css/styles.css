@@ -3456,3 +3456,319 @@ input.search-clear-host,
   .global-search-kbd { display: none; }
 }
 
+
+/* =============================================
+   ДОКУМЕНТЫ — библиотека файлов по папкам
+   ============================================= */
+
+.docs-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.docs-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: 0.92rem;
+}
+
+.docs-crumb {
+  max-width: 260px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.docs-crumb:hover {
+  color: var(--accent-teal);
+  background: var(--bg-secondary);
+}
+
+.docs-crumb--current {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.docs-crumb__sep {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.docs-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.docs-search {
+  width: 260px;
+}
+
+.docs-body {
+  min-height: 240px;
+}
+
+.docs-section + .docs-section {
+  margin-top: 26px;
+}
+
+.docs-section__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.docs-count {
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* --- папки --------------------------------------------------------------- */
+
+.docs-folders {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.docs-folder {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 12px 14px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+
+.docs-folder:hover,
+.docs-folder:focus-visible {
+  border-color: var(--accent-teal);
+  background: var(--bg-card-hover);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.docs-folder__icon {
+  flex: none;
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.docs-folder__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.docs-folder__name {
+  font-weight: 600;
+  font-size: 0.92rem;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docs-folder__meta {
+  margin-top: 2px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.docs-folder__acts {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.docs-folder:hover .docs-folder__acts,
+.docs-folder:focus-within .docs-folder__acts {
+  opacity: 1;
+}
+
+/* --- файлы --------------------------------------------------------------- */
+
+.docs-files-wrap {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow-x: auto;
+}
+
+.docs-files {
+  width: 100%;
+}
+
+.docs-files td {
+  white-space: normal;
+}
+
+.docs-files .docs-col-size,
+.docs-files .docs-col-date,
+.docs-files .docs-col-author {
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.docs-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.docs-file__icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: var(--bg-secondary);
+  font-size: 1.05rem;
+}
+
+.docs-file__text {
+  min-width: 0;
+}
+
+.docs-file__name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.docs-file__meta {
+  margin-top: 1px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.docs-file__kind {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.docs-empty-hint {
+  margin-top: 6px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+/* --- загрузка ------------------------------------------------------------ */
+
+.docs--dragover {
+  outline: 2px dashed var(--accent-teal);
+  outline-offset: 6px;
+  border-radius: 12px;
+}
+
+.docs-progress {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 1400;
+  width: min(340px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
+}
+
+.docs-progress__text {
+  margin-bottom: 8px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docs-progress__bar {
+  height: 5px;
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.docs-progress__bar span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent-teal);
+  transition: width 0.2s;
+}
+
+@media (max-width: 767px) {
+  .docs-toolbar {
+    align-items: stretch;
+  }
+
+  .docs-crumbs {
+    width: 100%;
+    font-size: 0.85rem;
+  }
+
+  .docs-crumb {
+    max-width: 160px;
+  }
+
+  .docs-tools {
+    width: 100%;
+  }
+
+  .docs-search {
+    flex: 1 1 100%;
+    width: auto;
+  }
+
+  .docs-tools .btn {
+    flex: 1;
+  }
+
+  .docs-folders {
+    grid-template-columns: 1fr;
+  }
+
+  /* на телефоне действия папки не спрятаны: наведения там нет */
+  .docs-folder__acts {
+    opacity: 1;
+  }
+
+  .docs-files .docs-col-author,
+  .docs-files .docs-col-date {
+    display: none;
+  }
+}

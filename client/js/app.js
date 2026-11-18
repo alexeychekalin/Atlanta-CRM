@@ -16,6 +16,7 @@ const App = {
     reports: { title: 'Отчёты', render: () => ReportsPage.render() },
     proposals: { title: 'Коммерческие предложения', render: () => ProposalsPage.render() },
     equipment: { title: 'Подбор компонентов', render: () => EquipmentPage.render() },
+    documents: { title: 'Документы', render: (param) => DocumentsPage.render(param) },
     settings: { title: 'Настройки', render: () => SettingsPage.render() },
   },
 
@@ -260,6 +261,7 @@ const App = {
       reports: 'reports',
       proposals: 'proposals',
       equipment: 'equipment',
+      documents: 'documents',
       settings: 'settings',
     };
 
@@ -281,7 +283,7 @@ const App = {
   },
 
   getFirstAllowedPage() {
-    const pages = ['dashboard', 'orders', 'proposals', 'clients', 'drawings', 'calculator', 'components', 'equipment', 'reports', 'settings'];
+    const pages = ['dashboard', 'orders', 'proposals', 'clients', 'drawings', 'calculator', 'components', 'equipment', 'reports', 'documents', 'settings'];
     for (const p of pages) {
       if (API.can(p, 'view')) return p;
     }
@@ -363,6 +365,7 @@ const App = {
       calculator: 'calculator',
       reports: 'reports',
       proposals: 'proposals',
+      documents: 'documents',
       settings: 'settings',
     };
 

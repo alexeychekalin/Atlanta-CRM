@@ -15,7 +15,7 @@ app.disable('x-powered-by');
 
 // Инициализация директорий для загрузок
 const uploadsBaseDir = path.join(__dirname, '../uploads');
-['images', 'drawings', 'avatars', 'documents', 'files'].forEach(subDir => {
+['images', 'drawings', 'avatars', 'documents', 'files', 'library'].forEach(subDir => {
   const p = path.join(uploadsBaseDir, subDir);
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 });
@@ -162,6 +162,10 @@ app.use('/api/components', requirePermission('components'), require('./routes/co
 app.use('/api/products', requirePermission('components'), require('./routes/products'));
 
 app.use('/api/reports', requirePermission('reports'), require('./routes/reports'));
+
+// Библиотека документов (вложенные папки с файлами): раздел «Документы».
+// Просмотр — по праву documents.view, изменения — documents.edit/delete.
+app.use('/api/documents', requirePermission('documents'), require('./routes/document-library'));
 
 app.use('/api/pricing-levels', requirePermission('clients'), require('./routes/pricing-levels'));
 app.use('/api/search', requireAuthenticatedOrGuest, require('./routes/search'));

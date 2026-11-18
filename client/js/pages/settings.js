@@ -428,6 +428,16 @@ const SettingsPage = {
                   <td class="text-center"><label style="font-size:0.78rem;cursor:pointer"><input type="checkbox" id="perm-reports-export" ${perms.reports?.export ? 'checked' : ''}> Экспорт</label></td>
                   <td class="text-center"><span class="text-muted">—</span></td>
                 </tr>
+                <!-- Документы -->
+                <tr>
+                  <td>
+                    <div style="font-weight:600">📁 Документы (библиотека файлов)</div>
+                    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px">Просмотр и скачивание — всем; загрузка и папки — по умолчанию администратору</div>
+                  </td>
+                  <td class="text-center"><input type="checkbox" id="perm-documents-view" ${perms.documents?.view ? 'checked' : ''}></td>
+                  <td class="text-center"><input type="checkbox" id="perm-documents-edit" ${perms.documents?.edit ? 'checked' : ''}></td>
+                  <td class="text-center"><input type="checkbox" id="perm-documents-delete" ${perms.documents?.delete ? 'checked' : ''}></td>
+                </tr>
                 <!-- Настройки -->
                 <tr>
                   <td><div style="font-weight:600">⚙️ Настройки системы</div></td>
@@ -463,6 +473,7 @@ const SettingsPage = {
        'components-view', 'components-edit', 'components-delete',
        'equipment-view', 'equipment-edit', 'equipment-delete',
        'reports-view', 'reports-export',
+       'documents-view', 'documents-edit', 'documents-delete',
        'settings-view', 'settings-edit'].forEach(k => set(`perm-${k}`, true));
     } else if (preset === 'manager') {
       ['dashboard-view', 'orders-view', 'orders-edit',
@@ -470,18 +481,18 @@ const SettingsPage = {
        'calculator-view', 'calculator-edit',
        'drawings-view', 'drawings-edit',
        'components-view', 'equipment-view',
-       'reports-view', 'reports-export'].forEach(k => set(`perm-${k}`, true));
-      ['orders-delete', 'clients-delete', 'drawings-delete', 'components-edit', 'components-delete', 'equipment-edit', 'equipment-delete', 'settings-view', 'settings-edit'].forEach(k => set(`perm-${k}`, false));
+       'reports-view', 'reports-export', 'documents-view'].forEach(k => set(`perm-${k}`, true));
+      ['orders-delete', 'clients-delete', 'drawings-delete', 'components-edit', 'components-delete', 'equipment-edit', 'equipment-delete', 'documents-edit', 'documents-delete', 'settings-view', 'settings-edit'].forEach(k => set(`perm-${k}`, false));
     } else if (preset === 'technologist') {
       ['dashboard-view', 'clients-view',
        'calculator-view', 'calculator-edit',
        'drawings-view', 'drawings-edit', 'drawings-delete',
        'components-view', 'components-edit', 'components-delete',
-       'equipment-view', 'equipment-edit', 'equipment-delete'].forEach(k => set(`perm-${k}`, true));
-      ['orders-view', 'orders-edit', 'orders-delete', 'clients-edit', 'clients-delete', 'reports-view', 'reports-export', 'settings-view', 'settings-edit'].forEach(k => set(`perm-${k}`, false));
+       'equipment-view', 'equipment-edit', 'equipment-delete', 'documents-view'].forEach(k => set(`perm-${k}`, true));
+      ['orders-view', 'orders-edit', 'orders-delete', 'clients-edit', 'clients-delete', 'reports-view', 'reports-export', 'documents-edit', 'documents-delete', 'settings-view', 'settings-edit'].forEach(k => set(`perm-${k}`, false));
     } else if (preset === 'viewer') {
-      ['dashboard-view', 'orders-view', 'clients-view', 'calculator-view', 'drawings-view', 'components-view', 'equipment-view', 'reports-view', 'reports-export'].forEach(k => set(`perm-${k}`, true));
-      ['orders-edit', 'orders-delete', 'clients-edit', 'clients-delete', 'calculator-edit', 'drawings-edit', 'drawings-delete', 'components-edit', 'components-delete', 'equipment-edit', 'equipment-delete', 'settings-view', 'settings-edit'].forEach(k => set(`perm-${k}`, false));
+      ['dashboard-view', 'orders-view', 'clients-view', 'calculator-view', 'drawings-view', 'components-view', 'equipment-view', 'reports-view', 'reports-export', 'documents-view'].forEach(k => set(`perm-${k}`, true));
+      ['orders-edit', 'orders-delete', 'clients-edit', 'clients-delete', 'calculator-edit', 'drawings-edit', 'drawings-delete', 'components-edit', 'components-delete', 'equipment-edit', 'equipment-delete', 'documents-edit', 'documents-delete', 'settings-view', 'settings-edit'].forEach(k => set(`perm-${k}`, false));
     } else if (preset === 'none') {
       ['dashboard-view', 'orders-view', 'orders-edit', 'orders-delete',
        'clients-view', 'clients-edit', 'clients-delete',
@@ -490,6 +501,7 @@ const SettingsPage = {
        'components-view', 'components-edit', 'components-delete',
        'equipment-view', 'equipment-edit', 'equipment-delete',
        'reports-view', 'reports-export',
+       'documents-view', 'documents-edit', 'documents-delete',
        'settings-view', 'settings-edit'].forEach(k => set(`perm-${k}`, false));
     }
   },
@@ -536,6 +548,11 @@ const SettingsPage = {
       reports: { 
         view: isChecked('reports-view'), 
         export: isChecked('reports-export') 
+      },
+      documents: {
+        view: isChecked('documents-view'),
+        edit: isChecked('documents-edit'),
+        delete: isChecked('documents-delete')
       },
       settings: { 
         view: isChecked('settings-view'), 

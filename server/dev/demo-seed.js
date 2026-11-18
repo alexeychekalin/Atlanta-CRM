@@ -397,6 +397,134 @@ async function seed() {
     [appr.rows[0].id, 'Отправили комплект на согласование 20.10.2026']
   );
 
+  // ---------- Библиотека документов ----------
+  // Демо-файлы генерируются, а не лежат в репозитории: uploads в .gitignore.
+  const fs = require('fs');
+  const path = require('path');
+  const PDFDocument = require('pdfkit');
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel } = require('docx');
+
+  const libraryDir = path.join(__dirname, '../uploads/library');
+  fs.mkdirSync(libraryDir, { recursive: true });
+  const adminId = (await q("SELECT id FROM users WHERE username = 'admin'")).rows[0].id;
+
+  // Кириллица в PDFKit возможна только со шрифтом с нужными глифами:
+  // берём первый найденный системный, иначе остаётся встроенный Helvetica.
+  const FONT_CANDIDATES = [
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/usr/share/fonts/TTF/DejaVuSans.ttf',
+    '/usr/share/fonts/dejavu/DejaVuSans.ttf',
+    '/Library/Fonts/Arial Unicode.ttf',
+    '/System/Library/Fonts/Supplemental/Arial.ttf',
+    'C:\\Windows\\Fonts\\arial.ttf',
+  ];
+
+  function writeDemoPdf(file, title, lines, footer) {
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ size: 'A4', margin: 56, info: { Title: title } });
+      const stream = fs.createWriteStream(file);
+      stream.on('finish', resolve);
+      stream.on('error', reject);
+      doc.pipe(stream);
+
+      const font = FONT_CANDIDATES.find(candidate => fs.existsSync(candidate));
+      const safe = (value) => (font ? value : String(value).replace(/[^\x20-\x7e]/g, '?'));
+      if (font) doc.font(font);
+
+      doc.fontSize(17).fillColor('#1f4e79').text(safe(title), { align: 'center' });
+      doc.moveDown(1.2);
+      doc.fillColor('#111827').fontSize(11);
+      for (const line of lines) {
+        doc.text(safe(line), { align: 'justify', lineGap: 4 });
+        doc.moveDown(0.6);
+      }
+      doc.moveDown(2);
+      doc.fillColor('#6b7280').fontSize(9).text(safe(footer), { align: 'left' });
+      doc.end();
+    });
+  }
+
+  const certificateFile = path.join(libraryDir, 'demo-certificate.pdf');
+  await writeDemoPdf(
+    certificateFile,
+    'Сертификат соответствия ТР ТС 018/2011',
+    [
+      'Орган по сертификации: ООО «Автосертификация».',
+      'Продукция: фонари габаритные, указатели поворота и световозвращающие устройства для транспортных средств.',
+      'Серия: АТЛАНТА-26. Срок действия: до 15.03.2029.',
+      'Настоящий файл создан автоматически для демонстрации раздела «Документы».',
+    ],
+    'Демо-документ. Не является официальным сертификатом.'
+  );
+
+  const appendixFile = path.join(libraryDir, 'demo-appendix.pdf');
+  await writeDemoPdf(
+    appendixFile,
+    'Приложение к сертификату',
+    [
+      'Перечень изделий, на которые распространяется действие сертификата:',
+      'А.3776.001 — фонарь задний (квадрат);',
+      'А.3731.013 — фонарь габаритный;',
+      'А.3716.002 — фонарь противотуманный.',
+      'Всего 14 позиций каталога.',
+    ],
+    'Демо-документ. Не является официальным приложением.'
+  );
+
+  const contractBuffer = await Packer.toBuffer(new Document({
+    creator: 'CRM «Атланта»',
+    title: 'Договор поставки — шаблон',
+    sections: [{
+      children: [
+        new Paragraph({ text: 'Договор поставки', heading: HeadingLevel.HEADING_1 }),
+        new Paragraph({ children: [new TextRun('Шаблон для отправки контрагенту. Перед подписанием проверьте реквизиты и спецификацию.')] }),
+        new Paragraph({ text: '1. Предмет договора', heading: HeadingLevel.HEADING_2 }),
+        new Paragraph({ children: [new TextRun('Поставщик передаёт покупателю светотехническую продукцию торговой марки «Атланта» в ассортименте и количестве согласно спецификации.')] }),
+        new Paragraph({ text: '2. Порядок расчётов', heading: HeadingLevel.HEADING_2 }),
+        new Paragraph({ children: [new TextRun('Расчёты производятся в рублях по счёту поставщика. Цены указаны с НДС 22 %.')] }),
+        new Paragraph({ text: '3. Сроки', heading: HeadingLevel.HEADING_2 }),
+        new Paragraph({ children: [new TextRun('Срок поставки согласуется отдельно для каждой партии и фиксируется в спецификации.')] }),
+      ],
+    }],
+  }));
+  fs.writeFileSync(path.join(libraryDir, 'demo-contract.docx'), contractBuffer);
+
+  const catalogFiles = path.join(__dirname, '../src/db/catalog/files');
+  const photoName = fs.readdirSync(catalogFiles).find(name => /\.jpg$/i.test(name));
+  if (photoName) {
+    fs.copyFileSync(path.join(catalogFiles, photoName), path.join(libraryDir, 'demo-photo.jpg'));
+  }
+
+  const createFolder = async (name, parentId) => {
+    const result = await q(
+      'INSERT INTO document_folders (name, parent_id, created_by) VALUES ($1, $2, $3) RETURNING id',
+      [name, parentId, adminId]
+    );
+    return result.rows[0].id;
+  };
+
+  const certificates = await createFolder('Сертификаты', null);
+  const trs = await createFolder('ТР ТС 018-2011', certificates);
+  const contracts = await createFolder('Договоры', null);
+  const photos = await createFolder('Фотографии', null);
+
+  const demoFiles = [
+    [trs, 'Сертификат соответствия ТР ТС 018-2011.pdf', certificateFile, 'Действует до 15.03.2029'],
+    [trs, 'Приложение к сертификату.pdf', appendixFile, 'Перечень изделий — 14 позиций'],
+    [contracts, 'Договор поставки — шаблон 2026.docx', path.join(libraryDir, 'demo-contract.docx'), 'Шаблон для новых контрагентов'],
+    [photos, 'Фонарь габаритный — фото для КП.jpg', path.join(libraryDir, 'demo-photo.jpg'), 'Снимок изделия для коммерческого предложения'],
+  ];
+
+  for (const [folderId, name, absolute, comment] of demoFiles) {
+    if (!fs.existsSync(absolute)) continue;
+    const ext = path.extname(name).replace('.', '').toLowerCase();
+    await q(
+      `INSERT INTO document_files (folder_id, name, file_path, file_type, file_size, comment, uploaded_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [folderId, name, `/uploads/library/${path.basename(absolute)}`, ext, fs.statSync(absolute).size, comment, adminId]
+    );
+  }
+
   // ---------- Настройки ----------
   await q(
     `INSERT INTO system_settings (key, value, updated_at) VALUES ('vat', $1, now())

@@ -6,6 +6,7 @@ const auth = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/access');
 const { hasValidSignature } = require('../utils/files');
 const { adminOnly } = require('../middleware/role');
+const { ALLOWED_EXTENSIONS: LIBRARY_EXTENSIONS } = require('../services/document-library');
 
 const router = express.Router();
 
@@ -22,8 +23,9 @@ function decodeFilename(name) {
 const uploadsDir = path.join(__dirname, '../../uploads');
 const imagesDir = path.join(uploadsDir, 'images');
 const drawingsDir = path.join(uploadsDir, 'drawings');
+const libraryDir = path.join(uploadsDir, 'library');
 
-[uploadsDir, imagesDir, drawingsDir].forEach(dir => {
+[uploadsDir, imagesDir, drawingsDir, libraryDir].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
@@ -113,6 +115,20 @@ const uploadClientFile = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
 });
 
+// --- Библиотека документов: папки раздела «Документы» ---
+// Набор форматов задан в services/document-library.js, чтобы проверка на
+// клиенте, в загрузке и при регистрации файла была одинаковой.
+const libraryFilter = extensionFilter(
+  LIBRARY_EXTENSIONS,
+  'Недопустимый формат файла. Разрешены PDF, Word, таблицы, изображения, архивы и чертежи'
+);
+
+const uploadLibraryFile = multer({
+  storage: buildStorage(libraryDir, 'lib'),
+  fileFilter: libraryFilter,
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
+
 /**
  * Проверяет содержимое загруженного файла по сигнатуре и удаляет его при несовпадении.
  */
@@ -132,6 +148,7 @@ function verifyUploadedFile(req, res, next) {
 
 const canEditComponents = requireAnyPermission([['components', 'edit']]);
 const canEditClients = requireAnyPermission([['clients', 'edit']]);
+const canEditDocuments = requireAnyPermission([['documents', 'edit']]);
 const canUploadDrawing = requireAnyPermission([
   ['calculator', 'edit'],
   ['clients', 'edit'],
@@ -181,6 +198,13 @@ router.post('/client-file', auth, adminOnly, uploadClientFile.single('file'), ve
   if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
   const ext = path.extname(req.file.originalname).toLowerCase().replace('.', '');
   return fileResponse(req, res, 'files', { file_type: ext });
+});
+
+// POST /api/upload/library-file — файл в библиотеку документов (папки админа)
+router.post('/library-file', auth, canEditDocuments, uploadLibraryFile.single('file'), verifyUploadedFile, (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+  const ext = path.extname(req.file.originalname).toLowerCase().replace('.', '');
+  return fileResponse(req, res, 'library', { file_type: ext });
 });
 
 // Middleware обработки ошибок multer

@@ -134,7 +134,16 @@ const API = {
 
     if (isBlob) {
       if (!response.ok) {
-        throw new Error('Ошибка экспорта');
+        // Сервер отвечает JSON-ошибкой и на скачивание (пустой архив, нет прав) —
+        // показываем её текст вместо общего «Ошибка экспорта».
+        let message = 'Ошибка экспорта';
+        try {
+          const data = await response.json();
+          if (data && data.error) message = data.error;
+        } catch (e) {
+          /* ответ не JSON — оставляем общий текст */
+        }
+        throw new Error(message);
       }
       return response.blob();
     }
