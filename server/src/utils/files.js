@@ -88,6 +88,11 @@ function hasValidSignature(filePath, ext) {
       return hex.startsWith('474946383761') || hex.startsWith('474946383961');
     case '.webp':
       return buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP';
+    // HEIC/HEIF — контейнер ISO BMFF: 'ftyp' и бренд в первых 12 байтах
+    case '.heic':
+    case '.heif':
+      return buffer.toString('ascii', 4, 8) === 'ftyp'
+        && ['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].includes(buffer.toString('ascii', 8, 12).toLowerCase());
     case '.pdf':
       return buffer.toString('ascii', 0, 5) === '%PDF-';
     case '.tif':

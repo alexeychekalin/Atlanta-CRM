@@ -1097,7 +1097,7 @@ const ComponentsCatalogPage = {
               <div id="comp-image-preview">
                 ${isEdit && comp.image_path
                   ? `<img src="${comp.image_path}" style="max-height:120px;border-radius:8px">`
-                  : '<div style="padding:24px;text-align:center;color:var(--text-muted)">📷 Перетащите изображение или нажмите для выбора</div>'}
+                  : '<div style="padding:24px;text-align:center;color:var(--text-muted)">📷 Перетащите изображение или нажмите для выбора<div style="font-size:0.75rem;margin-top:6px">JPG, PNG, WebP, GIF · HEIC с iPhone конвертируется сам</div></div>'}
               </div>
               <input type="file" id="comp-image-input" accept="image/*" style="display:none">
             </div>
@@ -1446,7 +1446,7 @@ const ComponentsCatalogPage = {
   uploadDoc(componentId, docType) {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.pdf,.jpg,.jpeg,.png';
+    input.accept = '.pdf,.jpg,.jpeg,.png,.heic,.heif';
     input.multiple = true;
     input.addEventListener('change', async () => {
       for (const file of input.files) {

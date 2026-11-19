@@ -171,7 +171,7 @@ const ClientProfilePage = {
       <div id="profile-tab-content"></div>
 
       <!-- Скрытый input для загрузки аватара -->
-      <input type="file" id="avatar-upload-input" accept=".jpg,.jpeg,.png,.webp" style="display:none">
+      <input type="file" id="avatar-upload-input" accept=".jpg,.jpeg,.png,.webp,.heic,.heif" style="display:none">
     `;
 
     // Реквизиты по умолчанию свёрнуты — состояние помним в localStorage
@@ -1314,8 +1314,8 @@ const ClientProfilePage = {
         <div class="form-group">
           <label>Файл *</label>
           <input type="file" class="form-control" id="cf-file"
-                 accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.tif,.tiff,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.zip,.rar,.7z,.txt,.csv,.md,.dwg,.dxf">
-          <div class="form-hint" style="margin-top:4px">Документы, таблицы, изображения, архивы и чертежи до 50 МБ. HTML, SVG и исполняемые файлы не принимаются.</div>
+                 accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.tif,.tiff,.heic,.heif,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.zip,.rar,.7z,.txt,.csv,.md,.dwg,.dxf">
+          <div class="form-hint" style="margin-top:4px">Документы, таблицы, изображения, архивы и чертежи до 50 МБ. Фото HEIC с iPhone конвертируется автоматически. HTML, SVG и исполняемые файлы не принимаются.</div>
         </div>
         <div class="form-group">
           <label>Название *</label>

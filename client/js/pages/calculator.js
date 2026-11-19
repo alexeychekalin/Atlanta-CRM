@@ -82,7 +82,7 @@ const CalculatorPage = {
                   Перетащите чертёж (PDF/изображение) или нажмите для выбора
                 </div>
               </div>
-              <input type="file" id="calc-drawing-input" accept=".pdf,.jpg,.jpeg,.png,.webp,.tiff" style="display:none">
+              <input type="file" id="calc-drawing-input" accept=".pdf,.jpg,.jpeg,.png,.webp,.tiff,.heic,.heif" style="display:none">
             </div>
             <input type="hidden" id="calc-drawing-path" value="">
             <input type="hidden" id="calc-drawing-type" value="">

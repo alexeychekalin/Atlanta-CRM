@@ -47,7 +47,7 @@ const DocumentsPage = {
                 <span aria-hidden="true">⤒</span> Загрузить файлы
               </button>
               <input type="file" id="docs-file-input" multiple hidden
-                     accept=".pdf,.doc,.docx,.odt,.xls,.xlsx,.ods,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.gif,.tif,.tiff,.txt,.csv,.md,.zip,.rar,.7z,.dwg,.dxf"
+                     accept=".pdf,.doc,.docx,.odt,.xls,.xlsx,.ods,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.gif,.tif,.tiff,.heic,.heif,.txt,.csv,.md,.zip,.rar,.7z,.dwg,.dxf"
                      onchange="DocumentsPage.uploadFiles(this.files); this.value='';">
             ` : ''}
             <button type="button" class="btn btn-secondary" id="docs-archive" onclick="DocumentsPage.downloadArchive()"
