@@ -1757,6 +1757,11 @@ body.lightbox-open {
   transition: background 0.15s, border-color 0.15s;
 }
 
+/* Атрибут hidden должен побеждать: у кнопки задан display: flex */
+.lightbox__tool[hidden] {
+  display: none;
+}
+
 .lightbox__tool:hover:not(:disabled) {
   background: rgba(148, 163, 184, 0.22);
   border-color: var(--border-hover);

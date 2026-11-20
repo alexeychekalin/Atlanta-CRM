@@ -151,5 +151,11 @@ test('повёрнутое фото не остаётся в кэше брауз
 test('service worker обновлён — клиент получит новый JS', () => {
   const sw = fs.readFileSync(path.join(ROOT, 'client/sw.js'), 'utf8');
   const version = Number(sw.match(/atlanta-crm-v(\d+)/)[1]);
-  assert.ok(version >= 17, `версия кэша ${version}, ожидалась 17+`);
+  assert.ok(version >= 18, `версия кэша ${version}, ожидалась 18+`);
+});
+
+test('скрытые кнопки поворота действительно скрыты: CSS не спорит с hidden', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'client/css/styles.css'), 'utf8');
+  // у .lightbox__tool задан display: flex, поэтому нужен явный [hidden]
+  assert.match(css, /\.lightbox__tool\[hidden\]\s*\{\s*display: none;/);
 });
