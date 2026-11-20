@@ -433,3 +433,55 @@ test('карточка: без права на изменение фото от�
   assert.equal(calls.length, 1);
   assert.equal(calls[0].onRotate, null);
 });
+
+test('карточка: цена без BOM видна в списке чертежей, а не «—»', async () => {
+  const { page, sandbox } = loadClientProfile({ isAdmin: true });
+  page.clientId = 1;
+
+  const now = new Date().toISOString();
+  sandbox.API.get = async () => ({
+    data: [{
+      id: 6,
+      name: 'Фонарь габаритный',
+      components_count: 0,
+      // фикс-цена живёт на связи клиента, у самого чертежа её нет
+      fixed_price: null,
+      client_fixed_price: 48500,
+      base_cost: 48500,
+      total_cost: 48500,
+      fixed_without_bom: true,
+      created_at: now,
+      author_name: 'Администратор',
+    }],
+  });
+
+  const container = { innerHTML: '' };
+  await page.loadDrawings(container);
+
+  assert.match(container.innerHTML, /48500\.00 ₽/, 'сумма вместо прочерка');
+  assert.doesNotMatch(container.innerHTML, />—</);
+  assert.match(container.innerHTML, />без BOM</);
+});
+
+test('карточка: заметка к расчёту видна в списке чертежей', async () => {
+  const { page, sandbox } = loadClientProfile({ isAdmin: true });
+  page.clientId = 1;
+
+  sandbox.API.get = async () => ({
+    data: [{
+      id: 7,
+      name: 'Фонарь',
+      components_count: 3,
+      base_cost: 1000,
+      total_cost: 1200,
+      notes: 'снизить цену на 5% при следующем заказе',
+      created_at: new Date().toISOString(),
+      author_name: 'Администратор',
+    }],
+  });
+
+  const container = { innerHTML: '' };
+  await page.loadDrawings(container);
+
+  assert.match(container.innerHTML, /📝 снизить цену на 5% при следующем заказе/);
+});

@@ -4,6 +4,9 @@
  * Один чертёж (BOM) может быть привязан к нескольким клиентам. Стоимость
  * отличается уровнем цен клиента и ручной наценкой связи (drawing_clients).
  * Формула повторяет SQL-выражение в списках чертежей, чтобы цифры совпадали.
+ *
+ * Цена без BOM (фиксированная, состав пуст) — это и есть базовая цена:
+ * `subtotal` равен ей же, наценки нулевые, итог совпадает с базой.
  */
 
 function round2(value) {
@@ -23,14 +26,20 @@ function calculateDrawingPrice({ subtotal, fixedPrice, levelMarkupPct, globalMar
 
   if (fixedPrice !== null && fixedPrice !== undefined && Number(fixedPrice) > 0) {
     const fixed = round2(fixedPrice);
+    // Цена без BOM: в базовую цену падает сама фикс-цена, наценок нет.
+    // Иначе в списке чертежей «Базовая цена» была бы 0, а вся сумма висела
+    // в колонке «Стоимость с наценкой» — как будто к нулю применили наценку.
+    const baseCost = base > 0 ? base : fixed;
     return {
-      subtotal: base,
+      subtotal: baseCost,
       levelMarkupPct: 0,
       levelMarkupAmount: 0,
       globalMarkupPct: 0,
       globalMarkupRub: 0,
       fixedPrice: fixed,
       total: fixed,
+      // Цена задана без состава — интерфейсу полезно знать, что база = фикс
+      fixedWithoutBom: base <= 0,
     };
   }
 
@@ -51,6 +60,7 @@ function calculateDrawingPrice({ subtotal, fixedPrice, levelMarkupPct, globalMar
     globalMarkupPctAmount: globalPctAmount,
     fixedPrice: null,
     total: round2(afterLevel + globalPctAmount + globalRub),
+    fixedWithoutBom: false,
   };
 }
 
@@ -109,6 +119,23 @@ function priceForClient({ drawing = {}, link = null, subtotal = 0, fixedPrice })
   });
 }
 
+/**
+ * Две колонки списков чертежей: «Базовая цена» и «Стоимость с наценкой».
+ *
+ * Состав есть — база считается по компонентам без наценок позиций.
+ * Состава нет (цена без BOM) — база равна самой цене: наценки к нулю
+ * не применяются, поэтому обе колонки показывают одну сумму.
+ */
+function drawingListCosts({ rawBase = 0, subtotal = 0, price = {} }) {
+  const base = subtotal > 0 ? round2(rawBase) : round2(price.subtotal);
+  const total = price.total !== undefined && price.total !== null ? round2(price.total) : base;
+  return {
+    base_cost: base,
+    total_cost: total,
+    fixed_without_bom: Boolean(price.fixedWithoutBom),
+  };
+}
+
 /** Сумма BOM с наценками позиций по строкам состава. */
 function bomSubtotalFromRows(rows = []) {
   return round2(rows.reduce((sum, row) => {
@@ -133,6 +160,7 @@ function resolveLevelMarkup({ linkMarkupPct, clientLevelPct, drawingLevelPct }) 
 module.exports = {
   round2,
   calculateDrawingPrice,
+  drawingListCosts,
   resolveLevelMarkup,
   resolveFixedPrice,
   priceForClient,

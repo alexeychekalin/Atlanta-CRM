@@ -827,7 +827,8 @@ const ClientProfilePage = {
               </thead>
               <tbody>
                 ${drawings.map(d => {
-                  const hasCalc = parseInt(d.components_count) > 0 || d.fixed_price;
+                  // Цена могла быть задана без BOM: фикс-цена живёт на связи клиента
+                  const hasCalc = parseInt(d.components_count) > 0 || Boolean(d.fixed_price || d.client_fixed_price);
                   const isCalculated = d.is_calculated === true;
                   const cost = parseFloat(d.total_cost ?? d.base_cost) || 0;
                   const dateStr = d.created_at ? new Date(d.created_at).toLocaleDateString('ru-RU') : '—';
@@ -839,13 +840,17 @@ const ClientProfilePage = {
                         <div>
                           <div style="font-weight:600">${esc(d.name)}</div>
                           ${d.description ? `<div style="font-size:0.78rem;color:var(--text-muted)">${esc(d.description)}</div>` : ''}
+                          ${d.notes ? `<div style="font-size:0.78rem;color:var(--text-secondary)" title="${esc(d.notes)}">📝 ${esc(d.notes)}</div>` : ''}
                           ${isCalculated
                             ? `<span class="badge" style="background:var(--accent-teal);color:#fff;font-size:0.7rem;margin-top:2px">✅ рассчитан</span>`
                             : (hasCalc ? `<span class="badge" style="background:var(--bg-tertiary);color:var(--text-muted);font-size:0.7rem;margin-top:2px">без расчёта</span>` : '')}
                         </div>
                       </div>
                     </td>
-                    <td class="text-right" style="font-weight:600;${hasCalc ? 'color:var(--accent-teal)' : ''}">${hasCalc ? Table.formatMoney(cost) : '—'}</td>
+                    <td class="text-right" style="font-weight:600;${hasCalc ? 'color:var(--accent-teal)' : ''}">
+                      ${hasCalc ? Table.formatMoney(cost) : '—'}
+                      ${d.fixed_without_bom ? '<div><span class="badge" style="background:var(--bg-tertiary);color:var(--text-muted);font-size:0.68rem" title="Цена задана без состава — наценка не применялась">без BOM</span></div>' : ''}
+                    </td>
                     <td class="text-muted" style="font-size:0.83rem">${dateStr}</td>
                     <td class="text-muted" style="font-size:0.83rem">${esc(d.author_name) || '—'}</td>
                     <td class="text-right">

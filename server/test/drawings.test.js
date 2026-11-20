@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
   calculateDrawingPrice,
+  drawingListCosts,
   resolveLevelMarkup,
   resolveFixedPrice,
   priceForClient,
@@ -45,6 +46,52 @@ test('цена чертежа: фиксированная цена важнее 
 
   assert.equal(price.total, 48500);
   assert.equal(price.levelMarkupPct, 0);
+});
+
+test('цена без BOM: фикс-цена становится базовой, наценок нет', () => {
+  // Состав пуст — база и итог совпадают, иначе в списке чертежей «Базовая цена»
+  // показывала бы 0, а вся сумма висела в колонке «Стоимость с наценкой».
+  const price = calculateDrawingPrice({
+    subtotal: 0,
+    fixedPrice: 48500,
+    levelMarkupPct: 30,
+    globalMarkupPct: 10,
+    globalMarkupRub: 1000,
+  });
+
+  assert.equal(price.subtotal, 48500, 'база — это фикс-цена');
+  assert.equal(price.total, 48500);
+  assert.equal(price.fixedPrice, 48500);
+  assert.equal(price.fixedWithoutBom, true);
+  assert.equal(price.levelMarkupPct, 0);
+  assert.equal(price.globalMarkupPct, 0);
+  assert.equal(price.globalMarkupRub, 0);
+});
+
+test('цена с составом: база остаётся суммой BOM, фикс-цена не попадает в базу', () => {
+  const price = calculateDrawingPrice({ subtotal: 5000, fixedPrice: 48500 });
+
+  assert.equal(price.subtotal, 5000);
+  assert.equal(price.total, 48500);
+  assert.equal(price.fixedWithoutBom, false);
+});
+
+test('расчёт по BOM помечает fixedWithoutBom = false', () => {
+  const price = calculateDrawingPrice({ subtotal: 13610, fixedPrice: null, levelMarkupPct: 15 });
+
+  assert.equal(price.fixedWithoutBom, false);
+  assert.equal(price.subtotal, 13610);
+});
+
+test('priceForClient: клиент с ценой без BOM получает базу = фикс-цене', () => {
+  const drawing = { id: 1, client_id: 7, fixed_price: null, global_markup_pct: 0, global_markup_rub: 0 };
+  const link = { client_id: 7, fixed_price: 12000, markup_pct: 20, level_markup_pct: 30 };
+
+  const price = priceForClient({ drawing, link, subtotal: 0 });
+
+  assert.equal(price.subtotal, 12000);
+  assert.equal(price.total, 12000);
+  assert.equal(price.fixedWithoutBom, true);
 });
 
 test('наценка связи клиента переопределяет уровень цен и снимок чертежа', () => {
@@ -132,4 +179,32 @@ test('bomSubtotalFromRows: сумма строк с наценками совп�
 
   // 1850*2*1.1 + 100 + 500 = 4670
   assert.equal(subtotal, 4670);
+});
+
+test('списки чертежей: база и итог для чертежа с составом', () => {
+  const price = calculateDrawingPrice({ subtotal: 4670, fixedPrice: null, levelMarkupPct: 15 });
+  const costs = drawingListCosts({ rawBase: 4200, subtotal: 4670, price });
+
+  assert.equal(costs.base_cost, 4200, 'база — сумма компонентов без наценок');
+  assert.equal(costs.total_cost, price.total);
+  assert.equal(costs.fixed_without_bom, false);
+});
+
+test('списки чертежей: цена без BOM лежит в базовой колонке, наценка нулевая', () => {
+  const price = calculateDrawingPrice({ subtotal: 0, fixedPrice: 48500, levelMarkupPct: 30 });
+  const costs = drawingListCosts({ rawBase: 0, subtotal: 0, price });
+
+  assert.equal(costs.base_cost, 48500, 'базовая цена = фикс-цена');
+  assert.equal(costs.total_cost, 48500, 'стоимость с наценкой = та же сумма');
+  assert.equal(costs.base_cost, costs.total_cost, 'наценки нет');
+  assert.equal(costs.fixed_without_bom, true);
+});
+
+test('списки чертежей: чертёж без состава и без цены остаётся нулевым', () => {
+  const price = calculateDrawingPrice({ subtotal: 0, fixedPrice: null });
+  const costs = drawingListCosts({ rawBase: 0, subtotal: 0, price });
+
+  assert.equal(costs.base_cost, 0);
+  assert.equal(costs.total_cost, 0);
+  assert.equal(costs.fixed_without_bom, false);
 });

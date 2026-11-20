@@ -2873,6 +2873,32 @@ input.search-clear-host,
   margin-top: 6px;
 }
 
+/* === Заметка к расчёту чертежа === */
+.drawing-note {
+  margin-left: 24px;
+  margin-top: 2px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 520px;
+}
+
+.drawing-card-note {
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: var(--bg-tertiary);
+  border-left: 3px solid var(--accent-teal);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
 /* === File Grid === */
 .file-grid {
   display: grid;

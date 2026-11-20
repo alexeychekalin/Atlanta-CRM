@@ -3,7 +3,8 @@ const { fullArticle } = require('../utils/article');
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { normalizeUploadPath, fileSha256 } = require('../utils/files');
-const { round2, priceForClient, resolveFixedPrice, bomSubtotalFromRows, parseFixedPriceInput } = require('../services/drawings');
+const { round2, priceForClient, resolveFixedPrice, bomSubtotalFromRows, parseFixedPriceInput,
+  drawingListCosts } = require('../services/drawings');
 
 const router = express.Router();
 
@@ -73,7 +74,6 @@ function attachClientPrices(rows, linksByDrawing, preferredClientId) {
   rows.forEach(row => {
     const subtotal = round2(row.bom_subtotal);
     const links = linksByDrawing[row.id] || [];
-    row.base_cost = round2(row.raw_base);
     row.client_prices = links.map(link => ({
       client_id: link.client_id,
       fixed_price: resolveFixedPrice({
@@ -88,10 +88,25 @@ function attachClientPrices(rows, linksByDrawing, preferredClientId) {
       : row.client_prices.find(p => p.client_id === row.client_id) || row.client_prices[0];
 
     const price = preferred ? preferred.price : priceForClient({ drawing: row, subtotal });
-    row.total_cost = price.total;
+    // Состав есть — база по компонентам; цена без BOM — база равна самой цене
+    const costs = drawingListCosts({ rawBase: row.raw_base, subtotal, price });
+    row.base_cost = costs.base_cost;
+    row.total_cost = costs.total_cost;
+    row.fixed_without_bom = costs.fixed_without_bom;
     row.client_fixed_price = preferred ? preferred.fixed_price : price.fixedPrice;
   });
   return rows;
+}
+
+/**
+ * Заметка к расчёту: обрезаем пробелы, пустую строку храним как NULL,
+ * ограничиваем длину — заметка не должна превращаться в документ.
+ */
+function normalizeNotes(value) {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  return text.slice(0, 2000);
 }
 
 // =================== Списки и поиск ===================
@@ -133,7 +148,7 @@ router.get('/', auth, async (req, res) => {
     if (search) {
       params.push(`%${search}%`);
       const p = `$${params.length}`;
-      conditions.push(`(d.name ILIKE ${p} OR d.description ILIKE ${p} OR c.name ILIKE ${p}
+      conditions.push(`(d.name ILIKE ${p} OR d.description ILIKE ${p} OR d.notes ILIKE ${p} OR c.name ILIKE ${p}
         OR EXISTS (SELECT 1 FROM drawing_clients dcs JOIN clients cs ON cs.id = dcs.client_id
                    WHERE dcs.drawing_id = d.id AND cs.name ILIKE ${p}))`);
     }
@@ -491,7 +506,7 @@ router.post('/', auth, async (req, res) => {
     client = await db.pool.connect();
     await client.query('BEGIN');
 
-    const { name, file_path, file_type, description, components, client_id, client_ids, fixed_price,
+    const { name, file_path, file_type, description, notes, components, client_id, client_ids, fixed_price,
       level_markup_pct, global_markup_pct, global_markup_rub, force } = req.body;
     if (!name) {
       await client.query('ROLLBACK');
@@ -545,13 +560,13 @@ router.post('/', auth, async (req, res) => {
 
     const drawingRes = await client.query(
       `INSERT INTO drawings (name, file_path, file_type, description, created_by, client_id,
-         level_markup_pct, global_markup_pct, global_markup_rub, file_hash)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         level_markup_pct, global_markup_pct, global_markup_rub, file_hash, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
       [String(name).slice(0, 255), normalizedFilePath, file_type || null, description || null, req.user.id,
         ownerId,
         parseFloat(level_markup_pct) || 0, parseFloat(global_markup_pct) || 0, parseFloat(global_markup_rub) || 0,
-        hash]
+        hash, normalizeNotes(notes)]
     );
     const drawing = drawingRes.rows[0];
 
@@ -621,7 +636,7 @@ router.put('/:id', auth, async (req, res) => {
     client = await db.pool.connect();
     await client.query('BEGIN');
 
-    const { name, file_path, file_type, description, components, client_id, client_ids, fixed_price,
+    const { name, file_path, file_type, description, notes, components, client_id, client_ids, fixed_price,
       level_markup_pct, global_markup_pct, global_markup_rub } = req.body;
 
     let normalizedFilePath = file_path;
@@ -669,14 +684,17 @@ router.put('/:id', auth, async (req, res) => {
         level_markup_pct = COALESCE($5, level_markup_pct),
         global_markup_pct = COALESCE($6, global_markup_pct),
         global_markup_rub = COALESCE($7, global_markup_rub),
-        file_hash = COALESCE($8, file_hash)
-       WHERE id = $9
+        file_hash = COALESCE($8, file_hash),
+        -- заметку можно стереть: COALESCE не позволил бы записать NULL
+        notes = CASE WHEN $9 THEN $10 ELSE notes END
+       WHERE id = $11
        RETURNING *`,
       [name, normalizedFilePath, file_type, description,
         level_markup_pct !== undefined ? (parseFloat(level_markup_pct) || 0) : null,
         global_markup_pct !== undefined ? (parseFloat(global_markup_pct) || 0) : null,
         global_markup_rub !== undefined ? (parseFloat(global_markup_rub) || 0) : null,
         normalizedFilePath ? fileSha256(normalizedFilePath) : null,
+        notes !== undefined, notes !== undefined ? normalizeNotes(notes) : null,
         id]
     );
 

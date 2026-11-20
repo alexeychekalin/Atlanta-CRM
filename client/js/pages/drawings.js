@@ -367,6 +367,7 @@ const DrawingsPage = {
         </div>
         <div class="drawing-card-body">
           ${d.description ? `<div class="drawing-card-desc">${esc(d.description)}</div>` : '<div style="font-size:0.8rem;color:var(--text-muted);font-style:italic;">Без описания</div>'}
+          ${d.notes ? `<div class="drawing-card-note" title="${esc(d.notes)}">📝 ${esc(d.notes)}</div>` : ''}
           
           <div class="drawing-card-stats">
             <div class="drawing-stat-item">
@@ -385,6 +386,19 @@ const DrawingsPage = {
         </div>
       </div>
     `;
+  },
+
+  /** Пометка «без BOM»: цена задана целиком, наценка к ней не применялась. */
+  noBomBadge(fixedWithoutBom) {
+    if (!fixedWithoutBom) return '';
+    return '<div><span class="badge" style="background:var(--bg-tertiary);color:var(--text-muted);font-size:0.68rem"'
+      + ' title="Цена задана без состава — это и есть базовая цена, наценка не применяется">без BOM</span></div>';
+  },
+
+  /** Заметка к расчёту: в списках одна строка с многоточием, целиком — в подсказке. */
+  noteLine(note) {
+    if (!note) return '';
+    return `<div class="drawing-note" title="${esc(note)}">📝 ${esc(note)}</div>`;
   },
 
   renderTable(drawings, container) {
@@ -419,6 +433,7 @@ const DrawingsPage = {
                       ${d.archived_at ? '<span class="badge" style="background:var(--bg-tertiary);color:var(--text-muted);font-size:0.7rem">📦 архив</span>' : ''}
                     </div>
                     ${d.description ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-left:24px">${esc(d.description)}</div>` : ''}
+                    ${this.noteLine(d.notes)}
                   </td>
                   <td>
                     ${clientId ? `
@@ -430,7 +445,7 @@ const DrawingsPage = {
                   <td class="text-center">
                     <span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary)">${d.components_count || 0}</span>
                   </td>
-                  <td class="text-right">${Table.formatMoney(baseCost)}</td>
+                  <td class="text-right">${Table.formatMoney(baseCost)}${this.noBomBadge(d.fixed_without_bom)}</td>
                   <td class="text-right"><strong style="color:var(--accent-teal)">${Table.formatMoney(totalCost)}</strong></td>
                   <td class="text-muted" style="font-size:0.83rem">${dateStr}</td>
                   <td class="text-right" onclick="event.stopPropagation()">
@@ -589,9 +604,12 @@ const DrawingsPage = {
                 : parseFloat(d.total_cost || d.base_cost) || 0;
               return `
                 <tr style="cursor:pointer" onclick="DrawingsPage.openDrawingModal(${d.id})">
-                  <td><strong>${esc(d.name)}</strong></td>
+                  <td>
+                    <strong>${esc(d.name)}</strong>
+                    ${this.noteLine(d.notes)}
+                  </td>
                   <td class="text-center">${d.components_count || 0}</td>
-                  <td class="text-right">${Table.formatMoney(baseCost)}</td>
+                  <td class="text-right">${Table.formatMoney(baseCost)}${this.noBomBadge(d.fixed_without_bom)}</td>
                   <td class="text-right"><strong style="color:var(--accent-teal)">${Table.formatMoney(totalCost)}</strong></td>
                   <td class="text-muted" style="font-size:0.8rem">${d.created_at ? new Date(d.created_at).toLocaleDateString('ru-RU') : '—'}</td>
                   <td class="text-right" onclick="event.stopPropagation()">
@@ -696,6 +714,8 @@ const DrawingsPage = {
 
       // Итог считает сервер (цена владельца); резерв — сумма по составу
       const priceTotal = drawing.price ? parseFloat(drawing.price.total) : subtotalWithMarkups;
+      // Цена без BOM: сервер кладёт фикс-цену в базовую, наценок нет
+      const fixedWithoutBom = Boolean(drawing.price && drawing.price.fixedWithoutBom);
 
       const dateStr = drawing.created_at ? new Date(drawing.created_at).toLocaleString('ru-RU') : '—';
       const clientName = drawing.client_name || 'Не привязан';
@@ -789,6 +809,7 @@ const DrawingsPage = {
                 <span>📅 Создан: <strong>${dateStr}</strong></span>
               </div>
               ${drawing.description ? `<p style="margin-top:8px;font-size:0.85rem;color:var(--text-secondary);line-height:1.4">${esc(drawing.description)}</p>` : ''}
+              ${drawing.notes ? `<div style="margin-top:10px;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--accent-teal);border-radius:8px;font-size:0.85rem;color:var(--text-secondary);white-space:pre-wrap;max-width:520px">📝 ${esc(drawing.notes)}</div>` : ''}
             </div>
 
             <!-- Итоговый блок стоимости -->
@@ -800,7 +821,7 @@ const DrawingsPage = {
                 ${Table.formatMoney(priceTotal)}
               </div>
               <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px">
-                Базовая: ${Table.formatMoney(subtotalBase)}
+                Базовая: ${Table.formatMoney(fixedWithoutBom && drawing.price ? drawing.price.subtotal : subtotalBase)}${fixedWithoutBom ? ' · без BOM' : ''}
               </div>
             </div>
           </div>

@@ -3,7 +3,7 @@ const db = require('../db');
 const auth = require('../middleware/auth');
 const fs = require('fs');
 const { normalizeUploadPath, safeUploadPath, fileSha256 } = require('../utils/files');
-const { round2, priceForClient } = require('../services/drawings');
+const { round2, priceForClient, drawingListCosts } = require('../services/drawings');
 const { BOM_SUBTOTAL_SQL, RAW_BASE_SQL } = require('../services/drawings-sql');
 const { monthlyStats } = require('../services/client-stats');
 
@@ -70,11 +70,14 @@ function withClientPrice(row, clientId) {
     level_markup_pct: row.level_markup_pct,
   };
   const price = priceForClient({ drawing: row, link, subtotal });
+  const costs = drawingListCosts({ rawBase: row.raw_base, subtotal, price });
   return {
     ...row,
-    base_cost: round2(row.raw_base),
-    total_cost: price.total,
+    // Цена без BOM: база — это фикс-цена, наценок нет
+    base_cost: costs.base_cost,
+    total_cost: costs.total_cost,
     client_fixed_price: price.fixedPrice,
+    fixed_without_bom: costs.fixed_without_bom,
   };
 }
 

@@ -86,6 +86,12 @@ const CalculatorPage = {
             </div>
             <input type="hidden" id="calc-drawing-path" value="">
             <input type="hidden" id="calc-drawing-type" value="">
+            <div class="form-group" style="margin:12px 0 0">
+              <label>📝 Комментарий к расчёту</label>
+              <textarea class="form-control" id="calc-notes" rows="2" maxlength="2000"
+                        placeholder="Например: снизить цену на 5% при следующем заказе"></textarea>
+              <div class="form-hint" style="margin-top:4px">Сохраняется вместе с чертежом — заметка видна в каталоге чертежей и в карточке клиента.</div>
+            </div>
           </div>
 
           <!-- Контрагент -->
@@ -413,6 +419,10 @@ const CalculatorPage = {
       // Выставить шаблон в select если он есть
       const templateSelect = document.getElementById('calc-template');
       if (templateSelect) templateSelect.value = drawingId;
+
+      // Заметка живёт на чертеже: показываем её при загрузке шаблона
+      const notesInput = document.getElementById('calc-notes');
+      if (notesInput) notesInput.value = drawing.notes || '';
 
       // Восстановить общие наценки шаблона
       const markupPctInput = document.getElementById('calc-markup-pct');
@@ -923,6 +933,8 @@ const CalculatorPage = {
       file_path: document.getElementById('calc-drawing-path').value || null,
       file_type: document.getElementById('calc-drawing-type').value || null,
       description: '',
+      // Заметка сохраняется всегда (в том числе пустая — так её можно стереть)
+      notes: document.getElementById('calc-notes')?.value.trim() || null,
       fixed_price: fixedPrice,
       level_markup_pct: (() => {
         const opt = clientSelect?.selectedOptions[0];

@@ -197,3 +197,116 @@ test('калькулятор: заказ создаётся по цене кли
   assert.equal(orderPayload.items[0].metadata.grand_total, 12345);
   assert.equal(orderPayload.items[0].metadata.client_id, 5);
 });
+
+test('калькулятор: при загрузке шаблона в поле заметки подставляется комментарий', async () => {
+  const document = createDocument({
+    'calc-client': element(''),
+    'calc-template': element(),
+    'calc-drawing-path': element(),
+    'calc-drawing-type': element(),
+    'calc-drawing-preview': element(),
+    'calc-markup-pct': element('0'),
+    'calc-markup-rub': element('0'),
+    'calc-fixed-price-toggle': element(),
+    'calc-fixed-price': element(''),
+    'calc-fixed-price-block': element(),
+    'calc-bom-totals': element(),
+    'calc-total': element(),
+    'calc-client-level': element(),
+    'calc-notes': element('старая заметка'),
+  });
+  const drawing = {
+    id: 3,
+    name: 'Фонарь',
+    client_id: 2,
+    components: [],
+    clients: [],
+    notes: 'снизить цену на 5% при следующем заказе',
+  };
+  const sandbox = loadCalculator({ document, api: { get: async () => drawing } });
+  const page = sandbox.CalculatorPage;
+  page.renderBom = () => {};
+  page.recalc = () => {};
+
+  await page.loadTemplate(3);
+
+  assert.equal(document.getElementById('calc-notes').value, 'снизить цену на 5% при следующем заказе');
+});
+
+test('калькулятор: заметка сохраняется вместе с чертежом', async () => {
+  const document = createDocument({
+    'calc-client': element('5'),
+    'calc-notes': element('  снизить цену на 5%  '),
+    'calc-drawing-path': element(''),
+    'calc-drawing-type': element(''),
+    'calc-markup-pct': element('0'),
+    'calc-markup-rub': element('0'),
+    'calc-fixed-price-toggle': element(),
+    'calc-fixed-price': element(''),
+    'calc-fixed-price-block': element(),
+    'calc-bom-totals': element(),
+    'calc-total': element(),
+    'calc-client-level': element(),
+  });
+  document.getElementById('calc-client').selectedOptions = [{ dataset: { markup: '0', level: '' } }];
+
+  const posted = [];
+  const api = {
+    get: async url => {
+      if (url === '/drawings/55') return { id: 55, clients: [] };
+      if (url === '/drawings') return { data: [] };
+      return {};
+    },
+    post: async (url, body) => { posted.push([url, body]); return { id: 55 }; },
+    put: async (url, body) => { posted.push([url, body]); return { id: 55 }; },
+  };
+  const sandbox = loadCalculator({ document, api });
+  const page = sandbox.CalculatorPage;
+  page.bomItems = [{ component_id: 1, price: 100, quantity: 1, item_markup_pct: 0, item_markup_rub: 0 }];
+
+  await page.saveAsDrawing('Тест');
+
+  const create = posted.find(([url]) => url === '/drawings');
+  assert.ok(create, 'чертёж создаётся');
+  assert.equal(create[1].notes, 'снизить цену на 5%', 'заметка обрезана по краям');
+  assert.equal(create[1].client_id, '5');
+});
+
+test('калькулятор: пустая заметка очищает комментарий у существующего чертежа', async () => {
+  const document = createDocument({
+    'calc-client': element('5'),
+    'calc-notes': element('   '),
+    'calc-drawing-path': element(''),
+    'calc-drawing-type': element(''),
+    'calc-markup-pct': element('0'),
+    'calc-markup-rub': element('0'),
+    'calc-fixed-price-toggle': element(),
+    'calc-fixed-price': element(''),
+    'calc-fixed-price-block': element(),
+    'calc-bom-totals': element(),
+    'calc-total': element(),
+    'calc-client-level': element(),
+  });
+  document.getElementById('calc-client').selectedOptions = [{ dataset: { markup: '0', level: '' } }];
+
+  const updated = [];
+  const api = {
+    get: async url => {
+      if (url === '/drawings/9') return { id: 9, clients: [] };
+      if (url === '/drawings') return { data: [] };
+      return {};
+    },
+    post: async () => ({ id: 9 }),
+    put: async (url, body) => { updated.push([url, body]); return { id: 9 }; },
+  };
+  const sandbox = loadCalculator({ document, api });
+  const page = sandbox.CalculatorPage;
+  page.currentDrawingId = 9;
+  page.bomItems = [{ component_id: 1, price: 100, quantity: 1, item_markup_pct: 0, item_markup_rub: 0 }];
+
+  await page.saveAsDrawing('Тест');
+
+  const put = updated.find(([url]) => url === '/drawings/9');
+  assert.ok(put, 'чертёж обновляется');
+  assert.equal(put[1].notes, null, 'пустая заметка стирает комментарий');
+});
