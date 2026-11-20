@@ -370,6 +370,9 @@ const DocumentsPage = {
           images: imageFiles.map(item => `/api/documents/files/${item.id}/view`),
           index,
           title: file.name,
+          onRotate: this.canEdit
+            ? (src, delta) => this.rotatePhoto(src, delta, imageFiles)
+            : null,
         });
         return;
       }
@@ -380,6 +383,23 @@ const DocumentsPage = {
       return;
     }
     this.downloadFile(fileId);
+  },
+
+  /**
+   * Поворот фото библиотеки. Файл перезаписывается на месте — меняется только
+   * содержимое, путь и запись в базе те же. Список перечитываем, чтобы
+   * миниатюры и размер файла обновились; просмотр получает адрес с ?v=.
+   */
+  async rotatePhoto(src, delta, imageFiles) {
+    const list = imageFiles || ((this.data && this.data.files) || []).filter(item => item.image);
+    const index = list.findIndex(item => src.startsWith(`/api/documents/files/${item.id}/view`));
+    const file = index >= 0 ? list[index] : null;
+    if (!file || !file.file_path) throw new Error('Не удалось определить файл');
+
+    await API.post('/upload/rotate', { path: file.file_path, degrees: delta });
+    Toast.success('Положение сохранено');
+    await this.reload();
+    return `${src.split('?')[0]}?v=${Date.now()}`;
   },
 
   async downloadFile(fileId) {

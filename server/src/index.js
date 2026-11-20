@@ -107,7 +107,9 @@ async function uploadsAuth(req, res, next) {
 
 app.use('/uploads', uploadsAuth, express.static(uploadsBaseDir, {
   setHeaders: (res) => {
-    res.setHeader('Cache-Control', 'private, max-age=3600');
+    // no-cache + ETag: файл перепроверяется по хэшу. Это нужно, чтобы после
+    // поворота или замены фото браузер не показывал старую картинку из кэша.
+    res.setHeader('Cache-Control', 'private, no-cache');
   },
 }));
 app.use('/uploads', (req, res) => {

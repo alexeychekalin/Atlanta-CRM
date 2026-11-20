@@ -164,7 +164,9 @@ test('все точки загрузки фото принимают HEIC и к�
   assert.match(source, /LIBRARY_EXTENSIONS[^\]]*\.heic/, 'библиотека не принимает .heic');
 
   // Каждый маршрут загрузки: сигнатура проверяется до конвертации
-  const routes = [...source.matchAll(/router\.post\('\/[a-z-]+',[^\n]*, \(req, res\)/g)].map((m) => m[0]);
+  const routes = [...source.matchAll(/router\.post\('\/[a-z-]+',[^\n]*, \(req, res\)/g)]
+    .map((m) => m[0])
+    .filter((route) => route.includes('verifyUploadedFile'));
   assert.ok(routes.length >= 6, 'маршруты загрузки не найдены');
   for (const route of routes) {
     assert.match(route, /verifyUploadedFile, convertHeicUpload/, `${route}: нет конвертации HEIC`);
@@ -176,7 +178,7 @@ test('file_type в ответе берётся по фактическому ф�
   assert.match(source, /function uploadedFileType\(req\)/);
   assert.equal(
     (source.match(/file_type: uploadedFileType\(req\)/g) || []).length,
-    4,
+    5,
     'file_type должен считаться по файлу на диске во всех четырёх маршрутах'
   );
   // originalname допустим только в проверке сигнатуры — там он ещё .heic

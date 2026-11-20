@@ -118,6 +118,9 @@ function hasValidSignature(filePath, ext) {
     // Все версии DWG начинаются с «AC10»
     case '.dwg':
       return buffer.toString('ascii', 0, 4) === 'AC10';
+    // Rich Text: обычный текст в фигурных скобках
+    case '.rtf':
+      return buffer.toString('ascii', 0, 5) === '{\\rtf';
     // Текстовые форматы: сигнатуры нет, файлы отдаются как text/plain
     case '.txt':
     case '.csv':

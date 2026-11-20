@@ -640,3 +640,72 @@ test('карточка компонента: поиск по модификац�
   assert.ok(!rows[0].classList.contains('mod-row--hidden'));
   assert.equal(doc.nodes['mods-more'].classList.contains('is-visible'), false);
 });
+
+/* Поворот фото: кнопки в просмотре появляются у тех, кто может править
+ * карточку, а запрос уходит на общий маршрут /upload/rotate. */
+
+test('галерея: у редактора есть поворот фото, путь уходит без ?v', async () => {
+  const component = {
+    id: 11, article: 'А.3731.013', name: 'Фонарь', price: 100, is_active: true,
+    image_path: '/uploads/cover.jpg', images: [{ id: 1, image_path: '/uploads/cover.jpg' }],
+    modifications: [],
+  };
+  let opened = null;
+  const posted = [];
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage', {
+    api: {
+      get: async url => (url.endsWith('/documents') ? { data: [] } : component),
+      post: async (url, body) => { posted.push([url, body]); return { path: body.path }; },
+    },
+    globals: { Lightbox: { open: options => { opened = options; }, close: () => {} } },
+  });
+
+  await page.viewComponent(11);
+  page.viewComponentImage(0);
+  assert.equal(typeof opened.onRotate, 'function', 'редактор может повернуть фото');
+
+  const src = await opened.onRotate('/uploads/cover.jpg', 90, 0);
+  assert.deepEqual(posted[0], ['/upload/rotate', { path: '/uploads/cover.jpg', degrees: 90 }]);
+  assert.match(src, /^\/uploads\/cover\.jpg\?v=\d+$/);
+});
+
+test('галерея: без права на изменение карточки поворота нет', async () => {
+  const component = {
+    id: 12, article: 'А.3731.013', name: 'Фонарь', price: 100, is_active: true,
+    image_path: '/uploads/cover.jpg', images: [], modifications: [],
+  };
+  let opened = null;
+  const { page, sandbox } = loadPage('components-catalog', 'ComponentsCatalogPage', {
+    api: { get: async url => (url.endsWith('/documents') ? { data: [] } : component) },
+    globals: { Lightbox: { open: options => { opened = options; }, close: () => {} } },
+  });
+  sandbox.API.can = () => false;
+
+  await page.viewComponent(12);
+  page.viewComponentImage(0);
+  assert.equal(opened.onRotate, null);
+});
+
+test('галерея: фото модификации тоже можно повернуть', async () => {
+  const component = {
+    id: 13, article: 'А.3776.005Л', name: 'Фонарь задний', price: 2500, is_active: true,
+    images: [],
+    modifications: [{ id: 7, code: '01', name: 'левый', images: [{ image_path: '/uploads/m1.jpg' }] }],
+  };
+  let opened = null;
+  const posted = [];
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage', {
+    api: {
+      get: async url => (url.endsWith('/documents') ? { data: [] } : component),
+      post: async (url, body) => { posted.push([url, body]); return { path: body.path }; },
+    },
+    globals: { Lightbox: { open: options => { opened = options; }, close: () => {} } },
+  });
+
+  await page.viewComponent(13);
+  page.viewModImage(7, 0);
+  assert.equal(typeof opened.onRotate, 'function');
+
+  await opened.onRotate('/uploads/m1.jpg', -90, 0);
+  assert.deepEqual(posted[0], ['/upload/rotate', { path: '/uploads/m1.jpg', degrees: -90 }]);
+});

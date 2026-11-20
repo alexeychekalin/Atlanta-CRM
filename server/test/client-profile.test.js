@@ -320,3 +320,116 @@ test('карточка: компактная шапка — всё на виду
   assert.match(html, /ИНН 1326206104 \/ КПП 132601001/);
   assert.match(html, /, БИК: 044525225/);
 });
+
+test('карточка: в «Документах» видны Word, Excel и текст, форматы подписаны', async () => {
+  const { page, sandbox } = loadClientProfile({ isAdmin: true });
+  page.clientId = 1;
+
+  const now = new Date().toISOString();
+  sandbox.API.get = async () => ({
+    data: [
+      { id: 1, name: 'Договор поставки', file_type: 'docx', file_path: '/uploads/documents/a.docx', created_at: now, uploaded_by_name: 'Админ' },
+      { id: 2, name: 'Смета', file_type: 'xlsx', file_path: '/uploads/documents/a.xlsx', created_at: now, uploaded_by_name: 'Админ' },
+      { id: 3, name: 'Письмо', file_type: 'txt', file_path: '/uploads/documents/a.txt', created_at: now, uploaded_by_name: 'Админ' },
+      { id: 4, name: 'Презентация', file_type: 'pptx', file_path: '/uploads/documents/a.pptx', created_at: now, uploaded_by_name: 'Админ' },
+    ],
+  });
+
+  const container = { innerHTML: '' };
+  await page.loadDocuments(container);
+
+  assert.match(container.innerHTML, /PDF, Word, Excel, PowerPoint, текст и фото до 50 МБ/);
+  assert.match(container.innerHTML, /Договор поставки/);
+  assert.match(container.innerHTML, /📝/, 'Word с иконкой документа');
+  assert.match(container.innerHTML, /📊/, 'Excel с иконкой таблицы');
+  assert.match(container.innerHTML, /📃/, 'текст с иконкой листа');
+  assert.match(container.innerHTML, /📽️/, 'презентация с иконкой слайдов');
+});
+
+test('карточка: окно загрузки документа предлагает Word, Excel, PowerPoint и текст', () => {
+  const { page, sandbox } = loadClientProfile({ isAdmin: true });
+  page.clientId = 1;
+
+  let modalBody = '';
+  sandbox.Modal.open = ({ body }) => { modalBody = body; };
+  // _uploadFile после открытия окна вешает обработчики на поля
+  sandbox.document.getElementById = () => ({
+    addEventListener() {}, value: '', disabled: false, textContent: '', click() {},
+  });
+
+  page.uploadDocument();
+
+  assert.match(modalBody, /accept="\.pdf,\.txt,\.csv,\.md,\.rtf,\.doc,\.docx,\.xls,\.xlsx,\.ppt,\.pptx/);
+  assert.match(modalBody, /\.heic/, 'HEIC с телефона тоже можно');
+  assert.match(modalBody, /Word \(doc\/docx\), Excel \(xls\/xlsx\), PowerPoint \(pptx\)/);
+  assert.match(modalBody, /до 50 МБ/);
+});
+
+test('карточка: фото в «Документах» открывается в просмотре, остальное — новой вкладкой', async () => {
+  const { page, sandbox } = loadClientProfile({ isAdmin: true });
+  page.clientId = 1;
+
+  const now = new Date().toISOString();
+  const docs = [
+    { id: 1, name: 'Скан договора', file_type: 'jpg', file_path: '/uploads/documents/a.jpg', created_at: now, uploaded_by_name: 'Админ' },
+    { id: 2, name: 'Скан акта', file_type: 'heic', file_path: '/uploads/documents/b.jpg', created_at: now, uploaded_by_name: 'Админ' },
+    { id: 3, name: 'Договор', file_type: 'docx', file_path: '/uploads/documents/c.docx', created_at: now, uploaded_by_name: 'Админ' },
+  ];
+  sandbox.API.get = async () => ({ data: docs });
+
+  const container = { innerHTML: '' };
+  await page.loadDocuments(container);
+
+  const calls = [];
+  sandbox.Lightbox = { open: options => calls.push(options) };
+  const opened = [];
+  sandbox.window.open = (url) => opened.push(url);
+
+  page.viewDocument(1);
+  assert.equal(calls.length, 1, 'фото открылось в просмотре');
+  assert.deepEqual(calls[0].images, ['/uploads/documents/a.jpg', '/uploads/documents/b.jpg']);
+  assert.equal(calls[0].index, 0);
+  assert.equal(typeof calls[0].onRotate, 'function', 'админ может повернуть фото');
+
+  page.viewDocument(2);
+  assert.equal(calls[1].index, 1, 'второе фото листается со своей позиции');
+
+  page.viewDocument(3);
+  assert.deepEqual(opened, ['/uploads/documents/c.docx'], 'Word открывается новой вкладкой');
+});
+
+test('карточка: поворот фото документа сохраняется и обновляет список', async () => {
+  const { page, sandbox } = loadClientProfile({ isAdmin: true });
+  page.clientId = 1;
+
+  const posted = [];
+  sandbox.API.post = async (url, body) => { posted.push([url, body]); return { path: body.path }; };
+  const switched = [];
+  page.switchTab = tab => switched.push(tab);
+
+  const src = await page.rotateDocumentPhoto('/uploads/documents/a.jpg?v=1', 90);
+
+  assert.deepEqual(posted, [['/upload/rotate', { path: '/uploads/documents/a.jpg', degrees: 90 }]]);
+  assert.deepEqual(switched, ['documents']);
+  assert.match(src, /^\/uploads\/documents\/a\.jpg\?v=\d+$/);
+});
+
+test('карточка: без права на изменение фото открывается без кнопок поворота', async () => {
+  const { page, sandbox } = loadClientProfile({ isAdmin: false });
+  page.clientId = 1;
+
+  const now = new Date().toISOString();
+  sandbox.API.get = async () => ({
+    data: [{ id: 1, name: 'Скан', file_type: 'jpg', file_path: '/uploads/documents/a.jpg', created_at: now, uploaded_by_name: 'Админ' }],
+  });
+
+  const container = { innerHTML: '' };
+  await page.loadDocuments(container);
+
+  const calls = [];
+  sandbox.Lightbox = { open: options => calls.push(options) };
+  page.viewDocument(1);
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].onRotate, null);
+});

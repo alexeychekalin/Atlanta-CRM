@@ -7,8 +7,10 @@
  * Листать можно стрелками на экране, клавишами ←/→, свайпом на телефоне
  * и кликом по миниатюре. Esc и клик по фону закрывают только просмотр.
  *
- * Использование:
- *   Lightbox.open({ images: ['/uploads/a.jpg', '/uploads/b.jpg'], index: 1, title: 'Фонарь' });
+ * Поворот: если передан onRotate, в шапке появляются кнопки ↺ ↻.
+ * Обработчик получает (src, delta) и возвращает новый src (с ?v=… для сброса
+ * кэша) либо ничего — тогда картинка перезагружается по тому же адресу.
+ *   Lightbox.open({ images, index, title, onRotate: async (src, delta) => {…} });
  */
 const Lightbox = {
   overlay: null,
@@ -26,6 +28,8 @@ const Lightbox = {
   isOpen: false,
   lastFocus: null,
   _touchStart: null,
+  onRotate: null,
+  rotating: false,
 
   /** Зацикленный индекс: -1 у первого фото — последнее, и наоборот. */
   wrap(index, length) {
@@ -62,7 +66,32 @@ const Lightbox = {
     closeBtn.innerHTML = '&times;';
     closeBtn.addEventListener('click', () => this.close());
 
-    tools.append(counterEl, closeBtn);
+    const rotateLeft = document.createElement('button');
+    rotateLeft.type = 'button';
+    rotateLeft.className = 'lightbox__tool lightbox__rotate';
+    rotateLeft.setAttribute('aria-label', 'Повернуть влево');
+    rotateLeft.title = 'Повернуть влево';
+    rotateLeft.innerHTML = '&#8634;';
+    rotateLeft.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.rotate(-90);
+    });
+
+    const rotateRight = document.createElement('button');
+    rotateRight.type = 'button';
+    rotateRight.className = 'lightbox__tool lightbox__rotate';
+    rotateRight.setAttribute('aria-label', 'Повернуть вправо');
+    rotateRight.title = 'Повернуть вправо';
+    rotateRight.innerHTML = '&#8635;';
+    rotateRight.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.rotate(90);
+    });
+
+    rotateLeft.hidden = true;
+    rotateRight.hidden = true;
+
+    tools.append(counterEl, rotateLeft, rotateRight, closeBtn);
     top.append(titleEl, tools);
 
     const stage = document.createElement('div');
@@ -142,6 +171,51 @@ const Lightbox = {
     this.stageEl = stage;
     this.prevBtn = prevBtn;
     this.nextBtn = nextBtn;
+    this.rotateLeftBtn = rotateLeft;
+    this.rotateRightBtn = rotateRight;
+  },
+
+  /** Показывает кнопки поворота только когда страница разрешила правку. */
+  _updateRotateButtons() {
+    const visible = Boolean(this.onRotate);
+    [this.rotateLeftBtn, this.rotateRightBtn].forEach((button) => {
+      if (!button) return;
+      button.hidden = !visible;
+      button.disabled = !visible || this.rotating;
+    });
+  },
+
+  /**
+   * Поворот текущего фото. onRotate сохраняет файл на сервере; после ответа
+   * картинка перезагружается по новому адресу (?v=…), миниатюра обновляется
+   * тоже — иначе в ленте осталось бы старое положение.
+   */
+  async rotate(delta) {
+    if (!this.onRotate || this.rotating) return;
+    const item = this.images[this.index];
+    if (!item) return;
+
+    const position = this.index;
+    this.rotating = true;
+    this._updateRotateButtons();
+    this.overlay.classList.add('lightbox--busy');
+    try {
+      const next = await this.onRotate(item.src, delta, position);
+      const src = typeof next === 'string' && next
+        ? next
+        : `${String(item.src).split('?')[0]}?v=${Date.now()}`;
+      item.src = src;
+      // пока шёл запрос, могли уйти на другое фото — миниатюру правим по позиции
+      const thumbButton = this.thumbsEl && this.thumbsEl.children[position];
+      if (thumbButton && thumbButton.children[0]) thumbButton.children[0].src = src;
+      this.show(this.index);
+    } catch (err) {
+      if (typeof Toast !== 'undefined') Toast.error(err.message || 'Не удалось повернуть фото');
+    } finally {
+      this.rotating = false;
+      this.overlay.classList.remove('lightbox--busy');
+      this._updateRotateButtons();
+    }
   },
 
   _bindSwipe(stage) {
@@ -162,7 +236,7 @@ const Lightbox = {
   },
 
   /** images — массив путей или объектов { src, caption }. */
-  open({ images = [], index = 0, title = '' } = {}) {
+  open({ images = [], index = 0, title = '', onRotate = null } = {}) {
     const list = images
       .map((item) => (typeof item === 'string' ? { src: item, caption: '' } : item))
       .filter((item) => item && item.src);
@@ -171,6 +245,8 @@ const Lightbox = {
     this.ensure();
     this.images = list;
     this.title = title || '';
+    this.onRotate = typeof onRotate === 'function' ? onRotate : null;
+    this.rotating = false;
     this.index = this.wrap(Number(index) || 0, list.length);
     this.lastFocus = document.activeElement;
     this.isOpen = true;
@@ -181,6 +257,7 @@ const Lightbox = {
 
     this._renderThumbs();
     this.show(this.index);
+    this._updateRotateButtons();
 
     this.overlay.classList.add('is-open');
     document.body.classList.add('lightbox-open');
@@ -256,6 +333,7 @@ const Lightbox = {
     this.overlay.classList.remove('is-open');
     document.body.classList.remove('lightbox-open');
     this.imageEl.removeAttribute('src');
+    this.onRotate = null;
     if (this.lastFocus && this.lastFocus.focus) {
       this.lastFocus.focus();
     }

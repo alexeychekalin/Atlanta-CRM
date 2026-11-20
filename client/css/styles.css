@@ -1740,6 +1740,39 @@ body.lightbox-open {
   padding: 4px 11px;
 }
 
+/* Кнопки-инструменты шапки: поворот фото */
+.lightbox__tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.lightbox__tool:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.22);
+  border-color: var(--border-hover);
+}
+
+.lightbox__tool:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Пока фото поворачивается — лёгкое затемнение, чтобы не жали второй раз */
+.lightbox--busy .lightbox__image {
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+
 .lightbox__close {
   display: flex;
   align-items: center;

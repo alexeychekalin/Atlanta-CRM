@@ -563,6 +563,8 @@ const ComponentsCatalogPage = {
       });
       this._photos = photos;
       this._photoTitle = comp.name;
+      this._photoComponentId = comp.id;
+      this._photoCanEdit = canEdit;
 
       // Фото модификаций: у каждой свой набор для листания
       const modPhotos = {};
@@ -1344,10 +1346,14 @@ const ComponentsCatalogPage = {
     const images = (this._modPhotos && this._modPhotos[modId]) || [];
     if (!images.length) return;
     const code = this._modCodes && this._modCodes[modId];
+    const canEdit = API.can('components', 'edit');
     Lightbox.open({
       images,
       index,
       title: code ? `Фото модификации ${code}` : 'Фото модификации',
+      onRotate: canEdit
+        ? (src, delta) => this.rotatePhoto(src, delta, this._viewCompId)
+        : null,
     });
   },
 
@@ -1381,7 +1387,30 @@ const ComponentsCatalogPage = {
   viewComponentImage(index = 0) {
     const images = this._photos || [];
     if (!images.length) return;
-    Lightbox.open({ images, index, title: this._photoTitle || 'Фото изделия' });
+    Lightbox.open({
+      images,
+      index,
+      title: this._photoTitle || 'Фото изделия',
+      onRotate: this._photoCanEdit
+        ? (src, delta) => this.rotatePhoto(src, delta, this._photoComponentId)
+        : null,
+    });
+  },
+
+  /**
+   * Поворот фото на сервере. Файл перезаписывается на месте, поэтому после
+   * ответа перерисовываем карточку (обложка и миниатюры смотрят на тот же
+   * адрес) и возвращаем новый src с ?v=, чтобы просмотр не показал старый кэш.
+   */
+  async rotatePhoto(src, delta, componentId) {
+    const base = String(src).split('?')[0];
+    const res = await API.post('/upload/rotate', { path: base, degrees: delta });
+    Toast.success('Положение сохранено');
+    if (componentId) {
+      this.viewComponent(componentId);
+      this.loadAllComponents().then(() => this.filterAndRender()).catch(() => {});
+    }
+    return `${res.path}?v=${Date.now()}`;
   },
 
   async setCoverImage(componentId, imageId) {

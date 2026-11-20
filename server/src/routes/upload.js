@@ -8,6 +8,13 @@ const { hasValidSignature } = require('../utils/files');
 const { adminOnly } = require('../middleware/role');
 const { ALLOWED_EXTENSIONS: LIBRARY_EXTENSIONS } = require('../services/document-library');
 const { isHeicExtension, convertHeicQueued } = require('../services/heic');
+const {
+  isRotatablePath,
+  rotatePhotoFile,
+  autoOrientPhoto,
+} = require('../services/photo');
+const { sectionAllowed } = require('../middleware/access');
+const { normalizeUploadPath, safeUploadPath } = require('../utils/files');
 
 const router = express.Router();
 
@@ -24,9 +31,10 @@ function decodeFilename(name) {
 const uploadsDir = path.join(__dirname, '../../uploads');
 const imagesDir = path.join(uploadsDir, 'images');
 const drawingsDir = path.join(uploadsDir, 'drawings');
+const documentsDir = path.join(uploadsDir, 'documents');
 const libraryDir = path.join(uploadsDir, 'library');
 
-[uploadsDir, imagesDir, drawingsDir, libraryDir].forEach(dir => {
+[uploadsDir, imagesDir, drawingsDir, documentsDir, libraryDir].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
@@ -66,6 +74,16 @@ const compDocFilter = extensionFilter(
   'Допустимые форматы: PDF, JPG, PNG, HEIC'
 );
 
+// Документы в карточку клиента: договоры, счета, письма, презентации и фото.
+// Раздел «Документы» карточки — не только сканы: люди кладут туда Word, Excel,
+// PowerPoint и обычный текст, поэтому формат не сужаем до PDF и картинок.
+const clientDocFilter = extensionFilter(
+  ['.pdf', '.txt', '.csv', '.md', '.rtf',
+    '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods',
+    '.jpg', '.jpeg', '.png', '.webp', '.gif', '.tif', '.tiff', '.heic', '.heif'],
+  'Допустимые форматы: PDF, Word, Excel, PowerPoint, текст, JPG, PNG, HEIC'
+);
+
 // Админские файлы клиента: документы, таблицы, архивы, чертежи.
 // HTML/SVG/JS и исполняемые файлы не принимаем — они исполняются в браузере.
 const clientFileFilter = extensionFilter(
@@ -87,6 +105,12 @@ const uploadDrawing = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
 });
 
+const uploadClientDoc = multer({
+  storage: buildStorage(documentsDir, 'doc'),
+  fileFilter: clientDocFilter,
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
+
 // --- Аватар клиента ---
 const avatarsDir = path.join(uploadsDir, 'avatars');
 if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
@@ -98,11 +122,8 @@ const uploadAvatar = multer({
 });
 
 // --- Документы компонентов (сертификаты, инфо) ---
-const compDocsDir = path.join(uploadsDir, 'documents');
-if (!fs.existsSync(compDocsDir)) fs.mkdirSync(compDocsDir, { recursive: true });
-
 const uploadCompDoc = multer({
-  storage: buildStorage(compDocsDir, 'doc'),
+  storage: buildStorage(documentsDir, 'doc'),
   fileFilter: compDocFilter,
   limits: { fileSize: 20 * 1024 * 1024 },
 });
@@ -179,6 +200,27 @@ async function convertHeicUpload(req, res, next) {
   }
 }
 
+/**
+ * EXIF-ориентация → пиксели. После HEIC-конвертации метаданные теряются,
+ * поэтому фото с телефона иначе показывается лёжа. Перекодируем только
+ * файлы, у которых ориентация действительно задана.
+ */
+async function fixPhotoOrientation(req, res, next) {
+  if (!req.file) return next();
+  try {
+    const changed = await autoOrientPhoto(req.file.path);
+    if (changed) {
+      const stat = await fs.promises.stat(req.file.path);
+      req.file.size = stat.size;
+      req.file.orientationFixed = true;
+    }
+    return next();
+  } catch {
+    // Ориентация — не критично: файл уже принят и проверен
+    return next();
+  }
+}
+
 const canEditComponents = requireAnyPermission([['components', 'edit']]);
 const canEditClients = requireAnyPermission([['clients', 'edit']]);
 const canEditDocuments = requireAnyPermission([['documents', 'edit']]);
@@ -218,37 +260,98 @@ function uploadedFileType(req) {
 }
 
 // POST /api/upload/image — фото компонентов и модификаций
-router.post('/image', auth, canEditComponents, uploadImage.single('file'), verifyUploadedFile, convertHeicUpload, (req, res) => {
+router.post('/image', auth, canEditComponents, uploadImage.single('file'), verifyUploadedFile, convertHeicUpload, fixPhotoOrientation, (req, res) => {
   return fileResponse(req, res, 'images');
 });
 
 // POST /api/upload/avatar — аватар клиента
-router.post('/avatar', auth, canEditClients, uploadAvatar.single('file'), verifyUploadedFile, convertHeicUpload, (req, res) => {
+router.post('/avatar', auth, canEditClients, uploadAvatar.single('file'), verifyUploadedFile, convertHeicUpload, fixPhotoOrientation, (req, res) => {
   return fileResponse(req, res, 'avatars');
 });
 
 // POST /api/upload/drawing — чертежи, версии согласований, счета
-router.post('/drawing', auth, canUploadDrawing, uploadDrawing.single('file'), verifyUploadedFile, convertHeicUpload, (req, res) => {
+router.post('/drawing', auth, canUploadDrawing, uploadDrawing.single('file'), verifyUploadedFile, convertHeicUpload, fixPhotoOrientation, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
   return fileResponse(req, res, 'drawings', { file_type: uploadedFileType(req) });
 });
 
 // POST /api/upload/component-doc — сертификаты и информационные документы
-router.post('/component-doc', auth, canEditComponents, uploadCompDoc.single('file'), verifyUploadedFile, convertHeicUpload, (req, res) => {
+router.post('/component-doc', auth, canEditComponents, uploadCompDoc.single('file'), verifyUploadedFile, convertHeicUpload, fixPhotoOrientation, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
   return fileResponse(req, res, 'documents', { file_type: uploadedFileType(req) });
 });
 
 // POST /api/upload/client-file — произвольные файлы в карточку клиента (только админ)
-router.post('/client-file', auth, adminOnly, uploadClientFile.single('file'), verifyUploadedFile, convertHeicUpload, (req, res) => {
+router.post('/client-file', auth, adminOnly, uploadClientFile.single('file'), verifyUploadedFile, convertHeicUpload, fixPhotoOrientation, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
   return fileResponse(req, res, 'files', { file_type: uploadedFileType(req) });
 });
 
 // POST /api/upload/library-file — файл в библиотеку документов (папки админа)
-router.post('/library-file', auth, canEditDocuments, uploadLibraryFile.single('file'), verifyUploadedFile, convertHeicUpload, (req, res) => {
+router.post('/library-file', auth, canEditDocuments, uploadLibraryFile.single('file'), verifyUploadedFile, convertHeicUpload, fixPhotoOrientation, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
   return fileResponse(req, res, 'library', { file_type: uploadedFileType(req) });
+});
+
+// POST /api/upload/client-doc — документы в карточку клиента (Word, Excel, текст…)
+router.post('/client-doc', auth, canEditClients, uploadClientDoc.single('file'), verifyUploadedFile, convertHeicUpload, fixPhotoOrientation, (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+  return fileResponse(req, res, 'documents', { file_type: uploadedFileType(req) });
+});
+
+/**
+ * Кто может менять фото в каждой папке загрузок. Поворот перезаписывает
+ * файл на месте, поэтому права те же, что и на загрузку в этот раздел.
+ * В одной папке лежат файлы разных разделов (uploads/documents — и
+ * сертификаты компонентов, и договоры клиентов), поэтому правил может быть
+ * несколько: достаточно любого.
+ */
+const ROTATE_RULES = [
+  { prefix: '/uploads/images/', sections: [['components', 'edit']] },
+  { prefix: '/uploads/documents/', sections: [['components', 'edit'], ['clients', 'edit']] },
+  { prefix: '/uploads/avatars/', sections: [['clients', 'edit']] },
+  { prefix: '/uploads/drawings/', sections: [['calculator', 'edit'], ['clients', 'edit'], ['orders', 'edit'], ['drawings', 'edit']] },
+  { prefix: '/uploads/library/', sections: [['documents', 'edit']] },
+  { prefix: '/uploads/files/', adminOnly: true },
+];
+
+function canRotatePath(user, filePath) {
+  const rule = ROTATE_RULES.find(item => filePath.startsWith(item.prefix));
+  if (!rule || !user) return false;
+  if (rule.adminOnly) return user.role === 'admin';
+  return rule.sections.some(([section, action]) => sectionAllowed(user, section, action));
+}
+
+// POST /api/upload/rotate — повернуть фото на 90° и сохранить положение
+router.post('/rotate', auth, async (req, res) => {
+  try {
+    const { path: rawPath, degrees } = req.body || {};
+
+    const filePath = normalizeUploadPath(rawPath);
+    if (!filePath) return res.status(400).json({ error: 'Недопустимый путь к файлу' });
+    if (!canRotatePath(req.user, filePath)) {
+      return res.status(403).json({ error: 'Недостаточно прав для изменения этого файла' });
+    }
+    if (!isRotatablePath(filePath)) {
+      return res.status(400).json({ error: 'Этот формат нельзя повернуть' });
+    }
+
+    const absolute = safeUploadPath(filePath);
+    if (!absolute || !fs.existsSync(absolute)) {
+      return res.status(404).json({ error: 'Файл не найден' });
+    }
+
+    const result = await rotatePhotoFile(absolute, degrees);
+    return res.json({
+      path: filePath,
+      width: result.width,
+      height: result.height,
+      size: result.size,
+      rotated_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
+  }
 });
 
 // Middleware обработки ошибок multer

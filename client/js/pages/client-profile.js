@@ -1,4 +1,11 @@
 /* Client Profile Page — Карточка клиента */
+/** Форматы документов в карточке клиента — те же, что принимает /upload/client-doc. */
+const DOCUMENT_ACCEPT = '.pdf,.txt,.csv,.md,.rtf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,'
+  + '.jpg,.jpeg,.png,.webp,.gif,.tif,.tiff,.heic,.heif';
+
+/** Расширения, которые показываем в просмотре с поворотом, а не ссылкой. */
+const IMAGE_DOC_TYPES = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif']);
+
 const ClientProfilePage = {
   clientId: null,
   client: null,
@@ -1221,26 +1228,32 @@ const ClientProfilePage = {
       const res = await API.get(`/clients/${this.clientId}/documents`);
       const docs = res.data;
 
+      // Список живёт до следующей отрисовки: его листает просмотр фото
+      this._documents = docs;
+      this._docImages = docs.filter(d => d.file_path && this.isImageDoc(d));
+
       container.innerHTML = `
         ${canEdit ? `
           <div class="toolbar">
-            <div></div>
+            <div class="form-hint" style="margin:0">PDF, Word, Excel, PowerPoint, текст и фото до 50 МБ</div>
             <button class="btn btn-primary btn-sm" onclick="ClientProfilePage.uploadDocument()">📎 Загрузить документ</button>
           </div>
         ` : ''}
-        ${docs.length === 0 ? Table.emptyState('Нет документов') : `
+        ${docs.length === 0 ? Table.emptyState('Нет документов — загрузите PDF, Word, Excel, презентацию, текст или фото') : `
           <div class="file-grid">
             ${docs.map(d => `
-              <div class="file-card">
-                <div class="file-icon">${this.getFileIcon(d.file_type)}</div>
+              <div class="file-card"${this.isImageDoc(d) ? ` onclick="ClientProfilePage.viewDocument(${d.id})" style="cursor:pointer"` : ''}>
+                <div class="file-icon">${this.isImageDoc(d)
+                  ? `<img src="${esc(d.file_path)}" alt="" loading="lazy" style="width:40px;height:40px;object-fit:cover;border-radius:6px">`
+                  : this.getFileIcon(d.file_type)}</div>
                 <div class="file-info">
                   <div class="file-name">${esc(d.name)}</div>
                   ${d.description ? `<div class="file-desc">${esc(d.description)}</div>` : ''}
                   <div class="file-meta">${new Date(d.created_at).toLocaleDateString('ru-RU')} · ${esc(d.uploaded_by_name)}</div>
                 </div>
                 <div class="file-actions">
-                  <a href="${esc(d.file_path)}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">Открыть</a>
-                  ${canDelete ? `<button class="btn btn-icon btn-sm btn-danger" onclick="ClientProfilePage.deleteDocument(${d.id})">✕</button>` : ''}
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); ClientProfilePage.viewDocument(${d.id})">Открыть</button>
+                  ${canDelete ? `<button class="btn btn-icon btn-sm btn-danger" onclick="event.stopPropagation(); ClientProfilePage.deleteDocument(${d.id})">✕</button>` : ''}
                 </div>
               </div>
             `).join('')}
@@ -1248,6 +1261,49 @@ const ClientProfilePage = {
         `}
       `;
     } catch (err) { container.innerHTML = `<div class="empty-state"><div class="empty-state-text">${err.message}</div></div>`; }
+  },
+
+  isImageDoc(doc) {
+    return Boolean(doc) && IMAGE_DOC_TYPES.has(String(doc.file_type || '').toLowerCase());
+  },
+
+  /**
+   * Открыть документ. Фото — в просмотр (с поворотом, если есть права),
+   * остальные форматы — в новой вкладке: браузер сам отдаст файл Word/Excel
+   * на скачивание или откроет PDF.
+   */
+  viewDocument(id) {
+    const docs = this._documents || [];
+    const file = docs.find(d => d.id === id);
+    if (!file || !file.file_path) return;
+
+    if (!this.isImageDoc(file)) {
+      window.open(file.file_path, '_blank', 'noopener');
+      return;
+    }
+    if (typeof Lightbox === 'undefined') {
+      window.open(file.file_path, '_blank', 'noopener');
+      return;
+    }
+
+    const images = (this._docImages || []).map(d => d.file_path);
+    const index = Math.max(0, images.indexOf(file.file_path));
+    const canEdit = API.can('clients', 'edit');
+    Lightbox.open({
+      images,
+      index,
+      title: file.name,
+      onRotate: canEdit ? (src, delta) => this.rotateDocumentPhoto(src, delta) : null,
+    });
+  },
+
+  /** Поворот фото документа: файл перезаписывается, список перечитывается. */
+  async rotateDocumentPhoto(src, delta) {
+    const path = String(src).split('?')[0];
+    await API.post('/upload/rotate', { path, degrees: delta });
+    Toast.success('Положение сохранено');
+    this.switchTab('documents');
+    return `${path}?v=${Date.now()}`;
   },
 
   // =================== ФАЙЛЫ (ТОЛЬКО АДМИН) ===================
@@ -2015,18 +2071,22 @@ const ClientProfilePage = {
 
   // Загрузка документа
   uploadDocument() {
-    this._uploadFile('Загрузить документ', 'drawing', async (fileRes, name, desc) => {
+    this._uploadFile('Загрузить документ', 'client-doc', async (fileRes, name, desc) => {
       await API.post(`/clients/${this.clientId}/documents`, {
         name, file_path: fileRes.path, file_type: fileRes.file_type || fileRes.path.split('.').pop(), description: desc,
       });
       Toast.success('Документ загружен');
       Modal.close();
       this.switchTab('documents');
+    }, {
+      accept: DOCUMENT_ACCEPT,
+      hint: 'PDF, Word (doc/docx), Excel (xls/xlsx), PowerPoint (pptx), текст (txt, csv, md, rtf), фото (в том числе HEIC) — до 50 МБ',
     });
   },
 
   _uploadFile(title, uploadType, onSave, options = {}) {
     const nameFromFile = !!options.nameFromFile;
+    const accept = options.accept ? ` accept="${options.accept}"` : '';
     const nameField = nameFromFile
       ? `<div id="upload-name-hint" style="padding:8px 12px;background:var(--bg-tertiary);border-radius:8px;font-size:0.85rem;color:var(--text-secondary)">
            Название чертежа: <strong id="upload-name-display">выберите файл</strong>
@@ -2050,8 +2110,9 @@ const ClientProfilePage = {
           <label>Файл *</label>
           <div class="upload-zone" id="upload-file-zone" style="padding:20px;text-align:center">
             <div id="upload-file-status" style="color:var(--text-muted)">📎 Нажмите для выбора файла</div>
-            <input type="file" id="upload-file-input" style="display:none">
+            <input type="file" id="upload-file-input"${accept} style="display:none">
           </div>
+          ${options.hint ? `<div class="form-hint" style="margin-top:6px">${esc(options.hint)}</div>` : ''}
         </div>
       `,
       footer: `
@@ -2110,7 +2171,17 @@ const ClientProfilePage = {
   },
 
   getFileIcon(type) {
-    const icons = { pdf: '📄', jpg: '🖼️', jpeg: '🖼️', png: '🖼️', webp: '🖼️', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊' };
-    return icons[type] || '📁';
+    const icons = {
+      pdf: '📄',
+      jpg: '🖼️', jpeg: '🖼️', png: '🖼️', webp: '🖼️', gif: '🖼️', heic: '🖼️', heif: '🖼️',
+      tif: '🖼️', tiff: '🖼️',
+      doc: '📝', docx: '📝', odt: '📝', rtf: '📝',
+      xls: '📊', xlsx: '📊', ods: '📊',
+      ppt: '📽️', pptx: '📽️',
+      txt: '📃', csv: '📃', md: '📃',
+      zip: '🗜️', rar: '🗜️', '7z': '🗜️',
+      dwg: '📐', dxf: '📐',
+    };
+    return icons[String(type || '').toLowerCase()] || '📁';
   },
 };

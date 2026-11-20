@@ -172,3 +172,111 @@ test('пустой список не открывает просмотр', () =>
   assert.equal(lightbox.isOpen, false);
   assert.equal(lightbox.overlay, null);
 });
+
+/* Поворот фото: кнопки появляются только там, где страница разрешила правку,
+ * а после ответа сервера картинка и миниатюра перезагружаются без старого кэша. */
+
+test('без обработчика поворота кнопки скрыты', () => {
+  const { lightbox } = loadLightbox();
+  lightbox.open({ images: ['/a.jpg'], index: 0 });
+
+  assert.equal(lightbox.rotateLeftBtn.hidden, true);
+  assert.equal(lightbox.rotateRightBtn.hidden, true);
+});
+
+test('с обработчиком поворота кнопки видны', () => {
+  const { lightbox } = loadLightbox();
+  lightbox.open({ images: ['/a.jpg'], index: 0, onRotate: async () => {} });
+
+  assert.equal(lightbox.rotateLeftBtn.hidden, false);
+  assert.equal(lightbox.rotateRightBtn.hidden, false);
+  assert.equal(lightbox.rotateLeftBtn.disabled, false);
+});
+
+test('поворот передаёт текущий src и дельту, картинка перезагружается с ?v=', async () => {
+  const { lightbox } = loadLightbox();
+  const calls = [];
+  lightbox.open({
+    images: ['/uploads/images/a.jpg', '/uploads/images/b.jpg'],
+    index: 0,
+    onRotate: async (src, delta) => { calls.push([src, delta]); },
+  });
+
+  await lightbox.rotate(90);
+
+  assert.deepEqual(calls, [['/uploads/images/a.jpg', 90]]);
+  assert.match(lightbox.imageEl.src, /^\/uploads\/images\/a\.jpg\?v=\d+$/);
+  assert.equal(lightbox.images[0].src, lightbox.imageEl.src, 'новый адрес сохранён в списке фото');
+  // листание после поворота работает с обновлённым адресом
+  lightbox.go(1);
+  assert.equal(lightbox.imageEl.src, '/uploads/images/b.jpg');
+  lightbox.go(-1);
+  assert.match(lightbox.imageEl.src, /a\.jpg\?v=/);
+});
+
+test('если сервер вернул адрес — используется он', async () => {
+  const { lightbox } = loadLightbox();
+  lightbox.open({
+    images: ['/uploads/images/a.jpg'],
+    index: 0,
+    onRotate: async () => '/uploads/images/a.jpg?v=42',
+  });
+
+  await lightbox.rotate(-90);
+  assert.equal(lightbox.imageEl.src, '/uploads/images/a.jpg?v=42');
+});
+
+test('поворот листает миниатюру вместе с большим фото', async () => {
+  const { lightbox } = loadLightbox();
+  lightbox.open({
+    images: ['/a.jpg', '/b.jpg'],
+    index: 1,
+    onRotate: async () => {},
+  });
+
+  await lightbox.rotate(90);
+  assert.match(lightbox.thumbsEl.children[1].children[0].src, /^\/b\.jpg\?v=\d+$/);
+  assert.equal(lightbox.thumbsEl.children[0].children[0].src, '/a.jpg', 'чужая миниатюра не изменилась');
+});
+
+test('ошибка поворота не ломает просмотр', async () => {
+  const { lightbox } = loadLightbox();
+  lightbox.open({
+    images: ['/a.jpg'],
+    index: 0,
+    onRotate: async () => { throw new Error('Недостаточно прав'); },
+  });
+
+  await assert.doesNotReject(() => lightbox.rotate(90));
+  assert.equal(lightbox.imageEl.src, '/a.jpg', 'старое фото осталось на месте');
+  assert.equal(lightbox.rotating, false, 'кнопки снова доступны');
+  assert.equal(lightbox.isOpen, true, 'просмотр не закрылся');
+});
+
+test('во время поворота повторный клик игнорируется', async () => {
+  const { lightbox } = loadLightbox();
+  let calls = 0;
+  let release;
+  lightbox.open({
+    images: ['/a.jpg'],
+    index: 0,
+    onRotate: () => { calls += 1; return new Promise((resolve) => { release = resolve; }); },
+  });
+
+  const first = lightbox.rotate(90);
+  const second = lightbox.rotate(90);
+  assert.equal(calls, 1, 'второй запрос не отправлен');
+  assert.equal(lightbox.rotateRightBtn.disabled, true);
+
+  release();
+  await Promise.all([first, second]);
+  assert.equal(lightbox.rotateRightBtn.disabled, false);
+});
+
+test('закрытие просмотра снимает обработчик поворота', () => {
+  const { lightbox } = loadLightbox();
+  lightbox.open({ images: ['/a.jpg'], index: 0, onRotate: async () => {} });
+  lightbox.close();
+
+  assert.equal(lightbox.onRotate, null);
+});
