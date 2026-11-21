@@ -340,10 +340,11 @@ test('карточка: в «Документах» видны Word, Excel и т
 
   assert.match(container.innerHTML, /PDF, Word, Excel, PowerPoint, текст и фото до 50 МБ/);
   assert.match(container.innerHTML, /Договор поставки/);
-  assert.match(container.innerHTML, /📝/, 'Word с иконкой документа');
-  assert.match(container.innerHTML, /📊/, 'Excel с иконкой таблицы');
-  assert.match(container.innerHTML, /📃/, 'текст с иконкой листа');
-  assert.match(container.innerHTML, /📽️/, 'презентация с иконкой слайдов');
+  // формат подписан словом на плашке, а не эмодзи разного размера
+  assert.match(container.innerHTML, /doc-row__kind--blue">DOC</, 'Word помечен DOC');
+  assert.match(container.innerHTML, /doc-row__kind--green">XLS</, 'Excel помечен XLS');
+  assert.match(container.innerHTML, /doc-row__kind--gray">TXT</, 'текст помечен TXT');
+  assert.match(container.innerHTML, /doc-row__kind--orange">PPT</, 'презентация помечена PPT');
 });
 
 test('карточка: окно загрузки документа предлагает Word, Excel, PowerPoint и текст', () => {
@@ -484,4 +485,112 @@ test('карточка: заметка к расчёту видна в спис�
   await page.loadDrawings(container);
 
   assert.match(container.innerHTML, /📝 снизить цену на 5% при следующем заказе/);
+});
+
+test('документы: фото — миниатюрами, остальные файлы — компактными строками', async () => {
+  const { page, sandbox } = loadClientProfile({ isAdmin: true });
+  page.clientId = 1;
+
+  const now = new Date().toISOString();
+  sandbox.API.get = async () => ({
+    data: [
+      { id: 1, name: 'Фото со склада', file_type: 'jpg', file_path: '/uploads/documents/1.jpg', created_at: now, uploaded_by_name: 'Админ' },
+      { id: 2, name: 'Скан накладной', file_type: 'png', file_path: '/uploads/documents/2.png', created_at: now, uploaded_by_name: 'Админ' },
+      { id: 3, name: 'Договор поставки', file_type: 'pdf', file_path: '/uploads/documents/3.pdf', created_at: now, uploaded_by_name: 'Админ', description: 'Основной договор' },
+    ],
+  });
+
+  const container = { innerHTML: '' };
+  await page.loadDocuments(container);
+  const html = container.innerHTML;
+
+  // фото — только миниатюры, документы — только строки
+  assert.equal((html.match(/class="doc-thumb"/g) || []).length, 2, 'два фото в сетке миниатюр');
+  assert.equal((html.match(/class="doc-row"/g) || []).length, 1, 'документ строкой');
+  // миниатюры идут отдельным блоком перед документами
+  const thumbsBlock = html.slice(html.indexOf('doc-thumbs'), html.indexOf('doc-list'));
+  assert.match(thumbsBlock, /<img src="\/uploads\/documents\/1\.jpg"/);
+  assert.match(thumbsBlock, /<img src="\/uploads\/documents\/2\.png"/);
+  assert.ok(!thumbsBlock.includes('Договор поставки'), 'документы не попадают в сетку фото');
+  assert.match(html, /viewDocument\(1\)/, 'клик по миниатюре открывает просмотр');
+
+  // в строках нет раздутых карточек старого вида
+  assert.doesNotMatch(html, /file-card|file-grid/);
+
+  // название, описание и дата на месте
+  assert.match(html, /Договор поставки/);
+  assert.match(html, /Основной договор/);
+  assert.match(html, /doc-row__meta">\d{2}\.\d{2}\.\d{4} · Админ</);
+
+  // счётчики в заголовках блоков
+  assert.match(html, /Фотографии <span class="doc-count">2</);
+  assert.match(html, /Документы <span class="doc-count">1</);
+});
+
+test('документы: без права удаления крестика нет, но открыть можно', async () => {
+  const { page, sandbox } = loadClientProfile({ isAdmin: false }); // can() → false
+  page.clientId = 1;
+  sandbox.API.get = async () => ({
+    data: [{ id: 7, name: 'Смета', file_type: 'xlsx', file_path: '/uploads/documents/7.xlsx', created_at: new Date().toISOString(), uploaded_by_name: 'Админ' }],
+  });
+
+  const container = { innerHTML: '' };
+  await page.loadDocuments(container);
+  assert.match(container.innerHTML, /viewDocument\(7\)/);
+  assert.doesNotMatch(container.innerHTML, /deleteDocument\(7\)/);
+});
+
+test('fileKind: подписи и цвета для форматов', () => {
+  const { page } = loadClientProfile({ isAdmin: true });
+  assert.deepEqual(page.fileKind('PDF'), { ext: 'pdf', label: 'PDF', tone: 'red' });
+  assert.deepEqual(page.fileKind('docx'), { ext: 'docx', label: 'DOC', tone: 'blue' });
+  assert.deepEqual(page.fileKind('xlsx'), { ext: 'xlsx', label: 'XLS', tone: 'green' });
+  assert.deepEqual(page.fileKind('png'), { ext: 'png', label: 'IMG', tone: 'teal' });
+  assert.deepEqual(page.fileKind('dwg'), { ext: 'dwg', label: 'CAD', tone: 'amber' });
+  assert.deepEqual(page.fileKind(''), { ext: '', label: 'FILE', tone: 'gray' });
+  assert.deepEqual(page.fileKind(null), { ext: '', label: 'FILE', tone: 'gray' });
+});
+
+test('файлы клиента: тоже компактные строки с размером', async () => {
+  const { page, sandbox } = loadClientProfile({ isAdmin: true });
+  page.clientId = 1;
+  sandbox.API.get = async () => ({
+    data: [{
+      id: 5, name: 'Архив за март', file_type: 'zip', file_path: '/uploads/files/5.zip',
+      file_size: 3 * 1024 * 1024, comment: 'Закрывающие документы',
+      created_at: new Date().toISOString(), uploaded_by_name: 'Админ',
+    }],
+  });
+
+  const container = { innerHTML: '' };
+  await page.loadClientFiles(container);
+  const html = container.innerHTML;
+
+  assert.match(html, /doc-row__kind--violet">ZIP</);
+  assert.match(html, /Архив за март/);
+  assert.match(html, /Закрывающие документы/);
+  assert.match(html, /3\.0 МБ/);
+  assert.match(html, /renameClientFile\(5\)/);
+  assert.match(html, /deleteClientFile\(5\)/);
+  assert.doesNotMatch(html, /file-card|file-grid/);
+});
+
+test('стили: компактные строки и сетка миниатюр, старых карточек нет', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const css = fs.readFileSync(path.join(__dirname, '../../client/css/styles.css'), 'utf8');
+
+  for (const cls of ['.doc-thumbs', '.doc-thumb', '.doc-list', '.doc-row', '.doc-row__kind', '.doc-row__name', '.doc-row__meta', '.doc-row__acts']) {
+    assert.ok(css.includes(`${cls} {`) || css.includes(`${cls},`), `нет стилей ${cls}`);
+  }
+  // старые «раздутые» карточки больше не используются
+  assert.ok(!css.includes('.file-card {'), '.file-card должен быть удалён');
+  assert.ok(!css.includes('.file-grid {'), '.file-grid должен быть удалён');
+
+  // на телефоне действия всегда видны — наведения мышью там нет
+  const mobile = css.slice(css.indexOf('@media (max-width: 768px)'));
+  assert.match(mobile, /\.doc-row__acts \{[^}]*opacity: 1/);
+  assert.match(mobile, /\.doc-thumbs \{[^}]*minmax\(68px/);
+  // дата и автор уходят под название, а не ломают строку
+  assert.match(mobile, /\.doc-row__meta \{[^}]*flex: 1 1 100%/);
 });

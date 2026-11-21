@@ -2901,60 +2901,208 @@ input.search-clear-host,
   -webkit-box-orient: vertical;
 }
 
-/* === File Grid === */
-.file-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 12px;
+/* === Документы и файлы клиента === */
+/* Фото — плотной сеткой, остальные файлы — компактными строками:
+   вкладка не раздувается на экран от десятка документов. */
+
+.doc-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
-.file-card {
+.doc-toolbar__hint {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.doc-toolbar__count {
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+.doc-block + .doc-block {
+  margin-top: 24px;
+}
+
+.doc-block__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.doc-block__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.doc-block__hint {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.doc-count {
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* --- миниатюры фотографий --- */
+
+.doc-thumbs {
+  display: grid;
+  /* Потолок в 112 px: два-три снимка не растягиваются на пол-экрана */
+  grid-template-columns: repeat(auto-fill, minmax(88px, 112px));
+  justify-content: start;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.doc-thumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+  cursor: zoom-in;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+.doc-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  padding: 3px;
+}
+
+.doc-thumb:hover,
+.doc-thumb:focus-visible {
+  border-color: var(--accent-teal);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  outline: none;
+}
+
+/* --- строки документов --- */
+
+.doc-list {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.doc-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px;
-  transition: all 0.2s;
+  padding: 9px 14px;
+  cursor: pointer;
+  transition: background 0.15s;
 }
 
-.file-card:hover {
-  border-color: var(--accent-teal);
+.doc-row + .doc-row {
+  border-top: 1px solid var(--border);
+}
+
+.doc-row:hover,
+.doc-row:focus-visible {
   background: var(--bg-card-hover);
+  outline: none;
 }
 
-.file-icon {
-  font-size: 2rem;
-  flex-shrink: 0;
+/* строка без перехода по клику — только кнопки справа */
+.doc-row--static {
+  cursor: default;
 }
 
-.file-info { flex: 1; min-width: 0; }
+/* подпись типа: короткая, одинаковой ширины — строки выравниваются */
+.doc-row__kind {
+  flex: none;
+  width: 38px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #fff;
+  background: var(--text-muted);
+}
 
-.file-name {
+.doc-row__kind--red { background: #e5484d; }
+.doc-row__kind--blue { background: #3b82f6; }
+.doc-row__kind--green { background: #16a34a; }
+.doc-row__kind--orange { background: #ea7317; }
+.doc-row__kind--violet { background: #8b5cf6; }
+.doc-row__kind--amber { background: #b45309; }
+.doc-row__kind--teal { background: #0d9488; }
+.doc-row__kind--gray { background: #64748b; }
+
+.doc-row__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.doc-row__name {
   font-weight: 600;
+  font-size: 0.88rem;
+  line-height: 1.35;
   color: var(--text-primary);
-  margin-bottom: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.file-desc {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  margin-bottom: 2px;
-}
-
-.file-meta {
-  font-size: 0.75rem;
+.doc-row__desc {
+  margin-top: 1px;
+  font-size: 0.76rem;
   color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.file-actions {
+.doc-row__meta {
+  flex: none;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.doc-row__acts {
   display: flex;
-  gap: 4px;
-  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  opacity: 0.45;
+  transition: opacity 0.15s;
+}
+
+.doc-row:hover .doc-row__acts,
+.doc-row:focus-within .doc-row__acts {
+  opacity: 1;
 }
 
 /* === Client Link === */
@@ -3139,20 +3287,36 @@ input.search-clear-host,
     flex-shrink: 0;
   }
 
-  /* File grid: single column */
-  .file-grid {
-    grid-template-columns: 1fr;
+  /* Документы клиента: миниатюры мельче, действия всегда видны —
+     на телефоне нет наведения мышью */
+  .doc-thumbs {
+    grid-template-columns: repeat(auto-fill, minmax(68px, 88px));
+    gap: 6px;
   }
 
-  /* File card compact */
-  .file-card {
+  /* Строка файла: тип и название в первой строке, дата и автор — под ними */
+  .doc-row {
     flex-wrap: wrap;
+    gap: 6px 8px;
+    padding: 10px 12px;
   }
 
-  .file-actions {
-    width: 100%;
-    justify-content: flex-end;
-    margin-top: 4px;
+  .doc-row__body {
+    flex: 1 1 0;
+  }
+
+  .doc-row__meta {
+    order: 3;
+    flex: 1 1 100%;
+    width: auto;
+    font-size: 0.72rem;
+    white-space: normal;
+  }
+
+  .doc-row__acts {
+    order: 2;
+    margin-left: auto;
+    opacity: 1;
   }
 
   /* Timeline: compact */

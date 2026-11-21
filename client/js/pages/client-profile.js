@@ -1226,46 +1226,112 @@ const ClientProfilePage = {
   },
 
   // =================== ДОКУМЕНТЫ ===================
+  /**
+   * Документы клиента: фотографии — плотной сеткой миниатюр, остальные
+   * файлы — компактными строками. Раньше каждый документ занимал карточку
+   * 320 px с крупной иконкой, и от десятка файлов вкладка вырастала в экран.
+   */
   async loadDocuments(container) {
     const canEdit = API.can('clients', 'edit');
     const canDelete = API.can('clients', 'delete');
     try {
       const res = await API.get(`/clients/${this.clientId}/documents`);
-      const docs = res.data;
+      const docs = res.data || [];
 
-      // Список живёт до следующей отрисовки: его листает просмотр фото
+      // Списки живут до следующей отрисовки: по ним листается просмотр фото
       this._documents = docs;
-      this._docImages = docs.filter(d => d.file_path && this.isImageDoc(d));
+      const photos = docs.filter(d => d.file_path && this.isImageDoc(d));
+      this._docImages = photos;
+      const files = docs.filter(d => !photos.includes(d));
 
       container.innerHTML = `
         ${canEdit ? `
-          <div class="toolbar">
-            <div class="form-hint" style="margin:0">PDF, Word, Excel, PowerPoint, текст и фото до 50 МБ</div>
+          <div class="doc-toolbar">
+            <div class="doc-toolbar__hint">PDF, Word, Excel, PowerPoint, текст и фото до 50 МБ</div>
             <button class="btn btn-primary btn-sm" onclick="ClientProfilePage.uploadDocument()">📎 Загрузить документ</button>
           </div>
         ` : ''}
         ${docs.length === 0 ? Table.emptyState('Нет документов — загрузите PDF, Word, Excel, презентацию, текст или фото') : `
-          <div class="file-grid">
-            ${docs.map(d => `
-              <div class="file-card"${this.isImageDoc(d) ? ` onclick="ClientProfilePage.viewDocument(${d.id})" style="cursor:pointer"` : ''}>
-                <div class="file-icon">${this.isImageDoc(d)
-                  ? `<img src="${esc(d.file_path)}" alt="" loading="lazy" style="width:40px;height:40px;object-fit:cover;border-radius:6px">`
-                  : this.getFileIcon(d.file_type)}</div>
-                <div class="file-info">
-                  <div class="file-name">${esc(d.name)}</div>
-                  ${d.description ? `<div class="file-desc">${esc(d.description)}</div>` : ''}
-                  <div class="file-meta">${new Date(d.created_at).toLocaleDateString('ru-RU')} · ${esc(d.uploaded_by_name)}</div>
-                </div>
-                <div class="file-actions">
-                  <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); ClientProfilePage.viewDocument(${d.id})">Открыть</button>
-                  ${canDelete ? `<button class="btn btn-icon btn-sm btn-danger" onclick="event.stopPropagation(); ClientProfilePage.deleteDocument(${d.id})">✕</button>` : ''}
-                </div>
+          ${photos.length ? `
+            <section class="doc-block">
+              <div class="doc-block__head">
+                <div class="doc-block__title">Фотографии <span class="doc-count">${photos.length}</span></div>
+                <div class="doc-block__hint">Нажмите на снимок, чтобы открыть</div>
               </div>
-            `).join('')}
-          </div>
+              <div class="doc-thumbs">
+                ${photos.map(d => `
+                  <button type="button" class="doc-thumb" onclick="ClientProfilePage.viewDocument(${d.id})"
+                          title="${esc(d.name)}">
+                    <img src="${safeUrl(d.file_path)}" alt="${esc(d.name)}" loading="lazy">
+                  </button>
+                `).join('')}
+              </div>
+            </section>` : ''}
+          ${files.length ? `
+            <section class="doc-block">
+              <div class="doc-block__head">
+                <div class="doc-block__title">Документы <span class="doc-count">${files.length}</span></div>
+              </div>
+              <div class="doc-list">
+                ${files.map(d => this._documentRowHtml(d, canDelete)).join('')}
+              </div>
+            </section>` : ''}
         `}
       `;
-    } catch (err) { container.innerHTML = `<div class="empty-state"><div class="empty-state-text">${err.message}</div></div>`; }
+    } catch (err) { container.innerHTML = `<div class="empty-state"><div class="empty-state-text">${esc(err.message)}</div></div>`; }
+  },
+
+  /** Одна строка документа: тип, название, описание, дата и автор. */
+  _documentRowHtml(doc, canDelete) {
+    const { label, tone } = this.fileKind(doc.file_type);
+    const date = doc.created_at ? new Date(doc.created_at).toLocaleDateString('ru-RU') : '';
+    const meta = [date, doc.uploaded_by_name].filter(Boolean).map(esc).join(' · ');
+    // Файл без пути (битая запись) открывать некуда — строка остаётся читаемой
+    const hasFile = Boolean(doc.file_path);
+    const className = hasFile ? 'doc-row' : 'doc-row doc-row--static';
+    const rowAttrs = hasFile
+      ? `role="button" tabindex="0" onclick="ClientProfilePage.viewDocument(${doc.id})"
+         onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); ClientProfilePage.viewDocument(${doc.id}); }"`
+      : '';
+
+    return `
+      <div class="${className}" ${rowAttrs}>
+        <span class="doc-row__kind doc-row__kind--${tone}">${label}</span>
+        <div class="doc-row__body">
+          <div class="doc-row__name" title="${esc(doc.name)}">${esc(doc.name)}</div>
+          ${doc.description ? `<div class="doc-row__desc" title="${esc(doc.description)}">${esc(doc.description)}</div>` : ''}
+        </div>
+        <div class="doc-row__meta">${meta}</div>
+        <div class="doc-row__acts" onclick="event.stopPropagation()">
+          ${hasFile ? `<button type="button" class="btn btn-icon btn-sm" title="Открыть"
+                  onclick="ClientProfilePage.viewDocument(${doc.id})">↗</button>` : ''}
+          ${canDelete ? `<button type="button" class="btn btn-icon btn-sm btn-danger" title="Удалить"
+                  onclick="ClientProfilePage.deleteDocument(${doc.id})">✕</button>` : ''}
+        </div>
+      </div>
+    `;
+  },
+
+  /**
+   * Тип файла для строки: короткая подпись и цвет. Иконки-эмодзи разного
+   * размера «плясали» по высоте, а подпись сразу говорит, что за файл.
+   */
+  fileKind(type) {
+    const ext = String(type || '').toLowerCase();
+    const groups = {
+      pdf: ['pdf', 'PDF', 'red'],
+      doc: ['doc', 'DOC', 'blue'], docx: ['doc', 'DOC', 'blue'], odt: ['doc', 'DOC', 'blue'], rtf: ['doc', 'DOC', 'blue'],
+      xls: ['xls', 'XLS', 'green'], xlsx: ['xls', 'XLS', 'green'], ods: ['xls', 'XLS', 'green'], csv: ['xls', 'CSV', 'green'],
+      ppt: ['ppt', 'PPT', 'orange'], pptx: ['ppt', 'PPT', 'orange'],
+      txt: ['txt', 'TXT', 'gray'], md: ['txt', 'TXT', 'gray'],
+      zip: ['zip', 'ZIP', 'violet'], rar: ['zip', 'RAR', 'violet'], '7z': ['zip', '7Z', 'violet'],
+      dwg: ['cad', 'CAD', 'amber'], dxf: ['cad', 'CAD', 'amber'],
+      jpg: ['img', 'IMG', 'teal'], jpeg: ['img', 'IMG', 'teal'], png: ['img', 'IMG', 'teal'],
+      webp: ['img', 'IMG', 'teal'], gif: ['img', 'IMG', 'teal'], heic: ['img', 'IMG', 'teal'],
+      heif: ['img', 'IMG', 'teal'], tif: ['img', 'IMG', 'teal'], tiff: ['img', 'IMG', 'teal'],
+    };
+    const [, label, tone] = groups[ext] || [null, 'FILE', 'gray'];
+    return { ext, label, tone };
   },
 
   isImageDoc(doc) {
@@ -1325,40 +1391,50 @@ const ClientProfilePage = {
       const totalSize = files.reduce((sum, f) => sum + (Number(f.file_size) || 0), 0);
 
       container.innerHTML = `
-        <div class="toolbar" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
-          <div style="font-size:0.85rem;color:var(--text-secondary)">
+        <div class="doc-toolbar">
+          <div class="doc-toolbar__hint">
             📁 Файлы клиента <span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary)">только для администратора</span>
-            ${files.length ? `<span style="color:var(--text-muted)"> · ${files.length} шт. · ${this._formatSize(totalSize)}</span>` : ''}
+            ${files.length ? `<span class="doc-toolbar__count">${files.length} шт. · ${this._formatSize(totalSize)}</span>` : ''}
           </div>
           <button class="btn btn-primary btn-sm" onclick="ClientProfilePage.uploadClientFile()">📎 Загрузить файл</button>
         </div>
         ${files.length === 0 ? Table.emptyState('Файлов пока нет — загрузите документ, таблицу, архив или чертёж') : `
-          <div class="file-grid">
-            ${files.map(f => `
-              <div class="file-card">
-                <div class="file-icon">${this.getFileIcon(f.file_type)}</div>
-                <div class="file-info">
-                  <div class="file-name">${esc(f.name)}</div>
-                  ${f.comment ? `<div class="file-desc">${esc(f.comment)}</div>` : ''}
-                  <div class="file-meta">
-                    ${new Date(f.created_at).toLocaleDateString('ru-RU')}
-                    ${f.file_size ? ` · ${this._formatSize(f.file_size)}` : ''}
-                    ${f.uploaded_by_name ? ` · ${esc(f.uploaded_by_name)}` : ''}
-                  </div>
-                </div>
-                <div class="file-actions">
-                  <a href="${esc(f.file_path)}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">Открыть</a>
-                  <button class="btn btn-icon btn-sm" title="Переименовать" onclick="ClientProfilePage.renameClientFile(${f.id})">✏️</button>
-                  <button class="btn btn-icon btn-sm btn-danger" title="Удалить" onclick="ClientProfilePage.deleteClientFile(${f.id})">✕</button>
-                </div>
-              </div>
-            `).join('')}
+          <div class="doc-list">
+            ${files.map(f => this._clientFileRowHtml(f)).join('')}
           </div>
         `}
       `;
     } catch (err) {
       container.innerHTML = `<div class="empty-state"><div class="empty-state-text">${esc(err.message)}</div></div>`;
     }
+  },
+
+  /** Строка произвольного файла клиента: как документ, плюс размер. */
+  _clientFileRowHtml(file) {
+    const { label, tone } = this.fileKind(file.file_type);
+    const date = file.created_at ? new Date(file.created_at).toLocaleDateString('ru-RU') : '';
+    const meta = [
+      date,
+      file.file_size ? this._formatSize(file.file_size) : '',
+      file.uploaded_by_name || '',
+    ].filter(Boolean).map(esc).join(' · ');
+    const href = safeUrl(file.file_path);
+
+    return `
+      <div class="doc-row doc-row--static">
+        <span class="doc-row__kind doc-row__kind--${tone}">${label}</span>
+        <div class="doc-row__body">
+          <div class="doc-row__name" title="${esc(file.name)}">${esc(file.name)}</div>
+          ${file.comment ? `<div class="doc-row__desc" title="${esc(file.comment)}">${esc(file.comment)}</div>` : ''}
+        </div>
+        <div class="doc-row__meta">${meta}</div>
+        <div class="doc-row__acts">
+          <a href="${href}" target="_blank" rel="noopener" class="btn btn-icon btn-sm" title="Открыть">↗</a>
+          <button class="btn btn-icon btn-sm" title="Переименовать" onclick="ClientProfilePage.renameClientFile(${file.id})">✏️</button>
+          <button class="btn btn-icon btn-sm btn-danger" title="Удалить" onclick="ClientProfilePage.deleteClientFile(${file.id})">✕</button>
+        </div>
+      </div>
+    `;
   },
 
   _formatSize(bytes) {
