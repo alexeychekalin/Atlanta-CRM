@@ -13,6 +13,7 @@ const {
   rotatePhotoFile,
   autoOrientPhoto,
 } = require('../services/photo');
+const { normalizeProductPhoto } = require('../services/photo-normalize');
 const { sectionAllowed } = require('../middleware/access');
 const { normalizeUploadPath, safeUploadPath } = require('../utils/files');
 
@@ -221,6 +222,28 @@ async function fixPhotoOrientation(req, res, next) {
   }
 }
 
+/**
+ * Фото изделия приводим к одному виду: белый квадрат, изделие по центру.
+ * Так сетка каталога не «пляшет» из-за разных размеров и белых полей.
+ * Ошибка нормализации не должна отклонять загрузку: файл уже принят
+ * и проверен, максимум — останется как есть.
+ */
+async function normalizeUploadedPhoto(req, res, next) {
+  if (!req.file) return next();
+  try {
+    const result = await normalizeProductPhoto(req.file.path);
+    if (result.changed) {
+      const stat = await fs.promises.stat(req.file.path);
+      req.file.size = stat.size;
+      req.file.normalized = true;
+    }
+    return next();
+  } catch (err) {
+    console.error('Не удалось нормализовать фото:', err.message);
+    return next();
+  }
+}
+
 const canEditComponents = requireAnyPermission([['components', 'edit']]);
 const canEditClients = requireAnyPermission([['clients', 'edit']]);
 const canEditDocuments = requireAnyPermission([['documents', 'edit']]);
@@ -244,6 +267,7 @@ function fileResponse(req, res, subdir, extra = {}) {
     // HEIC с iPhone приходит как .heic, а хранится уже JPEG: клиенту честнее
     // отдать имя с новым расширением, иначе тип документа не сойдётся с файлом
     converted_from_heic: Boolean(req.file.convertedFromHeic),
+    normalized: Boolean(req.file.normalized),
     ...extra,
     ...(req.file.convertedFromHeic ? { originalname: originalname.replace(/\.(heic|heif)$/i, '.jpg') } : {}),
   });
@@ -260,7 +284,7 @@ function uploadedFileType(req) {
 }
 
 // POST /api/upload/image — фото компонентов и модификаций
-router.post('/image', auth, canEditComponents, uploadImage.single('file'), verifyUploadedFile, convertHeicUpload, fixPhotoOrientation, (req, res) => {
+router.post('/image', auth, canEditComponents, uploadImage.single('file'), verifyUploadedFile, convertHeicUpload, fixPhotoOrientation, normalizeUploadedPhoto, (req, res) => {
   return fileResponse(req, res, 'images');
 });
 

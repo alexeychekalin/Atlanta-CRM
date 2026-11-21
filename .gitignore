@@ -16,6 +16,9 @@ server/uploads/*
 !server/uploads/.gitkeep
 uploads/
 
+# Оригиналы фото до нормализации (npm run db:normalize-photos)
+server/.photo-backup/
+
 # OS generated files
 .DS_Store
 .DS_Store?

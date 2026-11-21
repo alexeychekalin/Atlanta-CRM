@@ -234,7 +234,9 @@ test('документы: страница подключена к меню, р�
 
   const sw = fs.readFileSync(path.join(ROOT, 'client/sw.js'), 'utf8');
   assert.match(sw, /'\/js\/pages\/documents\.js'/);
-  assert.match(sw, /atlanta-crm-v1[1-9]/);
+  assert.match(sw, /atlanta-crm-v\d+/);
+  const cacheVersion = Number(sw.match(/atlanta-crm-v(\d+)/)[1]);
+  assert.ok(cacheVersion >= 20, `версия кэша устарела: v${cacheVersion}`);
 
   const settings = fs.readFileSync(path.join(ROOT, 'client/js/pages/settings.js'), 'utf8');
   assert.match(settings, /perm-documents-view/);

@@ -87,24 +87,28 @@ const ComponentsCatalogPage = {
           box-shadow:0 8px 25px rgba(0,0,0,0.25);
           border-color:var(--accent-teal);
         }
+        /* Фото изделия — белая «студийная» подложка: прозрачный фон и
+           снимки не на белом не проваливаются в тёмную карточку */
         .comp-card-img {
           width:100%;
           height:160px;
-          object-fit:cover;
-          background:var(--bg-secondary);
+          background:#fff;
           display:flex;
           align-items:center;
           justify-content:center;
           position:relative;
           overflow:hidden;
         }
+        /* contain, а не cover: фото изделия не обрезается по краям,
+           а поля нормализованы на сервере — сетка выглядит ровно */
         .comp-card-img img {
           width:100%;
           height:100%;
-          object-fit:cover;
+          object-fit:contain;
+          padding:6px;
           transition:transform 0.3s;
         }
-        .comp-card:hover .comp-card-img img { transform:scale(1.05); }
+        .comp-card:hover .comp-card-img img { transform:scale(1.04); }
         .comp-card-img .comp-placeholder {
           font-size:3rem;
           color:var(--text-muted);
@@ -194,7 +198,8 @@ const ComponentsCatalogPage = {
           width:10px;
           height:10px;
           border-radius:50%;
-          border:2px solid var(--bg-card);
+          border:2px solid #fff;
+          box-shadow:0 0 0 1px rgba(0,0,0,0.15);
         }
         .comp-card-actions {
           display:flex;
@@ -496,7 +501,7 @@ const ComponentsCatalogPage = {
               <tr style="cursor:pointer" onclick="ComponentsCatalogPage.viewComponent(${c.id})">
                 <td>
                   ${c.image_path
-                    ? `<img src="${esc(c.image_path)}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">`
+                    ? `<img src="${esc(c.image_path)}" alt="" style="width:40px;height:40px;object-fit:contain;background:#fff;border-radius:6px;border:1px solid var(--border)">`
                     : '<div style="width:40px;height:40px;border-radius:6px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:16px">📦</div>'}
                 </td>
                 <td class="font-mono" style="color:var(--accent-teal)"><span class="comp-art">${esc(c.article)}</span>${this._copyButton(c.article)}</td>

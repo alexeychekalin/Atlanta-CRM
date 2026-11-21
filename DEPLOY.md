@@ -466,6 +466,21 @@ sudo WITH_SITE=0 ./update.sh                                  # только CRM
 cd /opt/atlanta-crm && git pull && sudo WITH_CATALOG=1 ./update.sh
 ```
 
+### Фото изделий: привести к одному виду
+
+Новые фото нормализуются сами при загрузке. Уже загруженные — разовой командой;
+оригиналы сохраняются в `server/.photo-backup/<дата>`, оттуда их можно вернуть:
+
+```bash
+cd /opt/atlanta-crm/server
+sudo -u www-data npm run db:normalize-photos -- --dry-run   # сколько файлов изменится
+sudo -u www-data npm run db:normalize-photos -- --all       # + фото без ссылок в базе
+sudo -u www-data npm run db:normalize-photos -- --restore=.photo-backup/2026-11-21_09-35-32
+```
+
+Команда пишет в `server/uploads`, поэтому её запускают от владельца файлов; повторный
+запуск безопасен — нормализованные файлы пропускаются по метке в EXIF.
+
 **Если `sudo: ./update.sh: command not found`, а файл на месте** — у скрипта нет права на
 исполнение. В коммитах до 09.11.2026 `update.sh` лежал в git с режимом `644`, поэтому после
 `git pull` его нельзя было запустить через `./`. Право на исполнение уже вернули в git, а на
