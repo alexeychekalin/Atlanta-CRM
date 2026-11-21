@@ -191,6 +191,8 @@ CREATE TABLE IF NOT EXISTS component_modifications (
   full_article VARCHAR(150),
   price_override NUMERIC(12,2),
   description TEXT,
+  -- модификацию можно снять с продажи, не удаляя: старые чертежи остаются рабочими
+  is_active BOOLEAN NOT NULL DEFAULT true,
   sort_order INT DEFAULT 0,
   created_at TIMESTAMP DEFAULT now()
 );
@@ -244,6 +246,8 @@ CREATE TABLE IF NOT EXISTS drawings (
   global_markup_rub NUMERIC(14,2) NOT NULL DEFAULT 0,
   approval_id INT,
   file_hash VARCHAR(64),
+  -- заметка менеджера к расчёту: «снизить цену на 5% при следующем заказе»
+  notes TEXT,
   archived_at TIMESTAMP,
   created_by INT REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMP DEFAULT now()

@@ -709,3 +709,20 @@ test('галерея: фото модификации тоже можно пов
   await opened.onRotate('/uploads/m1.jpg', -90, 0);
   assert.deepEqual(posted[0], ['/upload/rotate', { path: '/uploads/m1.jpg', degrees: -90 }]);
 });
+
+test('модификации: снятая с продажи помечена, активная — без пометки', () => {
+  const { page } = loadPage('components-catalog', 'ComponentsCatalogPage');
+  const component = { id: 5, article: 'А.3731.010', name: 'Фонарь габаритный' };
+  const base = { id: 11, code: '01.09', name: 'передний', price_override: 640, images: [] };
+
+  const off = page._modRowHtml(component, { ...base, is_active: false }, false, 0, false);
+  assert.match(off, /mod-row__flag--off[^>]*>неактивна</);
+  assert.match(off, /mod-row__price">640\.00/);
+
+  const on = page._modRowHtml(component, { ...base, is_active: true }, false, 0, false);
+  assert.doesNotMatch(on, /неактивна/);
+
+  // старые записи без поля считаем активными
+  const legacy = page._modRowHtml(component, base, false, 0, false);
+  assert.doesNotMatch(legacy, /неактивна/);
+});
