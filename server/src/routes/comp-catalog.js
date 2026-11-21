@@ -22,7 +22,7 @@ router.get('/', auth, async (req, res) => {
     let sql = `
       SELECT c.*, cc.name AS category_name,
         (SELECT COUNT(*) FROM component_modifications cm WHERE cm.component_id = c.id) AS modifications_count,
-        (SELECT COUNT(*) FROM component_images ci WHERE ci.component_id = c.id) AS images_count,
+        (SELECT COUNT(*) FROM component_images ci WHERE ci.component_id = c.id AND ci.deleted_at IS NULL) AS images_count,
         (SELECT COUNT(*) FROM component_documents cd WHERE cd.component_id = c.id) AS doc_count,
         COALESCE((
           SELECT json_agg(json_build_object('id', cm.id, 'code', cm.code, 'name', cm.name,
@@ -102,10 +102,24 @@ router.get('/:id', auth, async (req, res) => {
     comp.modifications = modsRes.rows;
 
     const imagesRes = await db.query(
-      'SELECT id, image_path, sort_order FROM component_images WHERE component_id = $1 ORDER BY sort_order, id',
+      `SELECT id, image_path, sort_order FROM component_images
+        WHERE component_id = $1 AND deleted_at IS NULL
+        ORDER BY sort_order, id`,
       [req.params.id]
     );
     comp.images = imagesRes.rows;
+
+    // сколько снимков убрано в карточке — в интерфейсе плашка «вернуть»
+    try {
+      const removedRes = await db.query(
+        'SELECT count(*)::int AS n FROM component_images WHERE component_id = $1 AND deleted_at IS NOT NULL',
+        [req.params.id]
+      );
+      comp.images_removed = removedRes.rows[0].n;
+    } catch (err) {
+      if (!/deleted_at/i.test(err.message || '')) throw err;
+      comp.images_removed = 0;
+    }
 
     res.json(comp);
   } catch (err) {

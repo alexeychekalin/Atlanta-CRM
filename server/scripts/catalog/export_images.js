@@ -50,18 +50,23 @@ function uploadName(url) {
 
 async function readFromDb(db) {
   const components = await db.query('SELECT id, article, image_path FROM components');
+  // убранные в карточке снимки (deleted_at) на сайт не уезжают
   const gallery = await db.query(
-    'SELECT component_id, image_path FROM component_images ORDER BY component_id, sort_order, id');
+    `SELECT component_id, image_path FROM component_images
+      WHERE deleted_at IS NULL ORDER BY component_id, sort_order, id`);
   const mods = await db.query(
     `SELECT m.component_id, m.code, i.image_path
        FROM component_modification_images i
        JOIN component_modifications m ON m.id = i.modification_id
+      WHERE i.deleted_at IS NULL
       ORDER BY m.component_id, m.sort_order, i.sort_order, i.id`);
 
   const byId = new Map(components.rows.map(row => [row.id, row.article]));
   const result = new Map();
   const entry = article => {
-    if (!result.has(article)) result.set(article, { image: null, images: [], mods: new Map() });
+    if (!result.has(article)) {
+      result.set(article, { image: null, images: [], mods: new Map() });
+    }
     return result.get(article);
   };
 
@@ -79,7 +84,53 @@ async function readFromDb(db) {
     if (!modsOf.has(row.code)) modsOf.set(row.code, []);
     modsOf.get(row.code).push(row.image_path);
   }
+
+  // обложка, оставшаяся от убранного снимка, на сайте не нужна: пусть её
+  // возьмёт первое живое фото (в CRM так же поступает coverSync)
+  for (const item of result.values()) {
+    if (item.image && !item.images.includes(item.image)) item.image = null;
+  }
   return result;
+}
+
+/**
+ * Снимки, убранные в карточках (deleted_at), — только их и снимаем с сайта.
+ *
+ * Сравнивать сайт с базой «целиком» нельзя: в catalog.json есть позиции,
+ * которых в базе нет вовсе (каталог шире выгрузки), и такая «синхронизация»
+ * стёрла бы у них все фото. Поэтому удаление — это ровно отметка в карточке.
+ */
+async function readRemoved(db) {
+  const gallery = await db.query(
+    `SELECT ci.component_id, ci.image_path
+       FROM component_images ci
+      WHERE ci.deleted_at IS NOT NULL`);
+  const mods = await db.query(
+    `SELECT m.component_id, m.code, i.image_path
+       FROM component_modification_images i
+       JOIN component_modifications m ON m.id = i.modification_id
+      WHERE i.deleted_at IS NOT NULL`);
+  const components = await db.query('SELECT id, article FROM components');
+
+  const byId = new Map(components.rows.map(row => [row.id, row.article]));
+  const removed = new Map();
+  const entry = article => {
+    if (!removed.has(article)) removed.set(article, { images: [], mods: new Map() });
+    return removed.get(article);
+  };
+
+  for (const row of gallery.rows) {
+    const article = byId.get(row.component_id);
+    if (article) entry(article).images.push(row.image_path);
+  }
+  for (const row of mods.rows) {
+    const article = byId.get(row.component_id);
+    if (!article) continue;
+    const modsOf = entry(article).mods;
+    if (!modsOf.has(row.code)) modsOf.set(row.code, []);
+    modsOf.get(row.code).push(row.image_path);
+  }
+  return removed;
 }
 
 /**
@@ -89,23 +140,29 @@ async function readFromDb(db) {
  * имя в каталоге (или null, если файла нет). Вынесена наружу, чтобы правило
  * слияния проверялось тестом без диска и базы.
  */
-function applyImages(components, fromDb, { place, prune = false } = {}) {
+function applyImages(components, fromDb, { place, prune = false, removed = new Map() } = {}) {
   const report = { components: 0, removed: 0 };
 
-  const merge = (current, incoming, put) => {
+  /**
+   * `dropped` — имена в каталоге, которые в CRM убрали (deleted_at).
+   * Раньше --prune приводил галерею к ответу базы целиком, но в каталоге есть
+   * позиции, которых в базе нет, — у них стирались бы все фото. Теперь с
+   * сайта снимается ровно то, что убрали в карточке.
+   */
+  const merge = (current, incoming, put, dropped = []) => {
     const names = [];
     for (const url of incoming) {
       const name = put(url, current || []);
       if (name && !names.includes(name)) names.push(name);
     }
-    if (names.length === 0) return current || [];
-    if (prune) {
-      if (Array.isArray(current)) report.removed += current.filter(n => !names.includes(n)).length;
-      return names;
+    const drop = new Set(dropped.filter(Boolean));
+    if (prune && drop.size > 0) {
+      report.removed += (current || []).filter(name => drop.has(name)).length;
     }
+    if (names.length === 0) return (current || []).filter(name => !drop.has(name));
     // порядок каталога — основной: правки в CRM только добавляют снимки,
     // иначе каждая выгрузка тасовала бы галереи и засоряла историю
-    const merged = (current || []).slice();
+    const merged = (current || []).filter(name => !drop.has(name)).slice();
     for (const name of names) {
       if (!merged.includes(name)) merged.push(name);
     }
@@ -114,26 +171,41 @@ function applyImages(components, fromDb, { place, prune = false } = {}) {
 
   for (const component of components) {
     const entry = fromDb.get(component.article);
-    if (!entry) continue;
+    const gone = removed.get(component.article) || { images: [], mods: new Map() };
+    if (!entry && gone.images.length === 0) continue;
 
     const put = (url, hints = []) => place(url, component.article, hints);
+    // путь убранного в карточке снимка → имя файла в каталоге (файл там уже есть)
+    const droppedNames = gone.images
+      .map(url => place(url, component.article, component.images || []))
+      .filter(Boolean);
     const before = JSON.stringify([component.image, component.images,
       (component.modifications || []).map(mod => mod.images)]);
-    const coverUrl = entry.image || entry.images[0] || null;
+    const living = entry ? entry.images : [];
+    const coverUrl = (entry && entry.image) || living[0] || null;
     const cover = coverUrl
       ? put(coverUrl, [component.image, ...(component.images || [])].filter(Boolean))
       : null;
-    const gallery = merge(component.images, entry.images.length ? entry.images : (coverUrl ? [coverUrl] : []), put);
+    const gallery = merge(component.images, living, put, droppedNames);
 
-    if (cover) component.image = cover;
-    else if (prune && entry.image === null && gallery.length === 0) delete component.image;
+    if (cover && !droppedNames.includes(cover)) component.image = cover;
+    else if (cover && droppedNames.includes(cover)) {
+      // обложку убрали — на сайте первой становится первая оставшаяся
+      component.image = gallery[0];
+      if (!component.image) delete component.image;
+    }
     if (gallery.length) component.images = gallery;
+    else if (prune && entry && living.length === 0) component.images = [];
 
     for (const mod of component.modifications || []) {
-      const incoming = entry.mods.get(mod.code);
-      if (!incoming || incoming.length === 0) continue;
-      const names = merge(mod.images, incoming, put);
+      const incoming = (entry && entry.mods.get(mod.code)) || [];
+      const goneMods = (gone.mods.get(mod.code) || [])
+        .map(url => place(url, component.article, mod.images || []))
+        .filter(Boolean);
+      if (incoming.length === 0 && goneMods.length === 0) continue;
+      const names = merge(mod.images, incoming, put, goneMods);
       if (names.length) mod.images = names;
+      else if (prune && goneMods.length > 0) mod.images = [];
     }
 
     const after = JSON.stringify([component.image, component.images,
@@ -148,14 +220,24 @@ function makePlacer({ dryRun = false } = {}) {
   // один и тот же снимок в каталоге лежит под несколькими именами (Л/П, 008/008.1);
   // храним все, чтобы выбрать имя «своей» позиции, а не первую попавшуюся
   const byDigest = new Map();
+  // sha256 содержимого каталога → имена файлов. По нему узнаём снимок, который
+  // уже лежит в каталоге, но в базе записан под именем из placeImage
+  // (catalog_<sha256[:16]>): после нормализации файл перекодирован в JPEG и
+  // побайтово отличается, а имя хранит хэш оригинала.
+  const byOriginal = new Map();
   const missing = [];
 
   for (const name of fs.existsSync(FILES_DIR) ? fs.readdirSync(FILES_DIR) : []) {
     const full = path.join(FILES_DIR, name);
     try {
-      const digest = crypto.createHash('sha1').update(fs.readFileSync(full)).digest('hex');
+      const buffer = fs.readFileSync(full);
+      const digest = crypto.createHash('sha1').update(buffer).digest('hex');
       if (!byDigest.has(digest)) byDigest.set(digest, []);
       byDigest.get(digest).push(name);
+
+      const sha = crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 16);
+      if (!byOriginal.has(sha)) byOriginal.set(sha, []);
+      if (!byOriginal.get(sha).includes(name)) byOriginal.get(sha).push(name);
     } catch {
       /* каталог с картинками — не повод падать */
     }
@@ -183,6 +265,13 @@ function makePlacer({ dryRun = false } = {}) {
     }
     const buffer = fs.readFileSync(source);
     const digest = crypto.createHash('sha1').update(buffer).digest('hex');
+    // файл из базы после нормализации: имя помнит хэш оригинала из каталога
+    const known = /^catalog_([0-9a-f]{16})\.(jpe?g|png|webp)$/i.exec(file);
+    if (known && byOriginal.has(known[1])) {
+      const ext = (path.extname(file) || '.jpg').toLowerCase();
+      const base = slugify(article || path.basename(file, ext)) || 'foto';
+      return pick(byOriginal.get(known[1]), base, hints);
+    }
     const ext = (path.extname(file) || '.jpg').toLowerCase();
     const base = slugify(article || path.basename(file, ext)) || 'foto';
     if (byDigest.has(digest)) return pick(byDigest.get(digest), base, hints);
@@ -225,8 +314,19 @@ async function main() {
   const withPhoto = [...fromDb.values()].filter(entry => entry.image || entry.images.length).length;
   console.log(`🖼  Позиций с фото в базе: ${withPhoto}`);
 
+  let removed = new Map();
+  if (prune) {
+    try {
+      removed = await readRemoved(db);
+    } catch (err) {
+      // база без миграции: снимать нечего, выгрузка остаётся «только добавлять»
+      if (!/deleted_at/i.test(err.message || '')) throw err;
+      console.log('ℹ️  Отметок об убранных фото в базе нет — примените миграции.');
+    }
+  }
+
   const placer = makePlacer({ dryRun });
-  const report = applyImages(config.components, fromDb, { place: placer, prune });
+  const report = applyImages(config.components, fromDb, { place: placer, prune, removed });
 
   if (placer.missing.length) {
     console.log(`   ⚠️  файлов нет в uploads/images: ${placer.missing.slice(0, 5).join(', ')}` +
@@ -257,4 +357,4 @@ if (require.main === module || viaDevRunner) {
   });
 }
 
-module.exports = { applyImages, slugify, uploadName, readFromDb };
+module.exports = { applyImages, slugify, uploadName, readFromDb, readRemoved };

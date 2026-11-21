@@ -18,6 +18,15 @@
  * Существующие записи не перезаписываются: цены и правки из интерфейса
  * переживают повторный импорт. Дозаполняются только пустые поля
  * (картинка, описание) у уже существующего компонента.
+ *
+ * Фотографии — отдельное правило (см. syncComponentPhotos):
+ *   - снимок уже есть в базе (в том числе убранный) → импорт его не трогает;
+ *   - позиция уже была в базе → новые снимки к ней не прикладываются:
+ *     менеджер ведёт её сам, а поставщик мог добавить кадры к давней позиции;
+ *   - убранный в карточке снимок помечен deleted_at и не возвращается;
+ *   - обложку импорт заполняет, только если её ещё не выбирали в карточке.
+ * Новые снимки к существующим позициям приносит отдельная команда
+ * `npm run db:catalog -- --refresh-photos` (показывает список и ждёт --yes).
  */
 const fs = require('fs');
 const path = require('path');
@@ -258,9 +267,31 @@ async function insertComponent(runner, entry, categoryId, imagePath) {
 }
 
 /** Дозаполняем только пустые поля, чтобы не затереть правки из интерфейса. */
+/**
+ * У позиции есть убранные снимки — значит фото ведёт менеджер, и импорт не
+ * должен возвращать обложку из каталога. Пустая обложка в этом случае —
+ * осознанное решение, а не «ещё не заполнили».
+ */
+async function photoWasRemoved(runner, componentId) {
+  try {
+    const result = await runner.query(
+      'SELECT 1 FROM component_images WHERE component_id = $1 AND deleted_at IS NOT NULL LIMIT 1',
+      [componentId]
+    );
+    return result.rows.length > 0;
+  } catch (err) {
+    if (!/deleted_at/i.test(err.message || '')) throw err;
+    return false;
+  }
+}
+
 async function fillEmptyFields(runner, componentId, current, entry, imagePath) {
   const patch = {};
-  if (!current.image_path && imagePath) patch.image_path = imagePath;
+  // Обложку существующей позиции не трогаем: если она пустая, значит менеджер
+  // убрал фото в карточке. Новую позицию обложкой из каталога заполняем.
+  if (!current.image_path && imagePath && !(await photoWasRemoved(runner, componentId))) {
+    patch.image_path = imagePath;
+  }
   // ссылку на реестр ГИСП заполняем только если её ещё нет: правки из CRM важнее
   if (!current.gisp_url && entry.gisp_url) patch.gisp_url = entry.gisp_url;
   if (entry.description) {
@@ -330,57 +361,99 @@ async function ensureModifications(runner, componentId, entry) {
   return { created, items };
 }
 
-/** Фото исполнений кладутся рядом с фото компонентов и привязываются к коду. */
-async function ensureModificationImages(runner, item) {
+/**
+ * Снимок уже есть у позиции/исполнения — в том числе убранный.
+ *
+ * Ищем и среди помеченных deleted_at: именно это и не даёт импорту вернуть
+ * фото, которое менеджер удалил в карточке. Если строка убрана, повторно
+ * её не добавляем и не «оживляем» — вернуть может только человек.
+ */
+async function photoKnown(runner, table, foreignKey, ownerId, imagePath) {
+  const existing = await runner.query(
+    `SELECT 1 FROM ${table} WHERE ${foreignKey} = $1 AND image_path = $2 LIMIT 1`,
+    [ownerId, imagePath]
+  );
+  return existing.rows.length > 0;
+}
+
+/** Ставит снимок позиции, если такого ещё не было. Возвращает true при вставке. */
+async function insertPhotoIfNew(runner, table, foreignKey, ownerId, imagePath, sortOrder = 0) {
+  if (await photoKnown(runner, table, foreignKey, ownerId, imagePath)) return false;
+  await runner.query(
+    `INSERT INTO ${table} (${foreignKey}, image_path, sort_order) VALUES ($1, $2, $3)`,
+    [ownerId, imagePath, sortOrder]
+  );
+  return true;
+}
+
+/**
+ * Фото исполнений кладутся рядом с фото компонентов и привязываются к коду.
+ *
+ * `mode`:
+ *   'new'      — позиция только что создана импортом: добавляем все снимки;
+ *   'existing' — позиция уже была в базе: не трогаем (её ведёт менеджер);
+ *   'refresh'  — явная команда «добрать новое из каталога»: добавляем
+ *                недостающие, убранные остаются убранными.
+ */
+async function syncModificationImages(runner, item, mode = 'new') {
+  if (mode === 'existing') return 0;
   const files = Array.isArray(item.mod.images) ? item.mod.images : [];
   let created = 0;
 
   for (let i = 0; i < files.length; i += 1) {
     const image = placeImage(files[i]);
-    const existing = await runner.query(
-      'SELECT id FROM component_modification_images WHERE modification_id = $1 AND image_path = $2 LIMIT 1',
-      [item.id, image.url]
-    );
-    if (existing.rows.length > 0) continue;
-
-    await runner.query(
-      `INSERT INTO component_modification_images (modification_id, image_path, sort_order)
-       VALUES ($1, $2, $3)`,
-      [item.id, image.url, i]
-    );
-    created += 1;
+    if (await insertPhotoIfNew(runner, 'component_modification_images', 'modification_id', item.id, image.url, i)) {
+      created += 1;
+    }
   }
 
   return created;
 }
 
+/** Первое неубранное фото галереи — из него берётся обложка. */
+async function firstLivePhoto(runner, componentId) {
+  try {
+    const result = await runner.query(
+      `SELECT image_path FROM component_images
+        WHERE component_id = $1 AND deleted_at IS NULL
+        ORDER BY sort_order, id LIMIT 1`,
+      [componentId]
+    );
+    return result.rows.length ? result.rows[0].image_path : null;
+  } catch (err) {
+    // Старая база без deleted_at — ведём себя как раньше
+    if (!/deleted_at/i.test(err.message || '')) throw err;
+    const result = await runner.query(
+      'SELECT image_path FROM component_images WHERE component_id = $1 ORDER BY sort_order, id LIMIT 1',
+      [componentId]
+    );
+    return result.rows.length ? result.rows[0].image_path : null;
+  }
+}
+
 /** Галерея позиции: несколько фото изделия, первое — обложка. */
-async function ensureComponentImages(runner, componentId, entry, imagePath) {
+async function syncComponentImages(runner, componentId, entry, imagePath, mode = 'new') {
+  if (mode === 'existing') return 0;
   const files = Array.isArray(entry.images) ? entry.images : [];
   let created = 0;
 
   for (let i = 0; i < files.length; i += 1) {
     const image = placeImage(files[i]);
-    const existing = await runner.query(
-      'SELECT id FROM component_images WHERE component_id = $1 AND image_path = $2 LIMIT 1',
-      [componentId, image.url]
-    );
-    if (existing.rows.length > 0) continue;
-
-    await runner.query(
-      `INSERT INTO component_images (component_id, image_path, sort_order)
-       VALUES ($1, $2, $3)`,
-      [componentId, image.url, i]
-    );
-    created += 1;
+    if (await insertPhotoIfNew(runner, 'component_images', 'component_id', componentId, image.url, i)) {
+      created += 1;
+    }
   }
 
-  // обложки нет, а галерея появилась — берём первое фото
-  if (imagePath === null && files.length > 0) {
-    await runner.query(
-      'UPDATE components SET image_path = $2 WHERE id = $1 AND image_path IS NULL',
-      [componentId, placeImage(files[0]).url]
-    );
+  // Обложки нет — берём первое живое фото галереи. Убранные снимки обложкой
+  // не становятся: именно из-за этого удаление последнего фото откатывалось.
+  if (imagePath === null && mode !== 'existing') {
+    const first = await firstLivePhoto(runner, componentId);
+    if (first) {
+      await runner.query(
+        'UPDATE components SET image_path = $2 WHERE id = $1 AND image_path IS NULL',
+        [componentId, first]
+      );
+    }
   }
 
   return created;
@@ -469,8 +542,11 @@ function expandArticles(entry) {
   return [entry.article, ...mods.map(mod => fullArticle(entry.article, mod.code, mod.full_article))];
 }
 
-async function run(db = require('../db')) {
+async function run(db = require('../db'), options = {}) {
   const { categories, components, families } = readConfig();
+  // 'auto' — обычное обновление: фото трогаем только у новых позиций;
+  // 'refresh' — явная команда «добрать новые снимки из каталога».
+  const photoMode = options.refreshPhotos === true ? 'refresh' : 'auto';
   if (components.length === 0) {
     console.log('ℹ️  Каталог: нет данных в src/db/catalog/catalog.json');
     return;
@@ -515,9 +591,13 @@ async function run(db = require('../db')) {
 
       const current = await findComponent(db, entry.article);
       let componentId;
+      // фото позиции, которой ещё не было, — из каталога; у существующей —
+      // только по явной команде «добрать новое»
+      let photoAction = 'new';
 
       if (current) {
         componentId = current.id;
+        photoAction = photoMode === 'refresh' ? 'refresh' : 'existing';
         const filled = await fillEmptyFields(db, componentId, current, entry, imagePath);
         if (filled) updatedComponents += 1;
         else skippedComponents += 1;
@@ -526,12 +606,13 @@ async function run(db = require('../db')) {
         createdComponents += 1;
       }
 
-      createdComponentImages += await ensureComponentImages(db, componentId, entry, imagePath);
+      createdComponentImages += await syncComponentImages(
+        db, componentId, entry, imagePath, photoAction);
 
       const mods = await ensureModifications(db, componentId, entry);
       createdModifications += mods.created;
       for (const item of mods.items) {
-        createdModificationImages += await ensureModificationImages(db, item);
+        createdModificationImages += await syncModificationImages(db, item, photoAction);
       }
 
       // чертежи и паспорта изготовителя из архива — в карточку позиции
@@ -618,7 +699,10 @@ module.exports = {
   placeDocument,
   ensureComponentDocuments,
   ensureModifications,
-  ensureComponentImages,
+  ensureComponentImages: syncComponentImages,
+  syncComponentImages,
+  syncModificationImages,
+  photoKnown,
   adoptSplitFamilies,
   assertSchema,
   retireLegacyFlats,

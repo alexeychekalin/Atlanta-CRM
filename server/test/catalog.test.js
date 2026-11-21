@@ -451,10 +451,49 @@ test('фото из CRM: новые снимки добавляются, ста�
     { place: () => null });
   assert.equal(empty.components, 0);
   assert.equal(components[0].images.length, 3);
+});
 
-  // --prune приводит галерею к тому, что в CRM
-  applyImages(components, fromDb, { place: url => names[url] || null, prune: true });
-  assert.deepEqual(components[0].images, ['old-2.jpeg', 'a-1_new3.jpg']);
+test('фото из CRM: --prune снимает с сайта только убранное в карточке', () => {
+  const { applyImages } = require('../scripts/catalog/export_images');
+
+  const components = [
+    { article: 'А.1', image: 'cover-old.jpeg', images: ['cover-old.jpeg', 'old-2.jpeg', 'keep.jpeg'], modifications: [] },
+    // позиции нет в базе вовсе (каталог шире выгрузки) — её фото трогать нельзя
+    { article: 'А.2', image: 'only.jpeg', images: ['only.jpeg'], modifications: [] },
+  ];
+  // в базе у А.1 осталось одно живое фото, два убрали
+  const fromDb = new Map([
+    ['А.1', { image: '/uploads/images/keep.jpg', images: ['/uploads/images/keep.jpg'], mods: new Map() }],
+  ]);
+  const removed = new Map([
+    ['А.1', {
+      images: ['/uploads/images/cover-old.jpg', '/uploads/images/old-2.jpg'],
+      mods: new Map(),
+    }],
+  ]);
+  const names = {
+    '/uploads/images/keep.jpg': 'keep.jpeg',
+    '/uploads/images/cover-old.jpg': 'cover-old.jpeg',
+    '/uploads/images/old-2.jpg': 'old-2.jpeg',
+  };
+
+  const report = applyImages(components, fromDb,
+    { place: url => names[url] || null, prune: true, removed });
+
+  assert.deepEqual(components[0].images, ['keep.jpeg'], 'убранные снимки сняты с сайта');
+  assert.equal(components[0].image, 'keep.jpeg', 'обложкой стала первая оставшаяся');
+  assert.equal(report.removed, 2);
+
+  // позиция без записи в базе сохраняет фото: иначе --prune стёр бы каталог
+  assert.deepEqual(components[1].images, ['only.jpeg']);
+  assert.equal(components[1].image, 'only.jpeg');
+});
+
+test('фото из CRM: убранные снимки читаются из базы отдельно от живых', () => {
+  const source = require('fs').readFileSync(
+    require('path').join(__dirname, '../scripts/catalog/export_images.js'), 'utf8');
+  assert.match(source, /WHERE ci\.deleted_at IS NOT NULL/);
+  assert.match(source, /WHERE i\.deleted_at IS NOT NULL/);
 });
 
 test('ГИСП: список ссылок — точный артикул и целое семейство', () => {

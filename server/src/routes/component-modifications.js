@@ -101,6 +101,21 @@ router.post('/:modId/images', auth, async (req, res) => {
       return res.status(400).json({ error: 'Недопустимый путь к изображению' });
     }
 
+    const exists = await db.query(
+      `SELECT id, deleted_at FROM component_modification_images
+        WHERE modification_id = $1 AND image_path = $2
+        ORDER BY deleted_at NULLS FIRST LIMIT 1`,
+      [req.params.modId, normalizedImage]
+    );
+    if (exists.rows.length > 0) {
+      const row = exists.rows[0];
+      if (row.deleted_at) {
+        await db.query('UPDATE component_modification_images SET deleted_at = NULL WHERE id = $1', [row.id]);
+        return res.status(201).json({ ...row, deleted_at: null, restored: true });
+      }
+      return res.status(400).json({ error: 'Это фото уже есть у исполнения' });
+    }
+
     const result = await db.query(
       `INSERT INTO component_modification_images (modification_id, image_path, sort_order)
        VALUES ($1, $2, $3) RETURNING *`,
@@ -113,16 +128,55 @@ router.post('/:modId/images', auth, async (req, res) => {
   }
 });
 
-// DELETE /api/components/:id/modifications/:modId/images/:imgId — удалить фото
+// GET /api/components/:id/modifications/:modId/images/removed — убранные фото
+router.get('/:modId/images/removed', auth, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT id, image_path, sort_order, deleted_at
+         FROM component_modification_images
+        WHERE modification_id = $1 AND deleted_at IS NOT NULL
+        ORDER BY deleted_at DESC, id`,
+      [req.params.modId]
+    );
+    res.json({ data: result.rows });
+  } catch (err) {
+    console.error('Ошибка загрузки убранных фото исполнения:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/components/:id/modifications/:modId/images/:imgId — убрать фото
+//
+// Пометка вместо удаления: иначе импорт каталога приложил бы снимок заново.
 router.delete('/:modId/images/:imgId', auth, async (req, res) => {
   try {
-    await db.query(
-      'DELETE FROM component_modification_images WHERE id = $1 AND modification_id = $2',
+    const removed = await db.query(
+      `UPDATE component_modification_images SET deleted_at = now()
+        WHERE id = $1 AND modification_id = $2 AND deleted_at IS NULL
+        RETURNING id`,
       [req.params.imgId, req.params.modId]
     );
-    res.json({ success: true });
+    if (removed.rows.length === 0) return res.status(404).json({ error: 'Фото не найдено' });
+    res.json({ success: true, hidden: true });
   } catch (err) {
     console.error('Ошибка удаления фото:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/components/:id/modifications/:modId/images/:imgId/restore — вернуть фото
+router.post('/:modId/images/:imgId/restore', auth, async (req, res) => {
+  try {
+    const restored = await db.query(
+      `UPDATE component_modification_images SET deleted_at = NULL
+        WHERE id = $1 AND modification_id = $2 AND deleted_at IS NOT NULL
+        RETURNING id`,
+      [req.params.imgId, req.params.modId]
+    );
+    if (restored.rows.length === 0) return res.status(404).json({ error: 'Убранное фото не найдено' });
+    res.json({ success: true, restored: true });
+  } catch (err) {
+    console.error('Ошибка возврата фото:', err);
     res.status(500).json({ error: err.message });
   }
 });

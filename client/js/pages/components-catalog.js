@@ -628,13 +628,17 @@ const ComponentsCatalogPage = {
       //     но раскрытое состояние переживает удаление/загрузку фото.
       const gallery = (comp.images || []).filter(img => img.image_path);
       const photosOpen = this.isGroupOpen('comp-photos');
-      const photosHtml = photos.length > 1 ? `
+      // Убранные фото: импорт каталога их не возвращает, поэтому рядом —
+      // ссылка на список, чтобы случайно удалённое можно было вернуть.
+      const removedCount = Number(comp.images_removed) || 0;
+      const photosHtml = (photos.length > 0 || removedCount > 0) ? `
         <div class="comp-view__group">
           <button type="button" class="comp-view__disclosure" aria-expanded="${photosOpen ? 'true' : 'false'}" onclick="ComponentsCatalogPage.toggleGroup(this, 'comp-photos')">
             <span>Фотографии изделия (${gallery.length})</span>${chevron}
           </button>
           <div class="comp-view__group-body" id="comp-photos"${photosOpen ? '' : ' hidden'}>
             <div class="comp-photos">
+              ${gallery.length === 0 ? '<div class="comp-photos__empty">Все фото убраны — их можно вернуть</div>' : ''}
               ${gallery.map(img => `
                 <div class="comp-photo" onclick="ComponentsCatalogPage.viewComponentImage(${photos.indexOf(img.image_path)})">
                   <img src="${img.image_path}" alt="" onerror="ComponentsCatalogPage.imageFallback(this)">
@@ -644,6 +648,10 @@ const ComponentsCatalogPage = {
               `).join('')}
               ${canEdit ? `<button type="button" class="comp-photo comp-photo--add" title="Добавить фото" onclick="ComponentsCatalogPage.uploadComponentImage(${comp.id})">+</button>` : ''}
             </div>
+            ${removedCount > 0 ? `
+              <button type="button" class="comp-photos__removed" onclick="ComponentsCatalogPage.viewRemovedImages(${comp.id})">
+                Убранные фото (${removedCount}) — вернуть
+              </button>` : ''}
           </div>
         </div>` : '';
 
@@ -1428,10 +1436,49 @@ const ComponentsCatalogPage = {
   },
 
   async deleteComponentImage(componentId, imageId) {
-    if (!await ConfirmDialog.delete('Убрать фото из галереи?')) return;
+    if (!await ConfirmDialog.delete('Убрать фото из галереи? Импорт каталога его больше не вернёт.')) return;
     try {
       await API.del(`/components/${componentId}/images/${imageId}`);
       Toast.success('Фото убрано');
+      this.viewComponent(componentId);
+      this.loadAllComponents().then(() => this.filterAndRender());
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  /** Убранные фото позиции: импорт их не возвращает, вернуть можно отсюда. */
+  async viewRemovedImages(componentId) {
+    let removed = [];
+    try {
+      const res = await API.get(`/components/${componentId}/images/removed`);
+      removed = res.data || [];
+    } catch (err) { Toast.error(err.message); return; }
+
+    const body = removed.length === 0
+      ? '<div class="empty-state"><div class="empty-state-text">Убранных фото нет</div></div>'
+      : `<div class="comp-photos">
+          ${removed.map(img => `
+            <div class="comp-photo comp-photo--removed">
+              <img src="${safeUrl(img.image_path)}" alt="" onerror="ComponentsCatalogPage.imageFallback(this)">
+              <button type="button" class="comp-photo__restore" title="Вернуть фото"
+                      onclick="ComponentsCatalogPage.restoreComponentImage(${componentId}, ${img.id})">вернуть</button>
+            </div>`).join('')}
+        </div>
+        <div class="form-hint" style="margin-top:8px">
+          Эти снимки убраны в карточке. Загрузка обновлений их не возвращает — только кнопка «вернуть».
+        </div>`;
+
+    Modal.open({
+      title: `Убранные фото (${removed.length})`,
+      body,
+      footer: '<button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>',
+    });
+  },
+
+  async restoreComponentImage(componentId, imageId) {
+    try {
+      await API.post(`/components/${componentId}/images/${imageId}/restore`, {});
+      Toast.success('Фото возвращено');
+      Modal.close();
       this.viewComponent(componentId);
       this.loadAllComponents().then(() => this.filterAndRender());
     } catch (err) { Toast.error(err.message); }

@@ -169,7 +169,7 @@ async function adoptModifications(runner, mods, childId, report) {
       `INSERT INTO component_modification_images (modification_id, image_path, sort_order)
        SELECT $1, i.image_path, i.sort_order
          FROM component_modification_images i
-        WHERE i.modification_id = $2
+        WHERE i.modification_id = $2 AND i.deleted_at IS NULL
           AND NOT EXISTS (SELECT 1 FROM component_modification_images x
                            WHERE x.modification_id = $1 AND x.image_path = i.image_path)`,
       [target.id, mod.id]);
@@ -191,7 +191,7 @@ async function copyImages(runner, sourceId, childId) {
     `INSERT INTO component_images (component_id, image_path, sort_order)
      SELECT $1, i.image_path, i.sort_order
        FROM component_images i
-      WHERE i.component_id = $2
+      WHERE i.component_id = $2 AND i.deleted_at IS NULL
         AND NOT EXISTS (SELECT 1 FROM component_images x
                          WHERE x.component_id = $1 AND x.image_path = i.image_path)`,
     [childId, sourceId]);

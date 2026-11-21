@@ -198,11 +198,14 @@ CREATE TABLE IF NOT EXISTS component_modifications (
 );
 
 -- Фото модификаций
+-- deleted_at: снимок убрали в карточке позиции. Строку не стираем, чтобы
+-- импорт каталога не приложил его снова (см. migration_component_photo_state.sql).
 CREATE TABLE IF NOT EXISTS component_modification_images (
   id SERIAL PRIMARY KEY,
   modification_id INT NOT NULL REFERENCES component_modifications(id) ON DELETE CASCADE,
   image_path VARCHAR(500) NOT NULL,
   sort_order INT DEFAULT 0,
+  deleted_at TIMESTAMP,
   created_at TIMESTAMP DEFAULT now()
 );
 
@@ -212,6 +215,7 @@ CREATE TABLE IF NOT EXISTS component_images (
   component_id INT NOT NULL REFERENCES components(id) ON DELETE CASCADE,
   image_path VARCHAR(500) NOT NULL,
   sort_order INT DEFAULT 0,
+  deleted_at TIMESTAMP,
   created_at TIMESTAMP DEFAULT now()
 );
 

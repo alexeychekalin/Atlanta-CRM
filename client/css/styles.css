@@ -1385,6 +1385,55 @@ textarea.form-control {
   font-size: 9px;
 }
 
+/* Убранные фото: чтобы не путать с рабочими, показываем приглушённо */
+.comp-photo--removed {
+  cursor: default;
+}
+
+.comp-photo--removed img {
+  opacity: 0.45;
+}
+
+.comp-photo__restore {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: 2px;
+  padding: 2px 0;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent-teal);
+  color: #fff;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.comp-photo__restore:hover {
+  filter: brightness(1.1);
+}
+
+/* Ссылка «Убранные фото (N) — вернуть» под галереей */
+.comp-photos__removed {
+  margin-top: 8px;
+  padding: 4px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.comp-photos__removed:hover {
+  border-color: var(--accent-teal);
+  color: var(--accent-teal);
+}
+
+.comp-photos__empty {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
 /* --- модификации --- */
 .comp-mods {
   margin-top: 16px;
