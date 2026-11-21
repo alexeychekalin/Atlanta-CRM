@@ -135,7 +135,7 @@ function formatBackground(color) {
  * Нормализует фото на месте.
  * Возвращает { changed, reason, width, height, size }.
  *   changed=false + reason='already-normalized' — файл уже в нужном виде;
- *   changed=false + reason='too-small'         — меньше 200 px по стороне;
+ *   changed=false + reason='too-small'         — меньше 64 px по стороне (иконка, а не фото);
  *   changed=false + reason='unsupported'       — не фото (gif, pdf и т. п.).
  * Ошибки чтения/записи пробрасываются: вызывающий сам решает, критично ли это.
  */
