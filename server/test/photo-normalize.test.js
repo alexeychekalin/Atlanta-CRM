@@ -3,6 +3,9 @@
  * Проверяем то, что видит менеджер в каталоге: фото с большими белыми полями
  * больше не теряется, прозрачный фон не проваливается в тёмную карточку,
  * а повторный запуск не портит уже приведённые файлы.
+ *
+ * Отдельно — вес файлов: PNG-фото переводится в JPEG, иначе снимок фонаря
+ * весит в разы больше и грузится «полосами».
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,8 +19,11 @@ const {
   normalizeProductPhoto,
   isNormalizablePhoto,
   hasNormalizeMarker,
+  canvasFor,
   MARKER,
+  LEGACY_MARKER,
   SIZE,
+  MIN_CANVAS,
 } = require('../src/services/photo-normalize');
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -36,7 +42,7 @@ async function objectImage(dir, name, options = {}) {
     create: { width: objectWidth, height: objectHeight, channels: 3, background: objectColor },
   }).png().toBuffer();
 
-  let image = sharp({ create: { width, height, channels, background } })
+  const image = sharp({ create: { width, height, channels, background } })
     .composite([{
       input: object,
       left: Math.round((width - objectWidth) / 2),
@@ -46,6 +52,26 @@ async function objectImage(dir, name, options = {}) {
   if (name.endsWith('.png')) await image.png().toFile(target);
   else if (name.endsWith('.webp')) await image.webp().toFile(target);
   else await image.jpeg({ quality: 95 }).toFile(target);
+  return target;
+}
+
+/** «Фотографичное» фото: плавные пятна и градиенты, как у снимка изделия. */
+async function noisyPng(dir, name, width = 1600, height = 1000) {
+  const target = path.join(dir, name);
+  const shapes = [];
+  for (let i = 0; i < 60; i += 1) {
+    const x = (i * 137) % width;
+    const y = (i * 89) % height;
+    const r = 30 + (i * 53) % 140;
+    const color = `hsl(${(i * 47) % 360}, ${40 + (i * 13) % 50}%, ${30 + (i * 17) % 50}%)`;
+    shapes.push(`<circle cx="${x}" cy="${y}" r="${r}" fill="${color}"/>`);
+  }
+  const svg = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+    `<rect width="100%" height="100%" fill="#f4f4f4"/><g filter="url(#b)">${shapes.join('')}</g>` +
+    '<defs><filter id="b"><feGaussianBlur stdDeviation="14"/></filter></defs></svg>'
+  );
+  await sharp(svg).png().toFile(target);
   return target;
 }
 
@@ -84,21 +110,25 @@ test('фото с белыми полями: поля обрезаются, из
 
   const result = await normalizeProductPhoto(file);
   assert.equal(result.changed, true);
+  assert.equal(result.path, file, 'JPEG остаётся с тем же именем');
 
   const meta = await sharp(file).metadata();
-  assert.equal(meta.width, SIZE);
-  assert.equal(meta.height, SIZE);
+  assert.equal(meta.width, meta.height, 'кадр квадратный');
+  // Изделие было 300 px — растягиваем не больше чем в 1.6 раза,
+  // поэтому квадрат получается меньше 1000: лишние пиксели не нужны.
+  assert.ok(meta.width < SIZE, 'нельзя раздувать кадр из маленького изделия');
+  assert.equal(meta.width, canvasFor(300, 150).canvas);
 
   const box = await contentBox(file);
-  const share = Math.max(box.width, box.height) / SIZE;
+  const share = Math.max(box.width, box.height) / meta.width;
   assert.ok(share >= 0.8 && share <= 0.92, `изделие занимает ${(share * 100).toFixed(0)} %, ожидали ~86 %`);
 
   // Поля сверху и снизу одинаковые — изделие по центру кадра
-  const bottom = SIZE - (box.minY + box.height);
+  const bottom = meta.height - (box.minY + box.height);
   assert.ok(Math.abs(box.minY - bottom) <= 2, 'изделие должно быть по центру по вертикали');
 });
 
-test('прозрачный PNG: фон заливается белым, формат сохраняется', async () => {
+test('прозрачный PNG становится JPEG: фон белый, файл в разы легче', async () => {
   const dir = tempDir();
   const file = await objectImage(dir, 'transparent.png', {
     width: 800, height: 800, channels: 4,
@@ -109,17 +139,36 @@ test('прозрачный PNG: фон заливается белым, форм
   const before = await sharp(file).metadata();
   assert.equal(before.hasAlpha, true);
 
-  await normalizeProductPhoto(file);
-  const after = await sharp(file).metadata();
-  assert.equal(after.format, 'png', 'PNG остаётся PNG — путь в базе не меняется');
+  const result = await normalizeProductPhoto(file);
+  assert.equal(result.changed, true);
+  assert.equal(result.renamed, true);
+  assert.match(result.path, /transparent\.jpg$/);
+  assert.equal(fs.existsSync(file), false, 'старый .png удалён — в базе не останется битой ссылки');
+
+  const after = await sharp(result.path).metadata();
+  assert.equal(after.format, 'jpeg');
   assert.equal(after.hasAlpha, false, 'альфа-канал залит белым');
-  assert.deepEqual(await cornerPixel(file), [255, 255, 255]);
+  assert.deepEqual(await cornerPixel(result.path), [255, 255, 255]);
 });
 
-test('тёмное фото на весь кадр вписывается в белый квадрат без обрезки', async () => {
+test('фотографичный PNG: после нормализации файл заметно меньше исходного', async () => {
+  const dir = tempDir();
+  const file = await noisyPng(dir, 'noisy.png', 1600, 1000);
+  const before = fs.statSync(file).size;
+
+  const result = await normalizeProductPhoto(file);
+  assert.equal(result.changed, true);
+  assert.match(result.path, /\.jpg$/);
+
+  const after = fs.statSync(result.path).size;
+  assert.ok(after < before / 3, `было ${(before / 1024).toFixed(0)} КБ, стало ${(after / 1024).toFixed(0)} КБ`);
+  assert.ok(after < 300 * 1024, `фото должно весить меньше 300 КБ, а не ${(after / 1024).toFixed(0)} КБ`);
+});
+
+test('крупное фото на весь кадр вписывается в белый квадрат без обрезки', async () => {
   const dir = tempDir();
   const file = await objectImage(dir, 'dark.jpg', {
-    width: 1200, height: 600, background: '#2b2b2b', objectWidth: 800, objectHeight: 300, objectColor: '#b45309',
+    width: 3000, height: 2000, background: '#2b2b2b', objectWidth: 2400, objectHeight: 1500, objectColor: '#b45309',
   });
 
   await normalizeProductPhoto(file);
@@ -132,12 +181,34 @@ test('тёмное фото на весь кадр вписывается в б�
   assert.ok(box.width / SIZE >= 0.8, 'изделие не должно уменьшиться');
 });
 
+test('мелкое фото: квадрат меньше 1000 и без сильного растяжения', async () => {
+  const dir = tempDir();
+  const file = await objectImage(dir, 'small.jpg', { width: 320, height: 240, objectWidth: 260, objectHeight: 120 });
+
+  const result = await normalizeProductPhoto(file);
+  assert.equal(result.changed, true);
+  const meta = await sharp(file).metadata();
+  assert.ok(meta.width < SIZE, `квадрат ${meta.width} — мелкое фото не растягиваем до 1000`);
+  assert.ok(meta.width >= MIN_CANVAS);
+
+  // повторный запуск его уже не трогает
+  const again = await normalizeProductPhoto(file);
+  assert.equal(again.changed, false);
+  assert.equal(again.reason, 'already-normalized');
+});
+
+test('canvasFor: крупное фото — 1000, мелкое — по размеру изделия', () => {
+  assert.deepEqual(canvasFor(3000, 2000), { canvas: 1000, object: 860 });
+  const small = canvasFor(200, 150);
+  assert.ok(small.canvas < 1000 && small.canvas >= MIN_CANVAS);
+  // увеличение не больше MAX_SCALE: 200 × 1.6 = 320
+  assert.equal(small.object, 320);
+});
+
 test('повторный запуск не перекодирует уже нормализованный файл', async () => {
   const dir = tempDir();
   const file = await objectImage(dir, 'repeat.jpg');
-
-  const first = await normalizeProductPhoto(file);
-  assert.equal(first.changed, true);
+  await normalizeProductPhoto(file);
   const hash = fileHash(file);
 
   const second = await normalizeProductPhoto(file);
@@ -146,34 +217,39 @@ test('повторный запуск не перекодирует уже но�
   assert.equal(fileHash(file), hash, 'файл не должен переписываться');
 });
 
+test('фото первой версии (v1) в JPEG не трогаем, а PNG — переводим в JPEG', async () => {
+  const dir = tempDir();
+  // v1: квадрат 1000×1000 JPEG с меткой старой версии
+  const legacy = path.join(dir, 'legacy.jpg');
+  await sharp({ create: { width: SIZE, height: SIZE, channels: 3, background: '#ffffff' } })
+    .jpeg({ quality: 88 })
+    .withMetadata({ exif: { IFD0: { ImageDescription: LEGACY_MARKER } } })
+    .toFile(legacy);
+  const skipped = await normalizeProductPhoto(legacy);
+  assert.equal(skipped.changed, false);
+  assert.equal(skipped.reason, 'already-normalized');
+
+  // v1: PNG с меткой — формат остаётся тяжёлым, поэтому переводим
+  const legacyPng = path.join(dir, 'legacy.png');
+  await objectImage(dir, 'src.png', { width: 1200, height: 900 });
+  await sharp(path.join(dir, 'src.png')).png().withMetadata({ exif: { IFD0: { ImageDescription: LEGACY_MARKER } } })
+    .toFile(legacyPng);
+  const converted = await normalizeProductPhoto(legacyPng);
+  assert.equal(converted.changed, true);
+  assert.match(converted.path, /\.jpg$/);
+});
+
 test('проверка (dry run) показывает изменения, но не трогает файл', async () => {
   const dir = tempDir();
-  const file = await objectImage(dir, 'dry.jpg');
+  const file = await objectImage(dir, 'dry.png');
   const hash = fileHash(file);
 
   const result = await normalizeProductPhoto(file, { dryRun: true });
   assert.equal(result.changed, true);
   assert.equal(result.dryRun, true);
+  assert.match(result.path, /\.jpg$/);
   assert.equal(fileHash(file), hash, 'в режиме проверки файл остаётся прежним');
-  assert.equal((await sharp(file).metadata()).width, 1200);
-});
-
-test('мелкое фото тоже приводится к квадрату, но без мыла', async () => {
-  const dir = tempDir();
-  const file = await objectImage(dir, 'small.jpg', { width: 160, height: 120, objectWidth: 80, objectHeight: 60 });
-
-  const result = await normalizeProductPhoto(file);
-  assert.equal(result.changed, true);
-  const meta = await sharp(file).metadata();
-  assert.equal(meta.width, SIZE);
-  // увеличение ограничено: изделие не растянуто на весь кадр
-  const box = await contentBox(file);
-  assert.ok(box.width / SIZE <= 0.75, `изделие занимает ${(box.width / SIZE * 100).toFixed(0)} % — слишком крупно для мелкого исходника`);
-
-  // ...и повторный запуск его уже не трогает
-  const again = await normalizeProductPhoto(file);
-  assert.equal(again.changed, false);
-  assert.equal(again.reason, 'already-normalized');
+  assert.equal(fs.existsSync(result.path), false, 'новый файл не создаётся');
 });
 
 test('метка нормализации записывается в файл', async () => {
@@ -185,10 +261,10 @@ test('метка нормализации записывается в файл',
   const png = await objectImage(dir, 'marked.png', {
     channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 }, width: 600, height: 600,
   });
-  await normalizeProductPhoto(png);
-  const meta = await sharp(png).metadata();
-  assert.equal(meta.format, 'png');
-  assert.ok(meta.exif.toString().includes(MARKER), 'PNG тоже получает метку');
+  const result = await normalizeProductPhoto(png);
+  const meta = await sharp(result.path).metadata();
+  assert.equal(meta.format, 'jpeg');
+  assert.ok(meta.exif.toString().includes(MARKER), 'метка новой версии');
 
   // У чужого фото метки нет
   const foreign = await objectImage(dir, 'foreign.jpg');
@@ -209,15 +285,24 @@ test('не фото не трогаем', async () => {
   assert.equal(isNormalizablePhoto('photo.gif'), false);
   assert.equal(isNormalizablePhoto('scan.pdf'), false);
   assert.equal(isNormalizablePhoto('photo.JPG'), true);
-  assert.deepEqual(await normalizeProductPhoto('/tmp/whatever.gif'), { changed: false, reason: 'unsupported' });
+
+  const result = await normalizeProductPhoto('/tmp/whatever.gif');
+  assert.equal(result.changed, false);
+  assert.equal(result.reason, 'unsupported');
 });
 
-test('загрузка фото компонента нормализуется, а документы — нет', () => {
+test('загрузка фото компонента нормализуется и учитывает новое имя файла', () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/upload.js'), 'utf8');
   const imageRoute = source.match(/router\.post\('\/image'[^\n]*/);
   assert.ok(imageRoute, 'нет маршрута /upload/image');
   assert.match(imageRoute[0], /fixPhotoOrientation,\s*normalizeUploadedPhoto/);
-  assert.match(imageRoute[0], /normalizeUploadedPhoto/);
+
+  // PNG → JPEG: путь и имя файла в ответе должны обновиться
+  const handler = source.match(/async function normalizeUploadedPhoto[\s\S]*?\n\}/);
+  assert.ok(handler, 'нет normalizeUploadedPhoto');
+  assert.match(handler[0], /req\.file\.path = result\.path/);
+  assert.match(handler[0], /req\.file\.filename = path\.basename\(result\.path\)/);
+  assert.match(handler[0], /req\.file\.originalname/);
 
   // Сканы и чертежи не превращаем в квадраты — это документы, а не фото изделия
   for (const route of ['/drawing', '/client-doc', '/component-doc', '/library-file']) {
@@ -227,7 +312,7 @@ test('загрузка фото компонента нормализуется,
   }
 });
 
-test('скрипт для старых фото: бэкап, проверка, повтор, восстановление', () => {
+test('скрипт для старых фото: бэкап, проверка, повтор, восстановление, ссылки в базе', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
   assert.equal(pkg.scripts['db:normalize-photos'], 'node scripts/normalize_photos.js');
   assert.ok(pkg.scripts['demo:normalize-photos'], 'нужен демо-запуск для проверки на PGlite');
@@ -236,11 +321,17 @@ test('скрипт для старых фото: бэкап, проверка, �
   assert.match(script, /--dry-run/);
   assert.match(script, /--restore/);
   assert.match(script, /--all/);
+
   // Бэкап должен сниматься до перезаписи файла
   const backupIndex = script.indexOf('await backupFile(urlPath, backupDir);');
   const normalizeIndex = script.indexOf('await normalizeProductPhoto(absolute');
   assert.ok(backupIndex > 0 && backupIndex < normalizeIndex, 'сначала бэкап, потом нормализация');
   assert.match(script, /photo-backup/);
+
+  // После переименования .png → .jpg ссылки в базе должны обновиться
+  assert.match(script, /async function updateReferences/);
+  assert.match(script, /UPDATE \$\{table\} SET \$\{column\} = \$1 WHERE \$\{column\} = \$2/);
+  assert.match(script, /await updateReferences\(urlPath/);
 });
 
 test('карточка каталога: белая подложка и вписанное фото вместо обрезки', () => {
@@ -260,9 +351,9 @@ test('карточка каталога: белая подложка и впис
 
   // Версии статики подняты — иначе браузер покажет старый CSS из кэша
   const index = fs.readFileSync(path.join(ROOT, 'client/index.html'), 'utf8');
-  assert.match(index, /styles\.css\?v=(\d+)/);
   const version = Number(index.match(/styles\.css\?v=(\d+)/)[1]);
   assert.ok(version >= 12, 'нужно поднять ?v= у styles.css');
   const sw = fs.readFileSync(path.join(ROOT, 'client/sw.js'), 'utf8');
-  assert.match(sw, /atlanta-crm-v20|atlanta-crm-v2\d/);
+  const cacheVersion = Number(sw.match(/atlanta-crm-v(\d+)/)[1]);
+  assert.ok(cacheVersion >= 20, 'нужно поднять версию кэша service worker');
 });

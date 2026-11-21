@@ -9,41 +9,45 @@
  *   1. прозрачность заливаем белым — карточка каталога тёмная, иначе
  *      «дырки» просвечивают фоном;
  *   2. обрезаем однотонные поля по краям (обычно белые);
- *   3. вписываем изделие в белый квадрат 1000×1000 с полем ~7 %,
- *      не увеличивая больше чем в 2,5 раза, чтобы не мылить мелкие фото;
- *   4. сохраняем в тот же формат и перезаписываем файл атомарно —
- *      путь в базе не меняется.
+ *   3. вписываем изделие в белый квадрат с полем ~7 % — так все карточки
+ *      выглядят одинаково. Размер квадрата подбирается по самому изделию:
+ *      крупное фото → 1000×1000, мелкое → меньше, чтобы не растягивать
+ *      пиксели и не раздувать файл;
+ *   4. сохраняем фотографией JPEG (прогрессивный) и перезаписываем файл
+ *      атомарно. PNG/WebP-фото становятся `.jpg`: PNG на фотографиях
+ *      в разы тяжелее (снимок фонаря — 436 КБ против 90 КБ), а браузер
+ *      показывает такой файл «полосами» по мере загрузки.
  *
- * Уже нормализованные файлы повторно не кодируются: квадрат 1000×1000
- * с белыми полями ~7 % считается готовым. Это важно для скрипта, который
- * можно запускать повторно, и чтобы не терять качество JPEG.
+ * Уже нормализованные файлы повторно не кодируются: в EXIF стоит метка
+ * atlanta-normalized-*. Это важно для скрипта, который можно запускать
+ * повторно, и чтобы не терять качество JPEG при каждом прогоне.
  */
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+// Максимальная сторона квадрата. Меньше — только если фото мелкое.
 const SIZE = 1000;
+// Минимальная сторона квадрата: совсем крошечные фото растягиваем умеренно.
+const MIN_CANVAS = 320;
 // Поле вокруг изделия с каждой стороны: 7 % — изделие занимает 86 % кадра.
 const PADDING = 0.07;
+// Насколько можно увеличить изделие: мелкое фото не должно стать мылом.
+const MAX_SCALE = 1.6;
 const QUALITY = 88;
 // Порог «это фон, а не товар»: насколько пиксель должен отличаться от белого.
 const TRIM_THRESHOLD = 16;
-// Совсем крошечные картинки (иконки, превью) не трогаем: растягивать нечего.
+// Совсем крошечные картинки (иконки, превью) не трогаем.
 const MIN_SIDE = 64;
-// Максимальное увеличение при вписывании в квадрат (по длинной стороне).
-const MAX_SCALE = 3;
 const MAX_PIXELS = 40 * 1000 * 1000;
 
+// Метка нормализации в EXIF: по ней узнаём своё фото и не кодируем его снова.
+const MARKER = 'atlanta-normalized-v2';
+// Первая версия метки: файлы, обработанные до перехода на JPEG.
+const LEGACY_MARKER = 'atlanta-normalized-v1';
+
 const NORMALIZABLE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
-
-// Метка в EXIF: по ней узнаём своё фото и не перекодируем его повторно.
-// Без метки небольшие фото (их увеличение ограничено) каждый запуск
-// растягивались бы заново и теряли качество.
-const MARKER = 'atlanta-normalized-v1';
-
-function hasNormalizeMarker(metadata) {
-  return Boolean(metadata && metadata.exif && metadata.exif.includes(Buffer.from(MARKER)));
-}
+const JPEG_EXTENSIONS = ['.jpg', '.jpeg'];
 
 function extensionOf(filePath) {
   return path.extname(String(filePath || '')).toLowerCase();
@@ -57,10 +61,10 @@ function loadSharp() {
   return require('sharp');
 }
 
-function outputFormat(extension) {
-  if (extension === '.png') return { type: 'png', options: { compressionLevel: 9 } };
-  if (extension === '.webp') return { type: 'webp', options: { quality: QUALITY } };
-  return { type: 'jpeg', options: { quality: QUALITY, mozjpeg: true, progressive: true } };
+function hasNormalizeMarker(metadata) {
+  if (!metadata || !metadata.exif) return false;
+  const exif = metadata.exif;
+  return exif.includes(Buffer.from(MARKER)) || exif.includes(Buffer.from(LEGACY_MARKER));
 }
 
 /**
@@ -132,11 +136,34 @@ function formatBackground(color) {
 }
 
 /**
+ * Размер квадрата под конкретное фото: изделие занимает 86 % кадра,
+ * но увеличиваем не больше чем в MAX_SCALE раз и не больше SIZE.
+ */
+function canvasFor(width, height, size = SIZE, padding = PADDING) {
+  const longest = Math.max(width, height);
+  const maxObject = Math.round(size * (1 - padding * 2));
+  const object = Math.min(maxObject, Math.round(longest * MAX_SCALE));
+  const canvas = Math.min(size, Math.max(MIN_CANVAS, Math.round(object / (1 - padding * 2))));
+  return { canvas, object: Math.round(canvas * (1 - padding * 2)) };
+}
+
+/** Имя файла с расширением .jpg (или .jpeg, если так было). */
+function jpegName(filePath) {
+  const extension = extensionOf(filePath);
+  const target = JPEG_EXTENSIONS.includes(extension) ? extension : '.jpg';
+  return path.join(
+    path.dirname(filePath),
+    `${path.basename(filePath, extension)}${target}`
+  );
+}
+
+/**
  * Нормализует фото на месте.
- * Возвращает { changed, reason, width, height, size }.
+ * Возвращает { changed, reason, path, width, height, size }.
  *   changed=false + reason='already-normalized' — файл уже в нужном виде;
- *   changed=false + reason='too-small'         — меньше 64 px по стороне (иконка, а не фото);
+ *   changed=false + reason='too-small'         — меньше 64 px по стороне;
  *   changed=false + reason='unsupported'       — не фото (gif, pdf и т. п.).
+ * `path` — итоговый путь: у PNG/WebP он меняется на `.jpg`.
  * Ошибки чтения/записи пробрасываются: вызывающий сам решает, критично ли это.
  */
 async function normalizeProductPhoto(filePath, options = {}) {
@@ -145,22 +172,22 @@ async function normalizeProductPhoto(filePath, options = {}) {
   const extension = extensionOf(filePath);
 
   if (!isNormalizablePhoto(filePath)) {
-    return { changed: false, reason: 'unsupported' };
+    return { changed: false, reason: 'unsupported', path: filePath };
   }
 
   const sharp = loadSharp();
   const metadata = await sharp(filePath, { limitInputPixels: MAX_PIXELS }).metadata();
   if (!metadata.width || !metadata.height) {
-    return { changed: false, reason: 'no-size' };
+    return { changed: false, reason: 'no-size', path: filePath };
   }
   if (Math.min(metadata.width, metadata.height) < MIN_SIDE) {
-    return { changed: false, reason: 'too-small', width: metadata.width, height: metadata.height };
+    return { changed: false, reason: 'too-small', path: filePath, width: metadata.width, height: metadata.height };
   }
 
   // Своё фото узнаём по метке: раскладывать его по квадрату второй раз
   // нельзя — каждое перекодирование съедает качество.
-  if (metadata.width === size && metadata.height === size && hasNormalizeMarker(metadata)) {
-    return { changed: false, reason: 'already-normalized', width: size, height: size };
+  if (hasNormalizeMarker(metadata) && JPEG_EXTENSIONS.includes(extension)) {
+    return { changed: false, reason: 'already-normalized', path: filePath, width: metadata.width, height: metadata.height };
   }
 
   const corners = await cornerStats(sharp, filePath);
@@ -170,52 +197,58 @@ async function normalizeProductPhoto(filePath, options = {}) {
     : await trimMargins(sharp, filePath, '#ffffff', metadata.hasAlpha);
 
   const trimmed = await sharp(trimmedBuffer).metadata();
-  const inner = Math.max(1, Math.round(size * (1 - padding * 2)));
-  // Не увеличиваем больше MAX_SCALE: мелкое фото лучше оставить мелким в кадре,
-  // чем растянуть его до мыла на весь квадрат.
-  const limit = Math.round(Math.max(trimmed.width, trimmed.height) * MAX_SCALE);
-  const box = Math.min(inner, Math.max(limit, 1));
+  const { canvas, object } = canvasFor(trimmed.width, trimmed.height, size, padding);
 
   const { data: body, info: bodyInfo } = await sharp(trimmedBuffer)
-    .resize({ width: box, height: box, fit: 'inside' })
+    .resize({ width: object, height: object, fit: 'inside' })
     .toBuffer({ resolveWithObject: true });
 
-  const { type, options: encodeOptions } = outputFormat(extension);
+  const targetPath = jpegName(filePath);
   const tempPath = path.join(
-    path.dirname(filePath),
-    `.norm-${crypto.randomBytes(6).toString('hex')}${extension}`
+    path.dirname(targetPath),
+    `.norm-${crypto.randomBytes(6).toString('hex')}.jpg`
   );
 
   const pipeline = () => sharp({
-    create: { width: size, height: size, channels: 3, background: '#ffffff' },
+    create: { width: canvas, height: canvas, channels: 3, background: '#ffffff' },
   })
     .composite([{
       input: body,
-      left: Math.max(0, Math.round((size - bodyInfo.width) / 2)),
-      top: Math.max(0, Math.round((size - bodyInfo.height) / 2)),
+      left: Math.max(0, Math.round((canvas - bodyInfo.width) / 2)),
+      top: Math.max(0, Math.round((canvas - bodyInfo.height) / 2)),
     }])
-    // прозрачность исходника залита белым: PNG остаётся PNG, но без альфы
     .flatten({ background: '#ffffff' })
     .removeAlpha()
-    .withMetadata({ exif: { IFD0: { ImageDescription: MARKER } } })
-    .toFormat(type, encodeOptions);
+    // 4:4:4 — без «мыла» на мелких надписях и кромках, как у схем и чертежей
+    .jpeg({ quality: QUALITY, mozjpeg: true, progressive: true, chromaSubsampling: '4:4:4' })
+    .withMetadata({ exif: { IFD0: { ImageDescription: MARKER } } });
 
   try {
     // Проверка «что изменится» не должна трогать файлы — только считаем результат
     if (options.dryRun) {
       const { info } = await pipeline().toBuffer({ resolveWithObject: true });
-      return { changed: true, reason: 'normalized', width: size, height: size, size: info.size, dryRun: true };
+      return {
+        changed: true, reason: 'normalized', path: targetPath,
+        width: canvas, height: canvas, size: info.size, dryRun: true,
+        renamed: targetPath !== filePath,
+      };
     }
 
     await pipeline().toFile(tempPath);
-    await fs.promises.rename(tempPath, filePath);
-    const stat = await fs.promises.stat(filePath);
+    await fs.promises.rename(tempPath, targetPath);
+    // PNG/WebP-оригинал больше не нужен: на его место встал JPEG
+    if (targetPath !== filePath) {
+      await fs.promises.unlink(filePath).catch(() => {});
+    }
+    const stat = await fs.promises.stat(targetPath);
     return {
       changed: true,
       reason: 'normalized',
-      width: size,
-      height: size,
+      path: targetPath,
+      width: canvas,
+      height: canvas,
       size: stat.size,
+      renamed: targetPath !== filePath,
       trimmed: bodyInfo.width < trimmed.width || bodyInfo.height < trimmed.height,
     };
   } catch (err) {
@@ -226,12 +259,14 @@ async function normalizeProductPhoto(filePath, options = {}) {
 
 module.exports = {
   SIZE,
-  MARKER,
-  hasNormalizeMarker,
+  MIN_CANVAS,
   PADDING,
-  MIN_SIDE,
   MAX_SCALE,
+  MARKER,
+  LEGACY_MARKER,
   NORMALIZABLE_EXTENSIONS,
   isNormalizablePhoto,
+  hasNormalizeMarker,
+  canvasFor,
   normalizeProductPhoto,
 };

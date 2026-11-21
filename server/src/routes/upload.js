@@ -233,7 +233,14 @@ async function normalizeUploadedPhoto(req, res, next) {
   try {
     const result = await normalizeProductPhoto(req.file.path);
     if (result.changed) {
-      const stat = await fs.promises.stat(req.file.path);
+      // PNG/WebP-фото сохраняются как JPEG: путь и имя меняются на .jpg
+      req.file.path = result.path;
+      req.file.filename = path.basename(result.path);
+      if (result.renamed) {
+        req.file.originalname = String(req.file.originalname || '')
+          .replace(/\.(png|webp|jpeg)$/i, '.jpg');
+      }
+      const stat = await fs.promises.stat(result.path);
       req.file.size = stat.size;
       req.file.normalized = true;
     }

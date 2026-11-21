@@ -8,9 +8,10 @@
  *   npm run db:normalize-photos -- --restore=server/.photo-backup/<папка>
  *
  * Что делает: прозрачность → белый, обрезает однотонные поля, вписывает
- * изделие в белый квадрат 1000×1000. Файлы перезаписываются на месте,
- * пути в базе не меняются. Оригиналы складываются в .photo-backup/<дата>,
- * оттуда их можно вернуть флагом --restore.
+ * изделие в белый квадрат. Фото сохраняется как JPEG: PNG/WebP-оригиналы
+ * получают расширение .jpg, ссылки в базе обновляются на новый путь.
+ * Оригиналы складываются в .photo-backup/<дата>, оттуда их можно вернуть
+ * флагом --restore.
  *
  * Повторный запуск безопасен: уже нормализованные файлы пропускаются,
  * поэтому скрипт можно смело гонять после массовой загрузки фото.
@@ -68,6 +69,26 @@ function orphanPaths() {
   return fs.readdirSync(dir)
     .filter(name => !name.startsWith('.'))
     .map(name => `/uploads/images/${name}`);
+}
+
+/**
+ * После переименования файла (PNG → JPEG) ссылки в базе нужно поправить,
+ * иначе карточки останутся с битой картинкой.
+ */
+async function updateReferences(oldPath, newPath) {
+  const updates = [];
+  for (const [table, column] of PHOTO_SOURCES) {
+    try {
+      const result = await db.query(
+        `UPDATE ${table} SET ${column} = $1 WHERE ${column} = $2`,
+        [newPath, oldPath]
+      );
+      if (result.rowCount) updates.push(`${table}.${column}: ${result.rowCount}`);
+    } catch (err) {
+      if (!/does not exist/i.test(err.message)) throw err;
+    }
+  }
+  return updates;
 }
 
 function countFiles(dir) {
@@ -164,7 +185,7 @@ async function main() {
     console.log(`📦 Бэкап оригиналов: ${backupDir}`);
   }
 
-  const stats = { changed: 0, skipped: 0, tooSmall: 0, failed: 0, missing: 0, savedBytes: 0 };
+  const stats = { changed: 0, skipped: 0, tooSmall: 0, failed: 0, missing: 0, renamed: 0, savedBytes: 0 };
   let processed = 0;
 
   for (const urlPath of candidates) {
@@ -181,6 +202,11 @@ async function main() {
       if (result.changed) {
         stats.changed += 1;
         stats.savedBytes += before - result.size;
+        if (result.path !== absolute) {
+          stats.renamed += 1;
+          // тот же каталог, новое имя файла
+          if (!DRY_RUN) await updateReferences(urlPath, urlPath.replace(/[^/]+$/, path.basename(result.path)));
+        }
       } else if (result.reason === 'too-small') {
         stats.tooSmall += 1;
       } else {
@@ -202,6 +228,7 @@ async function main() {
   console.log(`${DRY_RUN ? '📋 Изменилось бы' : '✅ Обработано'}: ${stats.changed}` +
     ` | уже в порядке: ${stats.skipped}` +
     ` | мелких (не растягиваем): ${stats.tooSmall}` +
+    ` | переименовано в .jpg: ${stats.renamed}` +
     ` | нет файла: ${stats.missing}` +
     ` | ошибок: ${stats.failed}`);
   if (stats.savedBytes !== 0) {
