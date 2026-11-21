@@ -20,7 +20,10 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS status_id INTEGER REFERENCES client
 CREATE INDEX IF NOT EXISTS idx_clients_status ON clients(status_id);
 
 -- Начальные статусы
-INSERT INTO client_work_statuses (name, color, sort_order) VALUES
+-- Только отсутствующие статусы: повторное применение не задваивает словарь
+INSERT INTO client_work_statuses (name, color, sort_order)
+SELECT v.name, v.color, v.sort_order
+  FROM (VALUES
     ('Новый', '#3b82f6', 1),
     ('Отправлен тестовый чертёж', '#f59e0b', 2),
     ('Переговоры', '#8b5cf6', 3),
@@ -29,4 +32,7 @@ INSERT INTO client_work_statuses (name, color, sort_order) VALUES
     ('Постоянный клиент', '#06b6d4', 6),
     ('Приостановлен', '#f97316', 7),
     ('Отказ', '#ef4444', 8)
-ON CONFLICT DO NOTHING;
+  ) AS v(name, color, sort_order)
+ WHERE NOT EXISTS (
+   SELECT 1 FROM client_work_statuses s WHERE lower(s.name) = lower(v.name)
+ );

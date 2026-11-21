@@ -7,8 +7,19 @@
     "start": "node server/src/index.js",
     "dev": "cd server && npm run dev",
     "db:init": "cd server && npm run db:init",
-    "db:migrate": "cd server && node src/db/migrate_roles.js",
-    "postinstall": "cd server && npm install"
+    "db:migrate": "cd server && npm run db:migrate",
+    "db:catalog": "cd server && npm run db:catalog",
+    "db:export-gisp": "cd server && npm run db:export-gisp",
+    "db:apply-gisp": "cd server && npm run db:apply-gisp",
+    "db:export-images": "cd server && npm run db:export-images",
+    "db:import-gisp": "cd server && npm run db:import-gisp",
+    "db:export-site": "cd server && npm run db:export-site",
+    "db:data": "cd server && npm run db:data",
+    "db:preseed": "cd server && npm run db:preseed",
+    "db:init:full": "cd server && npm run db:init:full",
+    "postinstall": "cd server && npm install",
+    "test": "cd server && npm test",
+    "lint": "cd server && npm run lint"
   },
   "keywords": [
     "crm",

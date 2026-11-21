@@ -35,7 +35,7 @@ const ProposalsPage = {
           </select>
           <select class="filter-select" id="proposals-client-filter">
             <option value="">Все клиенты</option>
-            ${this.clients.map(c => `<option value="${c.id}" ${this.filters.client_id == c.id ? 'selected' : ''}>${c.name}</option>`).join('')}
+            ${this.clients.map(c => `<option value="${c.id}" ${this.filters.client_id == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
           </select>
         </div>
         ${canEdit ? '<button class="btn btn-primary" onclick="ProposalsPage.openCreateModal()">+ Новое КП</button>' : ''}
@@ -102,9 +102,9 @@ const ProposalsPage = {
                 const st = statusMap[p.status] || statusMap.draft;
                 return `
                   <tr style="cursor:pointer" onclick="ProposalsPage.viewProposal(${p.id})" title="Нажмите для просмотра">
-                    <td class="font-mono" style="font-weight:600">${p.proposal_number}</td>
+                    <td class="font-mono" style="font-weight:600">${esc(p.proposal_number)}</td>
                     <td>${Table.formatDate(p.created_at)}</td>
-                    <td><a href="#" onclick="event.stopPropagation();App.navigateTo('client-profile',${p.client_id});return false" class="client-link">${p.client_name || '—'}</a></td>
+                    <td><a href="#" onclick="event.stopPropagation();App.navigateTo('client-profile',${p.client_id});return false" class="client-link">${esc(p.client_name) || '—'}</a></td>
                     <td>
                       <span class="badge" style="background:${st.color}15;color:${st.color};border:1px solid ${st.color}30;font-size:0.75rem;padding:2px 8px;border-radius:12px;font-weight:600">
                         ${st.label}
@@ -153,18 +153,19 @@ const ProposalsPage = {
         wide: true,
         body: `
           <div class="grid-2 mb-2">
-            <div><strong>Клиент:</strong> ${p.client_name || '—'}</div>
-            <div><strong>Принципал:</strong> ${p.principal_name || '—'}</div>
+            <div><strong>Клиент:</strong> ${esc(p.client_full_name || p.client_name) || '—'}</div>
+            <div><strong>Принципал:</strong> ${esc(p.principal_name) || '—'}</div>
             <div><strong>Дата:</strong> ${Table.formatDate(p.created_at)}</div>
             <div><strong>Статус:</strong> ${statusMap[p.status] || p.status}</div>
             ${p.valid_until ? `<div><strong>Действ. до:</strong> ${Table.formatDate(p.valid_until)}</div>` : ''}
             ${p.order_id ? `<div><strong>Заказ:</strong> <a href="#" onclick="Modal.close();App.navigateTo('orders')" style="color:var(--accent-teal)">Перейти к заказу</a></div>` : ''}
           </div>
-          ${p.client_inn ? `<div class="mb-2" style="padding:10px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border);font-size:0.85rem">
-            <strong>Реквизиты:</strong> ИНН ${p.client_inn}${p.client_kpp ? ' / КПП ' + p.client_kpp : ''}
-            ${p.client_legal_address ? '<br>' + p.client_legal_address : ''}
+          ${(p.client_inn || p.client_bank_account) ? `<div class="mb-2" style="padding:10px;background:var(--bg-main);border-radius:8px;border:1px solid var(--border);font-size:0.85rem">
+            <strong>Реквизиты:</strong>${p.client_inn ? ` ИНН ${esc(p.client_inn)}${p.client_kpp ? ' / КПП ' + esc(p.client_kpp) : ''}` : ''}
+            ${p.client_legal_address ? '<br>' + esc(p.client_legal_address) : ''}
+            ${p.client_bank_account ? `<br>Р/С ${esc(p.client_bank_account)}${p.client_bank_name ? `, ${esc(p.client_bank_name)}` : ''}${p.client_corr_account ? `, К/С ${esc(p.client_corr_account)}` : ''}${p.client_bik ? `, БИК ${esc(p.client_bik)}` : ''}` : ''}
           </div>` : ''}
-          ${p.comment ? `<div class="mb-2"><strong>Комментарий:</strong> ${p.comment}</div>` : ''}
+          ${p.comment ? `<div class="mb-2"><strong>Комментарий:</strong> ${esc(p.comment)}</div>` : ''}
           <h4 class="mb-1" style="color:var(--text-secondary)">Позиции</h4>
           <div class="table-wrapper">
             <table class="data-table">
@@ -173,10 +174,10 @@ const ProposalsPage = {
                 ${(p.items || []).map((item, i) => `
                   <tr>
                     <td style="color:var(--text-muted)">${i + 1}</td>
-                    <td><span class="font-mono" style="color:var(--accent-teal);font-size:0.82rem">${item.article || '—'}</span></td>
-                    <td title="${(item.product_name || '').replace(/"/g, '&quot;')}" style="font-weight:500"><span style="display:inline-block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle">${item.product_name}${item.description ? '<br><span style="font-size:0.8rem;color:var(--text-muted)">' + item.description + '</span>' : ''} ${item.is_drawing ? '📐' : ''}</span></td>
-                    ${(p.items || []).some(i => i.image_path) ? `<td>${item.image_path ? `<img src="${item.image_path}" style="width:48px;height:48px;object-fit:cover;border-radius:6px">` : ''}</td>` : ''}
-                    <td class="text-right">${Table.formatMoney(item.unit_price)}</td>
+                    <td><span class="font-mono" style="color:var(--accent-teal);font-size:0.82rem">${esc(item.article) || '—'}</span></td>
+                    <td title="${esc(item.product_name)}" style="font-weight:500"><span style="display:inline-block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle">${esc(item.product_name)}${item.description ? '<br><span style="font-size:0.8rem;color:var(--text-muted)">' + esc(item.description) + '</span>' : ''} ${item.is_drawing ? '📐' : ''}</span></td>
+                    ${(p.items || []).some(i => i.image_path) ? `<td>${item.image_path ? `<img src="${esc(item.image_path)}" style="width:48px;height:48px;object-fit:cover;border-radius:6px">` : ''}</td>` : ''}
+                    <td class="text-right">${Table.formatMoney(item.unit_price)}${item.no_level_markup ? '<div style="font-size:0.68rem;color:var(--text-muted)">без наценки</div>' : ''}</td>
                     <td class="text-right">${item.quantity}</td>
                     <td class="text-right" style="font-weight:600">${Table.formatMoney(item.line_total)}</td>
                   </tr>
@@ -191,7 +192,7 @@ const ProposalsPage = {
         footer: `
           <button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>
           <button class="btn btn-secondary" onclick="ProposalsPage.downloadPDF(${p.id})">📄 Скачать PDF</button>
-          ${p.status !== 'converted' && API.isAdmin() ? `<button class="btn btn-primary" onclick="Modal.close();ProposalsPage.convertToOrder(${p.id})">✅ Перевести в заказ</button>` : ''}
+          ${!p.order_id && API.can('proposals', 'edit') ? `<button class="btn btn-primary" onclick="Modal.close();ProposalsPage.convertToOrder(${p.id})">✅ Перевести в заказ</button>` : ''}
         `,
       });
     } catch (err) { Toast.error(err.message); }
@@ -210,6 +211,12 @@ const ProposalsPage = {
   _openModal(proposal) {
     const isEdit = !!proposal;
     const items = isEdit ? (proposal.items || []) : [];
+    // Уровень цен нужен уже при отрисовке строк: в поле «Цена» показываем итог
+    const selectedClient = isEdit ? this.clients.find(c => String(c.id) === String(proposal.client_id)) : null;
+    const initialLevelPct = parseFloat(selectedClient?.pricing_markup_pct) || 0;
+    // Наценка отключена у всех позиций с ценой — значит, и общий тумблер снят
+    const pricedItems = items.filter(item => !item.is_drawing);
+    const allNoMarkup = pricedItems.length > 0 && pricedItems.every(item => item.no_level_markup === true);
 
     Modal.open({
       title: isEdit ? `Редактировать ${proposal.proposal_number}` : 'Новое КП',
@@ -221,15 +228,20 @@ const ProposalsPage = {
               <label>Клиент *</label>
               <select class="form-control" id="prop-client">
                 <option value="">Выберите клиента</option>
-                ${this.clients.map(c => `<option value="${c.id}" data-markup="${c.pricing_markup_pct || 0}" data-level="${c.pricing_level_name || ''}" ${isEdit && proposal.client_id == c.id ? 'selected' : ''}>${c.name}</option>`).join('')}
+                ${this.clients.map(c => `<option value="${c.id}" data-markup="${c.pricing_markup_pct || 0}" data-level="${esc(c.pricing_level_name)}" ${isEdit && proposal.client_id == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
               </select>
               <div id="prop-client-level" style="margin-top:4px;font-size:0.78rem"></div>
+              <label class="markup-switch" id="prop-markup-switch" title="Снять галочку — все позиции пойдут по базовой цене, без наценки уровня клиента">
+                <input type="checkbox" id="prop-level-markup" ${allNoMarkup ? '' : 'checked'}
+                       onchange="ProposalsPage.toggleLevelMarkup(this.checked)">
+                <span id="prop-markup-switch-label">Наценка клиента</span>
+              </label>
             </div>
             <div class="form-group">
               <label>Принципал</label>
               <select class="form-control" id="prop-principal">
                 <option value="">Без принципала</option>
-                ${this.principals.map((p, i) => `<option value="${p.id}" ${isEdit ? (proposal.principal_id == p.id ? 'selected' : '') : (i === 0 ? 'selected' : '')}>${p.name}</option>`).join('')}
+                ${this.principals.map((p, i) => `<option value="${p.id}" ${isEdit ? (proposal.principal_id == p.id ? 'selected' : '') : (i === 0 ? 'selected' : '')}>${esc(p.name)}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -250,12 +262,12 @@ const ProposalsPage = {
           </div>
           <div class="form-group">
             <label>Комментарий</label>
-            <textarea class="form-control" id="prop-comment" rows="2">${isEdit ? (proposal.comment || '') : ''}</textarea>
+            <textarea class="form-control" id="prop-comment" rows="2">${isEdit ? esc(proposal.comment) : ''}</textarea>
           </div>
 
           <h4 class="mb-1 mt-2" style="color:var(--text-secondary)">Позиции</h4>
           <div id="prop-items-list">
-            ${items.map((item, i) => this._renderItemCard(item, i)).join('')}
+            ${items.map((item, i) => this._renderItemCard(item, i, initialLevelPct)).join('')}
           </div>
 
           <div class="flex gap-1 mt-1" style="flex-wrap:wrap">
@@ -272,17 +284,47 @@ const ProposalsPage = {
         <button class="btn btn-primary" onclick="ProposalsPage.saveProposal(${isEdit ? proposal.id : 'null'})">${isEdit ? 'Сохранить' : 'Создать'}</button>
       `,
     });
-    document.getElementById('prop-client').addEventListener('change', () => this.recalcTotals());
+    document.getElementById('prop-client').addEventListener('change', () => this._refreshAllPrices());
     this.recalcTotals();
   },
 
-  _renderItemCard(item, idx) {
+  /** Уровень цен клиента, выбранного в форме. */
+  _levelPct() {
+    const select = document.getElementById('prop-client');
+    const opt = select && select.selectedOptions ? select.selectedOptions[0] : null;
+    return parseFloat(opt?.dataset?.markup) || 0;
+  },
+
+  /** Цена в строке — итоговая для клиента; базовая лежит в скрытом поле. */
+  _renderItemCard(item, idx, levelPct) {
     const isDrawing = item.is_drawing || false;
     const displayName = item.product_name || (isDrawing ? 'Чертёж' : 'Позиция');
     const icon = isDrawing ? '📐' : '📦';
     const article = item.article || '';
-    const price = item.unit_price || 0;
+    const level = isDrawing ? 0 : (levelPct !== undefined ? Number(levelPct) || 0 : this._levelPct());
+    // Базовая цена без наценок; итог показываем менеджеру, базовую храним
+    const basePrice = item.base_price !== null && item.base_price !== undefined
+      ? Number(item.base_price)
+      : (Number(item.unit_price) || 0);
+    // Новая позиция наследует общий переключатель: если наценка на документ
+    // выключена, добавленная строка тоже идёт по базовой цене.
+    const docBox = document.getElementById('prop-level-markup');
+    const docNoMarkup = Boolean(docBox && docBox.checked === false);
+    const noLevel = item.no_level_markup === undefined || item.no_level_markup === null
+      ? docNoMarkup
+      : item.no_level_markup === true;
+    const markupPct = item.markup_pct || 0;
+    const price = isDrawing ? basePrice : MarkupMath.toFinal(basePrice, level, markupPct, noLevel);
     const qty = item.quantity || 1;
+    const markupLabel = !level ? '0%' : (noLevel ? 'без' : `${level > 0 ? '+' : ''}${level}%`);
+    const markupClass = isDrawing || !level ? 'is-disabled' : (noLevel ? 'is-off' : 'is-on');
+    const markupTitle = isDrawing
+      ? 'Для чертежей цена уже итоговая: наценки к ней не применяются'
+      : !level
+        ? 'У клиента не задан уровень цен — наценка не применяется'
+        : noLevel
+          ? `Наценка клиента ${level > 0 ? '+' : ''}${level}% отключена: позиция идёт по базовой цене. Нажмите, чтобы вернуть`
+          : `Наценка клиента ${level > 0 ? '+' : ''}${level}% применяется. Нажмите, чтобы продать по базовой цене`;
     const sw = 'display:flex;align-items:stretch;border-radius:6px;border:1px solid var(--border);overflow:hidden;height:32px';
     const sb = 'width:26px;border:none;background:var(--bg-tertiary);color:var(--text-secondary);cursor:pointer;font-size:0.95rem;font-weight:700;display:flex;align-items:center;justify-content:center;transition:all 0.15s;flex-shrink:0';
     const hi = "this.style.background='var(--accent-teal)';this.style.color='#fff'";
@@ -290,27 +332,32 @@ const ProposalsPage = {
     const si = 'flex:1;text-align:center;font-size:0.85rem;font-weight:600;border:none;border-left:1px solid var(--border);border-right:1px solid var(--border);border-radius:0;padding:0;-moz-appearance:textfield;min-width:0';
     return `
       <div data-prop-item="${idx}" style="margin-bottom:6px;padding:8px 12px;background:var(--bg-main);border-radius:10px;border:1px solid var(--border);transition:border-color 0.15s" onmouseenter="this.style.borderColor='var(--accent-teal)'" onmouseleave="this.style.borderColor='var(--border)'">
-        <div style="display:flex;align-items:center;gap:10px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span style="font-size:1rem;flex-shrink:0">${icon}</span>
           <div style="flex:1;min-width:80px;overflow:hidden">
             <div style="display:flex;align-items:baseline;gap:6px">
-              ${article ? `<span class="font-mono" style="font-weight:700;font-size:0.82rem;color:var(--accent-teal);white-space:nowrap">${article}</span>` : ''}
-              <span style="font-size:0.78rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${displayName.replace(/"/g, '&quot;')}">${displayName}</span>
+              ${article ? `<span class="font-mono" style="font-weight:700;font-size:0.82rem;color:var(--accent-teal);white-space:nowrap">${esc(article)}</span>` : ''}
+              <span style="font-size:0.78rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(displayName)}">${esc(displayName)}</span>
             </div>
           </div>
           <div style="flex-shrink:0;width:140px">
             <div style="font-size:0.6rem;color:var(--text-muted);margin-bottom:2px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Цена ₽</div>
             <div style="${sw}">
               <button type="button" onclick="var inp=this.nextElementSibling;inp.value=Math.max(0,(parseFloat(inp.value||0)-10)).toFixed(2);inp.dispatchEvent(new Event('input'))" style="${sb}" onmouseenter="${hi}" onmouseleave="${ho}">−</button>
-              <input type="number" step="0.01" class="form-control prop-item-price" value="${price}" placeholder="0" style="${si}" oninput="ProposalsPage._onPriceManualChange(this)">
+              <input type="number" step="0.01" class="form-control prop-item-price" value="${price}" placeholder="0" style="${si}" title="Итоговая цена для клиента. Базовая: ${basePrice} ₽" oninput="ProposalsPage._onPriceManualChange(this)">
               <button type="button" onclick="var inp=this.previousElementSibling;inp.value=(parseFloat(inp.value||0)+10).toFixed(2);inp.dispatchEvent(new Event('input'))" style="${sb}" onmouseenter="${hi}" onmouseleave="${ho}">+</button>
             </div>
+          </div>
+          <div style="flex-shrink:0;width:78px">
+            <div style="font-size:0.6rem;color:var(--text-muted);margin-bottom:2px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Наценка</div>
+            <button type="button" class="markup-toggle ${markupClass}" style="width:100%;height:32px"
+                    onclick="ProposalsPage.toggleRowMarkup(this)" title="${esc(markupTitle)}">${markupLabel}</button>
           </div>
           <div style="flex-shrink:0;width:95px">
             <div style="font-size:0.6rem;color:var(--text-muted);margin-bottom:2px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Нац. %</div>
             <div style="${sw}">
               <button type="button" onclick="var inp=this.nextElementSibling;inp.value=parseInt(inp.value||0)-1;inp.dispatchEvent(new Event('input'))" style="${sb}" onmouseenter="${hi}" onmouseleave="${ho}">−</button>
-              <input type="number" step="1" class="form-control prop-item-markup" value="0" style="${si}" oninput="ProposalsPage._applyMarkup(this)">
+              <input type="number" step="1" class="form-control prop-item-markup" value="${markupPct}" style="${si}" oninput="ProposalsPage._applyMarkup(this)">
               <button type="button" onclick="var inp=this.previousElementSibling;inp.value=parseInt(inp.value||0)+1;inp.dispatchEvent(new Event('input'))" style="${sb}" onmouseenter="${hi}" onmouseleave="${ho}">+</button>
             </div>
           </div>
@@ -333,12 +380,89 @@ const ProposalsPage = {
         <input type="hidden" class="prop-item-drawing-id" value="${item.drawing_id || ''}">
         <input type="hidden" class="prop-item-is-drawing" value="${isDrawing}">
         <input type="hidden" class="prop-item-product-id" value="${item.product_id || ''}">
-        <input type="hidden" class="prop-item-base-price" value="${price}">
+        <input type="hidden" class="prop-item-base-price" value="${basePrice}">
+        <input type="hidden" class="prop-item-no-level" value="${noLevel ? '1' : ''}">
       </div>
     `;
   },
 
+  /** Перерисовать подпись тумблера наценки в строке. */
+  _paintRowMarkup(row) {
+    const btn = row.querySelector('.markup-toggle');
+    if (!btn) return;
+    const isDrawing = row.querySelector('.prop-item-is-drawing')?.value === 'true';
+    const level = this._levelPct();
+    const noLevel = row.querySelector('.prop-item-no-level')?.value === '1';
+    btn.classList.toggle('is-on', !isDrawing && !!level && !noLevel);
+    btn.classList.toggle('is-off', !isDrawing && !!level && noLevel);
+    btn.classList.toggle('is-disabled', isDrawing || !level);
+    btn.textContent = isDrawing || !level ? (isDrawing ? '—' : '0%') : (noLevel ? 'без' : `${level > 0 ? '+' : ''}${level}%`);
+  },
 
+  /** Наценка клиента на одну позицию: выключить или вернуть. */
+  toggleRowMarkup(button) {
+    const row = button.closest('[data-prop-item]');
+    if (!row) return;
+    if (row.querySelector('.prop-item-is-drawing')?.value === 'true') return;
+    if (!this._levelPct()) return;
+    const hidden = row.querySelector('.prop-item-no-level');
+    if (!hidden) return;
+    hidden.value = hidden.value === '1' ? '' : '1';
+    this._paintRowMarkup(row);
+    this._refreshRowPrice(row);
+    this.recalcTotals();
+  },
+
+  /** Общий тумблер: включить или выключить наценку клиента на все позиции. */
+  toggleLevelMarkup(checked) {
+    document.querySelectorAll('[data-prop-item]').forEach(row => {
+      if (row.querySelector('.prop-item-is-drawing')?.value === 'true') return;
+      const hidden = row.querySelector('.prop-item-no-level');
+      if (!hidden) return;
+      hidden.value = checked ? '' : '1';
+      this._paintRowMarkup(row);
+      this._refreshRowPrice(row);
+    });
+    this.recalcTotals();
+  },
+
+  /** Согласовать общий тумблер со строками: смешанное состояние — «частично». */
+  _syncDocMarkup(levelPct) {
+    const box = document.getElementById('prop-level-markup');
+    const label = document.getElementById('prop-markup-switch-label');
+    const level = levelPct !== undefined ? levelPct : this._levelPct();
+    if (label) label.textContent = level ? `Наценка клиента ${level > 0 ? '+' : ''}${level}%` : 'Наценка клиента не задана';
+    if (!box) return;
+    box.disabled = !level;
+    const rows = [...document.querySelectorAll('[data-prop-item]')]
+      .filter(row => row.querySelector('.prop-item-is-drawing')?.value !== 'true');
+    const off = rows.filter(row => row.querySelector('.prop-item-no-level')?.value === '1').length;
+    box.checked = rows.length > 0 && off === 0;
+    box.indeterminate = rows.length > 0 && off > 0 && off < rows.length;
+  },
+
+  /** Показать в поле цены итог, посчитанный из базовой: после смены наценок. */
+  _refreshRowPrice(row, levelPct) {
+    const input = row.querySelector('.prop-item-price');
+    if (!input) return;
+    const base = parseFloat(row.querySelector('.prop-item-base-price')?.value) || 0;
+    const manual = parseFloat(row.querySelector('.prop-item-markup')?.value) || 0;
+    const isDrawing = row.querySelector('.prop-item-is-drawing')?.value === 'true';
+    const noLevel = row.querySelector('.prop-item-no-level')?.value === '1';
+    const level = levelPct !== undefined ? levelPct : this._levelPct();
+    const final = isDrawing ? base : MarkupMath.toFinal(base, level, manual, noLevel);
+    input.value = final.toFixed(2);
+    input.title = `Итоговая цена для клиента. Базовая: ${base.toFixed(2)} ₽`;
+  },
+
+  _refreshAllPrices() {
+    const level = this._levelPct();
+    document.querySelectorAll('[data-prop-item]').forEach(row => {
+      this._paintRowMarkup(row);
+      this._refreshRowPrice(row, level);
+    });
+    this.recalcTotals();
+  },
 
   // Каталог компонентов — как в калькуляторе
   openComponentCatalog() {
@@ -365,9 +489,9 @@ const ProposalsPage = {
                 return `
                   <tr style="cursor:pointer" onclick="ProposalsPage._addCatalogComponent(${c.id})">
                     <td>${c.image_path ? `<img src="${c.image_path}" style="width:32px;height:32px;object-fit:cover;border-radius:4px">` : '📦'}</td>
-                    <td class="font-mono" style="color:var(--accent-teal)">${c.article}</td>
-                    <td>${c.name}${modCount > 0 ? `<span style="margin-left:6px;padding:1px 6px;border-radius:8px;font-size:0.65rem;font-weight:600;background:var(--accent-teal);color:#fff">${modCount} мод.</span>` : ''}</td>
-                    <td><span class="badge badge-in_progress" style="font-size:0.7rem">${c.category_name || '—'}</span></td>
+                    <td class="font-mono" style="color:var(--accent-teal)">${esc(c.article)}</td>
+                    <td>${esc(c.name)}${modCount > 0 ? `<span style="margin-left:6px;padding:1px 6px;border-radius:8px;font-size:0.65rem;font-weight:600;background:var(--accent-teal);color:#fff">${modCount} мод.</span>` : ''}</td>
+                    <td><span class="badge badge-in_progress" style="font-size:0.7rem">${esc(c.category_name) || '—'}</span></td>
                     <td class="text-right">${Table.formatMoney(c.price)}</td>
                     <td class="text-right"><button class="btn btn-primary btn-sm" onclick="event.stopPropagation();ProposalsPage._addCatalogComponent(${c.id})">+</button></td>
                   </tr>`;
@@ -392,7 +516,7 @@ const ProposalsPage = {
           <input type="text" class="form-control" id="prop-cat-search" placeholder="Поиск по артикулу или названию..." style="flex:1">
           <select class="form-control" id="prop-cat-filter" style="width:180px">
             <option value="">Все категории</option>
-            ${categories.map(cat => `<option value="${cat}">${cat}</option>`).join('')}
+            ${categories.map(cat => `<option value="${esc(cat)}">${esc(cat)}</option>`).join('')}
           </select>
         </div>
         <div id="prop-cat-list" style="flex:1;overflow-y:auto">${renderList()}</div>
@@ -439,7 +563,7 @@ const ProposalsPage = {
     const renderMods = () => {
       return `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-          <h3 style="margin:0;color:var(--text-primary)">Модификации: ${comp.article}</h3>
+          <h3 style="margin:0;color:var(--text-primary)">Модификации: ${esc(comp.article)}</h3>
           <button onclick="document.getElementById('prop-catalog-overlay').remove()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-muted);padding:4px 8px">✕</button>
         </div>
         <div style="margin-bottom:12px;font-size:0.85rem;color:var(--text-muted)">Выберите модификацию или базовый компонент</div>
@@ -449,14 +573,14 @@ const ProposalsPage = {
                onmouseenter="this.style.borderColor='var(--accent-teal)'" onmouseleave="this.style.borderColor='var(--border)'">
             <div style="display:flex;justify-content:space-between;align-items:center">
               <div>
-                <div class="font-mono" style="font-weight:700">${comp.article}</div>
+                <div class="font-mono" style="font-weight:700">${esc(comp.article)}</div>
                 <div style="font-size:0.85rem;color:var(--text-secondary)">Базовый компонент</div>
               </div>
               <div style="font-weight:600">${Table.formatMoney(comp.price)}</div>
             </div>
           </div>
           ${mods.map(m => {
-            const fullArticle = comp.article + '.' + m.code;
+            const modArticle = fullArticle(comp.article, m.code, m.full_article);
             const price = m.price_override !== null ? m.price_override : comp.price;
             return `
               <div style="background:var(--bg-main);border:1px solid var(--border);border-radius:10px;padding:10px 14px;cursor:pointer;transition:border-color 0.2s"
@@ -464,8 +588,8 @@ const ProposalsPage = {
                    onmouseenter="this.style.borderColor='var(--accent-teal)'" onmouseleave="this.style.borderColor='var(--border)'">
                 <div style="display:flex;justify-content:space-between;align-items:center">
                   <div style="flex:1">
-                    <span class="font-mono" style="font-weight:700;color:var(--accent-teal)">${fullArticle}</span>
-                    ${m.name ? `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:2px">${m.name}</div>` : ''}
+                    <span class="font-mono" style="font-weight:700;color:var(--accent-teal)">${esc(modArticle)}</span>
+                    ${m.name ? `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:2px">${esc(m.name)}</div>` : ''}
                   </div>
                   <div style="font-weight:600;margin-left:12px">${Table.formatMoney(price)}</div>
                 </div>
@@ -512,7 +636,7 @@ const ProposalsPage = {
       const mod = (detail.modifications || []).find(m => m.id === modId);
       if (!mod) return;
       const price = mod.price_override !== null ? parseFloat(mod.price_override) : parseFloat(comp.price);
-      const fullArticle = comp.article + '.' + mod.code;
+      const modArticle = fullArticle(comp.article, mod.code, mod.full_article);
       const name = comp.name + ' — ' + (mod.name || mod.code);
       const container = document.getElementById('prop-items-list');
       if (!container) return;
@@ -520,7 +644,7 @@ const ProposalsPage = {
       container.insertAdjacentHTML('beforeend', this._renderItemCard({
         product_id: comp.id,
         product_name: name,
-        article: fullArticle,
+        article: modArticle,
         unit_price: price,
         quantity: 1,
         image_path: comp.image_path || '',
@@ -559,8 +683,8 @@ const ProposalsPage = {
                    onclick="ProposalsPage.addDrawingItem(${d.id})">
                 <div style="width:48px;height:48px;background:var(--bg-main);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:1.2rem">📐</div>
                 <div style="flex:1;min-width:0">
-                  <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.title || d.name || 'Чертёж #' + d.id}</div>
-                  <div style="font-size:0.8rem;color:var(--text-muted)">${d.client_name || ''} · <strong>${Table.formatMoneyRaw(d.total_cost || 0)}</strong></div>
+                  <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(d.title || d.name) || 'Чертёж #' + d.id}</div>
+                  <div style="font-size:0.8rem;color:var(--text-muted)">${esc(d.client_name)} · <strong>${Table.formatMoneyRaw(d.total_cost || 0)}</strong></div>
                 </div>
               </div>
             `).join('')}
@@ -605,6 +729,12 @@ const ProposalsPage = {
   },
 
   _renderCustomItemCard(idx) {
+    // Произвольная позиция тоже слушается общего тумблера наценки
+    const level = this._levelPct();
+    const docBox = document.getElementById('prop-level-markup');
+    const noLevel = level > 0 && Boolean(docBox && docBox.checked === false);
+    const markupLabel = !level ? '0%' : (noLevel ? 'без' : `${level > 0 ? '+' : ''}${level}%`);
+    const markupClass = !level ? 'is-disabled' : (noLevel ? 'is-off' : 'is-on');
     return `
       <div data-prop-item="${idx}" style="margin-bottom:8px;padding:10px 14px;background:var(--bg-main);border-radius:10px;border:1px solid var(--border)">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -622,6 +752,11 @@ const ProposalsPage = {
             <input type="number" step="1" class="form-control prop-item-markup" value="0" style="width:65px;text-align:center;font-size:0.85rem" oninput="ProposalsPage._applyMarkup(this)">
           </div>
           <div style="flex-shrink:0">
+            <label style="display:block;font-size:0.7rem;color:var(--text-muted);margin-bottom:3px">Наценка клиента</label>
+            <button type="button" class="markup-toggle ${markupClass}" style="width:76px;height:32px"
+                    onclick="ProposalsPage.toggleRowMarkup(this)" title="Наценка уровня клиента: нажмите, чтобы продать позицию по базовой цене">${markupLabel}</button>
+          </div>
+          <div style="flex-shrink:0">
             <label style="display:block;font-size:0.7rem;color:var(--text-muted);margin-bottom:3px">Кол-во</label>
             <input type="number" class="form-control prop-item-qty" value="1" min="1" style="width:60px;text-align:center;font-size:0.85rem" oninput="ProposalsPage.recalcTotals()">
           </div>
@@ -635,34 +770,31 @@ const ProposalsPage = {
         <input type="hidden" class="prop-item-is-drawing" value="false">
         <input type="hidden" class="prop-item-product-id" value="">
         <input type="hidden" class="prop-item-base-price" value="0">
+        <input type="hidden" class="prop-item-no-level" value="${noLevel ? '1' : ''}">
       </div>
     `;
   },
 
+  /** Ручная наценка %: базовая цена не меняется, итог пересчитывается. */
   _applyMarkup(input) {
     const row = input.closest('[data-prop-item]');
-    const priceInput = row.querySelector('.prop-item-price');
-    const basePriceInput = row.querySelector('.prop-item-base-price');
-    let basePrice = parseFloat(basePriceInput.value) || 0;
-
-    // If no base price, use current price as base
-    if (basePrice === 0) {
-      basePrice = parseFloat(priceInput.value) || 0;
-      if (basePrice > 0) basePriceInput.value = basePrice;
-    }
-
-    const pct = parseInt(input.value) || 0;
-    if (basePrice > 0) {
-      const newPrice = Math.round(basePrice * (1 + pct / 100) * 100) / 100;
-      priceInput.value = Math.max(0, newPrice);
-    }
+    if (row) this._refreshRowPrice(row);
     this.recalcTotals();
   },
 
+  /** Правка поля «Цена»: менеджер задаёт итог — базовую цену считаем обратно. */
   _onPriceManualChange(input) {
     const row = input.closest('[data-prop-item]');
-    const markupInput = row.querySelector('.prop-item-markup');
-    if (markupInput) markupInput.value = 0;
+    if (row) {
+      const final = parseFloat(input.value) || 0;
+      const isDrawing = row.querySelector('.prop-item-is-drawing')?.value === 'true';
+      const manual = parseFloat(row.querySelector('.prop-item-markup')?.value) || 0;
+      const noLevel = row.querySelector('.prop-item-no-level')?.value === '1';
+      const base = isDrawing ? final : MarkupMath.toBase(final, this._levelPct(), manual, noLevel);
+      const hidden = row.querySelector('.prop-item-base-price');
+      if (hidden) hidden.value = base.toFixed(2);
+      input.title = `Итоговая цена для клиента. Базовая: ${base.toFixed(2)} ₽`;
+    }
     this.recalcTotals();
   },
 
@@ -687,22 +819,43 @@ const ProposalsPage = {
 
     const rows = document.querySelectorAll('[data-prop-item]');
     let totalBase = 0;
-    let totalWithLevel = 0;
+    let totalFinal = 0;
+    let levelPartSum = 0;
+    let withoutLevel = 0;
+    let priced = 0;
     rows.forEach(row => {
-      const price = parseFloat(row.querySelector('.prop-item-price')?.value) || 0;
+      const base = parseFloat(row.querySelector('.prop-item-base-price')?.value) || 0;
       const qty = parseInt(row.querySelector('.prop-item-qty')?.value) || 1;
-      const priceWithLevel = price * (1 + levelMarkupPct / 100);
-      totalBase += price * qty;
-      totalWithLevel += priceWithLevel * qty;
+      const markupPct = parseFloat(row.querySelector('.prop-item-markup')?.value) || 0;
+      const isDrawing = row.querySelector('.prop-item-is-drawing')?.value === 'true';
+      const noLevel = row.querySelector('.prop-item-no-level')?.value === '1';
+      const final = isDrawing ? base : MarkupMath.toFinal(base, levelMarkupPct, markupPct, noLevel);
+      totalBase += base * qty;
+      totalFinal += final * qty;
+      if (!isDrawing) {
+        priced += 1;
+        if (noLevel) withoutLevel += 1;
+        // Сколько в цене именно наценки уровня клиента (без ручной наценки)
+        levelPartSum += (final - base * (1 + markupPct / 100)) * qty;
+      }
       const totalEl = row.querySelector('.prop-item-total');
-      if (totalEl) totalEl.textContent = Table.formatMoneyRaw(priceWithLevel * qty);
+      if (totalEl) totalEl.textContent = Table.formatMoneyRaw(final * qty);
     });
-    const levelDiff = totalWithLevel - totalBase;
+
+    this._syncDocMarkup(levelMarkupPct);
+
+    const levelHint = !levelMarkupPct || priced === 0
+      ? ''
+      : withoutLevel === priced
+        ? `<div style="font-size:0.82rem;color:var(--text-muted);margin-top:4px">💰 Наценка клиента отключена — цены базовые</div>`
+        : `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:4px">💰 Наценка уровня${levelName ? ` «${esc(levelName)}»` : ''} (${levelMarkupPct > 0 ? '+' : ''}${levelMarkupPct}%): <strong>${levelPartSum >= 0 ? '+' : ''}${Table.formatMoneyRaw(levelPartSum)}</strong>${withoutLevel > 0 ? ` · без наценки: ${withoutLevel} из ${priced}` : ''}</div>`;
+
     const el = document.getElementById('prop-totals');
     if (el) {
       el.innerHTML = `
-        <div style="font-size:1.1rem">Итого: <strong style="color:var(--accent-teal)">${Table.formatMoney(totalWithLevel)}</strong></div>
-        ${levelName ? `<div style="font-size:0.82rem;color:var(--text-secondary);margin-top:4px">💰 Наценка уровня «${levelName}» (${levelMarkupPct > 0 ? '+' : ''}${levelMarkupPct}%): <strong>${levelDiff >= 0 ? '+' : ''}${Table.formatMoneyRaw(levelDiff)}</strong></div>` : ''}
+        <div style="font-size:1.1rem">Итого: <strong style="color:var(--accent-teal)">${Table.formatMoney(totalFinal)}</strong></div>
+        ${levelHint}
+        <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px">Базовая сумма: ${Table.formatMoneyRaw(totalBase)}</div>
       `;
     }
   },
@@ -731,17 +884,21 @@ const ProposalsPage = {
       const product_id = productIdInput ? productIdInput.value || null : null;
       const product_name = nameInput ? nameInput.value : '';
 
+      // В поле «Цена» — итог для клиента, сервер считает его из базовой
       const price = parseFloat(priceInput.value) || 0;
-      // Применить наценку уровня клиента к цене при сохранении
-      const clientOpt = document.getElementById('prop-client')?.selectedOptions[0];
-      const lvlMarkup = parseFloat(clientOpt?.dataset?.markup) || 0;
-      const finalPrice = price * (1 + lvlMarkup / 100);
-      if (product_name && price > 0) {
+      const basePrice = parseFloat(row.querySelector('.prop-item-base-price')?.value);
+      const markupPct = parseFloat(row.querySelector('.prop-item-markup')?.value) || 0;
+      const noLevelMarkup = row.querySelector('.prop-item-no-level')?.value === '1';
+      if (product_name && (price > 0 || basePrice > 0)) {
+        // Итоговую цену с наценкой уровня рассчитывает сервер
         items.push({
           product_id,
           product_name,
           description: '',
-          unit_price: Math.round(finalPrice * 100) / 100,
+          base_price: Number.isFinite(basePrice) ? basePrice : price,
+          markup_pct: markupPct,
+          markup_rub: 0,
+          no_level_markup: noLevelMarkup,
           quantity: parseInt(qtyInput.value) || 1,
           image_path: imgInput ? imgInput.value || null : null,
           drawing_id: drawingIdInput && drawingIdInput.value ? parseInt(drawingIdInput.value) : null,
@@ -767,9 +924,8 @@ const ProposalsPage = {
 
   // === PDF ===
   downloadPDF(id) {
-    const token = API.getToken();
     const vat = Table.getVATSettings();
-    window.open(`/api/proposals/${id}/pdf?token=${token}&vat_rate=${vat.rate}`, '_blank');
+    window.open(`/api/proposals/${id}/pdf?vat_rate=${vat.rate}`, '_blank');
   },
 
   // === ПЕРЕВОД В ЗАКАЗ ===

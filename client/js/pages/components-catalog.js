@@ -1,5 +1,23 @@
 /* Components Catalog Page — Каталог компонентов */
 const ComponentsCatalogPage = {
+  /** Иконка копирования: маленькая и не мешает читать артикулы глазами. */
+  COPY_ICON: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/>' +
+    '<path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>',
+
+  /** Кнопка «скопировать» рядом с артикулом.
+   *  Раньше копирование висело на самом тексте: артикул подсвечивался под
+   *  курсором и мешал вычитывать список. Теперь артикул — обычный текст,
+   *  а копирование — отдельная маленькая кнопка. */
+  _copyButton(text, label = 'Артикул') {
+    const value = String(text === null || text === undefined ? '' : text).trim();
+    if (!value) return '';
+    const title = `Скопировать ${label.toLowerCase()}`;
+    return `<button type="button" class="copy-btn" data-copy="${esc(value)}" ` +
+      `data-copy-label="${esc(label)}" title="${esc(title)}" ` +
+      `aria-label="${esc(title)} ${esc(value)}">${this.COPY_ICON}</button>`;
+  },
+
   activeTab: 'components',
   viewMode: 'grid', // 'grid' | 'table'
   categories: [],
@@ -18,7 +36,7 @@ const ComponentsCatalogPage = {
       <div id="tab-components" class="tab-content active">
         <div class="toolbar" style="flex-wrap:wrap;gap:8px">
           <div class="search-input" style="flex:1;min-width:200px">
-            <input type="text" id="comp-search" placeholder="Поиск по артикулу или названию...">
+            <input type="text" id="comp-search" placeholder="Поиск по артикулу, названию или модификации..." title="Ищет по артикулу и названию изделия, а также по коду, названию и полному артикулу модификации">
           </div>
           <div class="filter-group" style="display:flex;gap:8px;align-items:center">
             <select class="filter-select" id="comp-category-filter">
@@ -69,41 +87,57 @@ const ComponentsCatalogPage = {
           box-shadow:0 8px 25px rgba(0,0,0,0.25);
           border-color:var(--accent-teal);
         }
+        /* Фото изделия — белая «студийная» подложка: прозрачный фон и
+           снимки не на белом не проваливаются в тёмную карточку */
         .comp-card-img {
           width:100%;
           height:160px;
-          object-fit:cover;
-          background:var(--bg-secondary);
+          background:#fff;
           display:flex;
           align-items:center;
           justify-content:center;
           position:relative;
           overflow:hidden;
         }
+        /* contain, а не cover: фото изделия не обрезается по краям,
+           а поля нормализованы на сервере — сетка выглядит ровно */
         .comp-card-img img {
           width:100%;
           height:100%;
-          object-fit:cover;
+          object-fit:contain;
+          padding:6px;
           transition:transform 0.3s;
         }
-        .comp-card:hover .comp-card-img img { transform:scale(1.05); }
+        .comp-card:hover .comp-card-img img { transform:scale(1.04); }
         .comp-card-img .comp-placeholder {
           font-size:3rem;
           color:var(--text-muted);
           opacity:0.3;
         }
         .comp-card-body { padding:14px; }
+        /* артикул — первым и крупнее: по нему менеджеры ищут изделие */
         .comp-card-article {
+          display:flex;
+          align-items:center;
+          gap:2px;
           font-family:'JetBrains Mono',monospace;
-          font-size:0.75rem;
+          font-size:0.9rem;
+          font-weight:700;
           color:var(--accent-teal);
-          letter-spacing:0.5px;
-          margin-bottom:4px;
+          letter-spacing:0.3px;
+          margin-bottom:3px;
+        }
+        .comp-card-art {
+          min-width:0;
+          overflow:hidden;
+          text-overflow:ellipsis;
+          white-space:nowrap;
         }
         .comp-card-name {
-          font-weight:600;
-          font-size:0.92rem;
-          line-height:1.3;
+          font-weight:500;
+          font-size:0.82rem;
+          line-height:1.35;
+          color:var(--text-secondary);
           margin-bottom:6px;
           display:-webkit-box;
           -webkit-line-clamp:2;
@@ -120,6 +154,18 @@ const ComponentsCatalogPage = {
           -webkit-box-orient:vertical;
           overflow:hidden;
         }
+        .comp-mod-hit {
+          margin-top:6px;
+          padding:3px 8px;
+          border-radius:8px;
+          background:rgba(20,184,166,0.12);
+          border:1px solid rgba(20,184,166,0.4);
+          color:var(--accent-teal);
+          font-size:0.72rem;
+          font-weight:600;
+          line-height:1.35;
+        }
+        .mod-row--hit { box-shadow:inset 3px 0 0 var(--accent-teal); }
         .comp-card-footer {
           display:flex;
           align-items:center;
@@ -152,7 +198,8 @@ const ComponentsCatalogPage = {
           width:10px;
           height:10px;
           border-radius:50%;
-          border:2px solid var(--bg-card);
+          border:2px solid #fff;
+          box-shadow:0 0 0 1px rgba(0,0,0,0.15);
         }
         .comp-card-actions {
           display:flex;
@@ -212,11 +259,17 @@ const ComponentsCatalogPage = {
 
   renderCategoryChips() {
     const container = document.getElementById('comp-category-chips');
+    if (!container) return;
     const activeId = document.getElementById('comp-category-filter')?.value || '';
+    const counts = this._categoryCounts instanceof Map ? this._categoryCounts : null;
+    const countOf = (id) => (counts ? (counts.get(id) || 0) : null);
+    const total = counts ? this._categoryTotal : null;
+
+    // количество считаем по текущему поиску: видно, куда ведёт каждый фильтр
     container.innerHTML = `
-      <button class="chip-filter ${!activeId ? 'active' : ''}" onclick="ComponentsCatalogPage.filterByChip('')">Все</button>
+      <button class="chip-filter ${!activeId ? 'active' : ''}" onclick="ComponentsCatalogPage.filterByChip('')">Все${total === null ? '' : ` (${total})`}</button>
       ${this.categories.map(c => `
-        <button class="chip-filter ${activeId == c.id ? 'active' : ''}" onclick="ComponentsCatalogPage.filterByChip('${c.id}')">${c.name}</button>
+        <button class="chip-filter ${activeId == c.id ? 'active' : ''}${counts && !countOf(c.id) ? ' chip-filter--empty' : ''}" onclick="ComponentsCatalogPage.filterByChip('${c.id}')">${esc(c.name)}${counts ? ` (${countOf(c.id)})` : ''}</button>
       `).join('')}
     `;
   },
@@ -241,25 +294,126 @@ const ComponentsCatalogPage = {
     }
   },
 
+  /** Латинские двойники кириллицы: артикул «А.3776.001» набирают и латинской A,
+   *  а на клавиатуре «БК-101» легко превращается в «BK-101». */
+  _foldLookalikes(value) {
+    const pairs = {
+      a: 'а', b: 'б', c: 'с', e: 'е', h: 'н', k: 'к',
+      m: 'м', o: 'о', p: 'р', t: 'т', x: 'х', y: 'у',
+    };
+    return value.replace(/[abcehkmoptxy]/g, ch => pairs[ch] || ch);
+  },
+
+  /** Без пробелов: «А. 3724 .106» и «А.3724.106». */
+  _withoutSpaces(value) {
+    return value.replace(/\s+/g, '');
+  },
+
+  /** Без разделителей артикула — точек, дефисов, слэшей: «бк101» вместо «БК-101». */
+  _withoutSeparators(value) {
+    return value.replace(/[\s.\-_/]+/g, '');
+  },
+
+  /** Стоит ли сравнивать «без разделителей»: запрос с буквами — с двух символов,
+   *  чисто числовой — с четырёх (иначе «15» цепляет полкаталога). */
+  _bareSearchable(bare) {
+    return bare.length >= 4 || (bare.length >= 2 && /[^\d]/.test(bare));
+  },
+
+  /** Приводит строку к виду, по которому сравниваем: регистр, «ё», двойники, пробелы. */
+  _normalizeSearch(value) {
+    const text = String(value === null || value === undefined ? '' : value)
+      .toLowerCase()
+      .replace(/ё/g, 'е');
+    return this._foldLookalikes(text)
+      .replace(/\s+/g, ' ')
+      .trim();
+  },
+
+  /** Запрос поиска: обычный, «слипшийся» (без пробелов) и совсем без разделителей. */
+  _buildSearchQuery(raw) {
+    const needle = this._normalizeSearch(raw);
+    if (!needle) return null;
+    return { needle, compact: this._withoutSpaces(needle), bare: this._withoutSeparators(needle) };
+  },
+
+  _searchMatch(text, query) {
+    const value = this._normalizeSearch(text);
+    if (!value) return false;
+    if (value.includes(query.needle)) return true;
+    if (query.compact !== query.needle && this._withoutSpaces(value).includes(query.compact)) return true;
+    // разделители не важны: «а37» находит «А.3724.106», «0201» — «02.01»;
+    // короткие числовые запросы так не ищем — «15» слишком часто встречается в артикулах
+    return this._bareSearchable(query.bare) && this._withoutSeparators(value).includes(query.bare);
+  },
+
+  /** Модификации, совпавшие по коду, названию или полному артикулу (А.3776.001-02.02). */
+  _matchedModifications(comp, query) {
+    return (comp.modifications || []).filter(m =>
+      this._searchMatch(m.code, query) ||
+      this._searchMatch(m.name, query) ||
+      this._searchMatch(fullArticle(comp.article, m.code, m.full_article), query)
+    );
+  },
+
+  /** Совпадение компонента с запросом. direct — по артикулу/названию/описанию,
+   *  mods — модификации, по которым нашлось (их показываем подсказкой в списке). */
+  _searchHit(comp, query) {
+    const direct = this._searchMatch(comp.article, query) ||
+      this._searchMatch(comp.name, query) ||
+      this._searchMatch(comp.description, query);
+    const mods = this._matchedModifications(comp, query);
+    if (!direct && mods.length === 0) return null;
+    // если изделие и так найдено по своему артикулу, все его модификации — шум
+    return { direct, mods: direct ? [] : mods };
+  },
+
+  /** Плашка «нашлось по модификации» в витрине и таблице. */
+  _modHitHtml(hit) {
+    if (!hit || !hit.mods || hit.mods.length === 0) return '';
+    const codes = hit.mods.slice(0, 2).map(m => esc(m.code)).join(', ');
+    const more = hit.mods.length > 2 ? ` +${hit.mods.length - 2}` : '';
+    const name = hit.mods.length === 1 && hit.mods[0].name
+      ? ` — ${esc(String(hit.mods[0].name).slice(0, 48))}`
+      : '';
+    return `<div class="comp-mod-hit" title="Совпадение по модификации">🔧 мод. ${codes}${more}${name}</div>`;
+  },
+
   filterAndRender() {
-    const search = (document.getElementById('comp-search')?.value || '').toLowerCase();
+    const query = this._buildSearchQuery(document.getElementById('comp-search')?.value || '');
     const categoryId = document.getElementById('comp-category-filter')?.value || '';
     const sort = document.getElementById('comp-sort')?.value || 'name';
 
     let filtered = this.allComponents;
-    if (search) {
-      filtered = filtered.filter(c =>
-        c.article.toLowerCase().includes(search) ||
-        c.name.toLowerCase().includes(search) ||
-        (c.description || '').toLowerCase().includes(search)
-      );
+    const hits = new Map();
+    if (query) {
+      filtered = filtered.filter(c => {
+        const hit = this._searchHit(c, query);
+        if (!hit) return false;
+        hits.set(c.id, hit);
+        return true;
+      });
     }
+    this._searchQuery = query;
+    this._searchHits = hits;
+
+    // сколько позиций в каждой категории при текущем поиске (для чипсов)
+    const counts = new Map();
+    filtered.forEach(c => counts.set(c.category_id, (counts.get(c.category_id) || 0) + 1));
+    this._categoryCounts = counts;
+    this._categoryTotal = filtered.length;
+    this.renderCategoryChips();
+
     if (categoryId) {
       filtered = filtered.filter(c => c.category_id == categoryId);
     }
 
-    // Сортировка
+    // Сортировка: сначала совпадения по артикулу/названию, потом найденные по модификациям
     filtered = [...filtered].sort((a, b) => {
+      if (query) {
+        const byArticle = (hits.get(a.id)?.direct ? 0 : 1) - (hits.get(b.id)?.direct ? 0 : 1);
+        if (byArticle !== 0) return byArticle;
+      }
       switch (sort) {
         case 'price_asc': return (parseFloat(a.price) || 0) - (parseFloat(b.price) || 0);
         case 'price_desc': return (parseFloat(b.price) || 0) - (parseFloat(a.price) || 0);
@@ -268,7 +422,10 @@ const ComponentsCatalogPage = {
       }
     });
 
-    document.getElementById('comp-count').textContent = `Найдено: ${filtered.length} компонент(ов)`;
+    const modOnly = query ? filtered.filter(c => !hits.get(c.id).direct).length : 0;
+    document.getElementById('comp-count').textContent = modOnly
+      ? `Найдено: ${filtered.length} компонент(ов), в том числе по модификациям: ${modOnly}`
+      : `Найдено: ${filtered.length} компонент(ов)`;
 
     const container = document.getElementById('components-table');
     if (filtered.length === 0) {
@@ -291,15 +448,18 @@ const ComponentsCatalogPage = {
           <div class="comp-card" onclick="ComponentsCatalogPage.viewComponent(${c.id})">
             <div class="comp-card-img">
               ${c.image_path
-                ? `<img src="${c.image_path}" alt="${c.name}" loading="lazy">`
+                ? `<img src="${esc(c.image_path)}" alt="${esc(c.name)}" loading="lazy">`
                 : '<div class="comp-placeholder">📦</div>'}
-              ${c.category_name ? `<div class="comp-card-category">${c.category_name}</div>` : ''}
+              ${c.category_name ? `<div class="comp-card-category">${esc(c.category_name)}</div>` : ''}
               <div class="comp-card-status" style="background:${c.is_active !== false ? '#22c55e' : '#ef4444'}"></div>
             </div>
             <div class="comp-card-body">
-              <div class="comp-card-article">${c.article}</div>
-              <div class="comp-card-name">${c.name}</div>
-              ${c.description ? `<div class="comp-card-desc">${c.description}</div>` : ''}
+              <div class="comp-card-article">
+                <span class="comp-card-art">${esc(c.article)}</span>${this._copyButton(c.article)}
+              </div>
+              <div class="comp-card-name">${esc(c.name)}</div>
+              ${c.description ? `<div class="comp-card-desc">${esc(c.description)}</div>` : ''}
+              ${this._modHitHtml(this._searchHits && this._searchHits.get(c.id))}
               ${parseInt(c.modifications_count) > 0 ? `<div style="margin-top:4px"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.7rem;font-weight:600;background:var(--accent-teal);color:#fff">${c.modifications_count} мод.</span></div>` : ''}
             </div>
             <div class="comp-card-footer">
@@ -341,12 +501,12 @@ const ComponentsCatalogPage = {
               <tr style="cursor:pointer" onclick="ComponentsCatalogPage.viewComponent(${c.id})">
                 <td>
                   ${c.image_path
-                    ? `<img src="${c.image_path}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">`
+                    ? `<img src="${esc(c.image_path)}" alt="" style="width:40px;height:40px;object-fit:contain;background:#fff;border-radius:6px;border:1px solid var(--border)">`
                     : '<div style="width:40px;height:40px;border-radius:6px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:16px">📦</div>'}
                 </td>
-                <td class="font-mono" style="color:var(--accent-teal)">${c.article}</td>
-                <td><strong>${c.name}</strong>${c.description ? `<div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px">${c.description.substring(0, 60)}</div>` : ''}${parseInt(c.modifications_count) > 0 ? `<span style="display:inline-block;margin-top:2px;padding:1px 7px;border-radius:8px;font-size:0.7rem;font-weight:600;background:var(--accent-teal);color:#fff">${c.modifications_count} мод.</span>` : ''}</td>
-                <td><span class="badge badge-in_progress">${c.category_name || '—'}</span></td>
+                <td class="font-mono" style="color:var(--accent-teal)"><span class="comp-art">${esc(c.article)}</span>${this._copyButton(c.article)}</td>
+                <td><strong>${esc(c.name)}</strong>${c.description ? `<div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px">${esc(c.description.substring(0, 60))}</div>` : ''}${parseInt(c.modifications_count) > 0 ? `<span style="display:inline-block;margin-top:2px;padding:1px 7px;border-radius:8px;font-size:0.7rem;font-weight:600;background:var(--accent-teal);color:#fff">${c.modifications_count} мод.</span>` : ''}${this._modHitHtml(this._searchHits && this._searchHits.get(c.id))}</td>
+                <td><span class="badge badge-in_progress">${esc(c.category_name) || '—'}</span></td>
                 <td class="text-right" style="font-weight:600">${Table.formatMoney(c.price)}</td>
                 <td>${c.is_active !== false ? '<span class="badge badge-completed">Активен</span>' : '<span class="badge badge-cancelled">Неактивен</span>'}</td>
                 ${hasActions ? `<td class="text-right" onclick="event.stopPropagation()">
@@ -364,132 +524,400 @@ const ComponentsCatalogPage = {
   },
 
   // === Просмотр карточки компонента ===
+  /** Сколько строк модификаций видно до кнопки «Показать ещё». */
+  MOD_PAGE_SIZE: 6,
+
+  /** Состояние списка модификаций в открытой карточке: поиск, фильтр, лимит. */
+  _modView: { query: '', filter: 'all', limit: 6 },
+
+  /** Раскрытые строки модификаций — переживают перерисовку карточки (загрузка фото). */
+  _openMods: null,
+
+  /** Раскрытые блоки карточки (фотографии изделия, документы). Тоже переживают
+   *  перерисовку: иначе после каждого удалённого фото список сворачивался и его
+   *  приходилось раскрывать заново. */
+  _openGroups: null,
+
+  /** Какая карточка открыта: по нему понимаем, что это повторная отрисовка той же. */
+  _viewCompId: null,
+
   async viewComponent(id) {
     try {
       const comp = await API.get(`/components/${id}`);
       const canEdit = API.can('components', 'edit');
       const mods = comp.modifications || [];
 
+      // Повторная отрисовка той же карточки (после загрузки или удаления фото)
+      // не должна сворачивать раскрытые строки и прыгать в начало списка.
+      const overlay = document.getElementById('modal-overlay');
+      const cardOpen = Boolean(overlay && overlay.style.display === 'flex');
+      const sameComp = cardOpen && String(this._viewCompId) === String(id);
+      if (!sameComp || !this._openMods) this._openMods = new Set();
+      if (!sameComp || !this._openGroups) this._openGroups = new Set();
+      if (!sameComp) this._modView = { query: '', filter: 'all', limit: this.MOD_PAGE_SIZE };
+
+      const bodyBefore = document.getElementById('modal-body');
+      const prevScroll = sameComp && bodyBefore ? bodyBefore.scrollTop : 0;
+
+      // Фото карточки для просмотра: обложка первой, дальше галерея без повторов.
+      // Список живёт до следующего открытия карточки — его листает Lightbox.
+      const photos = [];
+      if (comp.image_path) photos.push(comp.image_path);
+      (comp.images || []).forEach(img => {
+        if (img.image_path && !photos.includes(img.image_path)) photos.push(img.image_path);
+      });
+      this._photos = photos;
+      this._photoTitle = comp.name;
+      this._photoComponentId = comp.id;
+      this._photoCanEdit = canEdit;
+
+      // Фото модификаций: у каждой свой набор для листания
+      const modPhotos = {};
+      const modCodes = {};
+      mods.forEach(m => {
+        modPhotos[m.id] = (m.images || []).map(img => img.image_path).filter(Boolean);
+        modCodes[m.id] = m.code;
+      });
+      this._modPhotos = modPhotos;
+      this._modCodes = modCodes;
+
+      // если карточку открыли из поиска по модификации — подсветим найденные строки
+      const searchHit = this._searchQuery ? this._searchHit(comp, this._searchQuery) : null;
+      const hitModIds = new Set(((searchHit && searchHit.mods) || []).map(m => m.id));
+
+      const chevron = `<svg class="comp-view__chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>`;
+
+      // --- Шапка: фото, артикул, бейджи, цена. Название уже стоит заголовком окна.
+      const photoCount = photos.length;
+      const headHtml = `
+        <div class="comp-view__head">
+          ${photoCount > 0 ? `
+            <button type="button" class="comp-view__photo" onclick="ComponentsCatalogPage.viewComponentImage(0)" title="Открыть фото (${photoCount})">
+              <img src="${esc(comp.image_path || photos[0])}" alt="${esc(comp.name)}" onerror="ComponentsCatalogPage.imageFallback(this)">
+              ${photoCount > 1 ? `<span class="comp-view__photo-count">${photoCount}</span>` : ''}
+            </button>
+          ` : (canEdit ? `
+            <button type="button" class="comp-view__photo comp-view__photo--empty" onclick="ComponentsCatalogPage.uploadComponentImage(${comp.id})" title="Добавить фото">+</button>
+          ` : '')}
+          <div class="comp-view__meta">
+            <div class="comp-view__name">${esc(comp.name)}</div>
+            <div class="comp-view__badges">
+              ${comp.category_name ? `<span class="badge badge-in_progress">${esc(comp.category_name)}</span>` : ''}
+              <span class="badge ${comp.is_active !== false ? 'badge-completed' : 'badge-cancelled'}">${comp.is_active !== false ? 'Активен' : 'Неактивен'}</span>
+              ${comp.gisp_url ? `<a class="comp-view__gisp" href="${safeUrl(comp.gisp_url)}" target="_blank" rel="noopener">ГИСП ↗</a>` : ''}
+            </div>
+            <div class="comp-view__price">
+              <span class="comp-view__price-label">Базовая цена</span>
+              ${Number(comp.price) > 0 ? Table.formatMoney(comp.price) : '<span class="comp-view__price-empty">не задана</span>'}
+            </div>
+          </div>
+        </div>
+      `;
+
+      // --- Описание без повторения названия: три строки, дальше «ещё».
+      const description = this._descriptionWithoutName(comp);
+      const descHtml = description ? `
+        <div class="comp-view__desc">
+          <p class="comp-view__desc-text${description.length > 200 ? ' is-clamped' : ''}" id="comp-view-desc">${esc(description)}</p>
+          ${description.length > 200 ? `<button type="button" class="comp-view__link" id="comp-view-desc-btn" onclick="ComponentsCatalogPage.toggleDescription()">ещё</button>` : ''}
+        </div>` : '';
+      const commentHtml = comp.comment ? `
+        <div class="comp-view__comment" title="${esc(comp.comment)}">${esc(comp.comment)}</div>` : '';
+
+      // --- Фотографии изделия: по умолчанию свёрнуты, чтобы не занимать экран,
+      //     но раскрытое состояние переживает удаление/загрузку фото.
+      const gallery = (comp.images || []).filter(img => img.image_path);
+      const photosOpen = this.isGroupOpen('comp-photos');
+      // Убранные фото: импорт каталога их не возвращает, поэтому рядом —
+      // ссылка на список, чтобы случайно удалённое можно было вернуть.
+      const removedCount = Number(comp.images_removed) || 0;
+      const photosHtml = (photos.length > 0 || removedCount > 0) ? `
+        <div class="comp-view__group">
+          <button type="button" class="comp-view__disclosure" aria-expanded="${photosOpen ? 'true' : 'false'}" onclick="ComponentsCatalogPage.toggleGroup(this, 'comp-photos')">
+            <span>Фотографии изделия (${gallery.length})</span>${chevron}
+          </button>
+          <div class="comp-view__group-body" id="comp-photos"${photosOpen ? '' : ' hidden'}>
+            <div class="comp-photos">
+              ${gallery.length === 0 ? '<div class="comp-photos__empty">Все фото убраны — их можно вернуть</div>' : ''}
+              ${gallery.map(img => `
+                <div class="comp-photo" onclick="ComponentsCatalogPage.viewComponentImage(${photos.indexOf(img.image_path)})">
+                  <img src="${img.image_path}" alt="" onerror="ComponentsCatalogPage.imageFallback(this)">
+                  ${canEdit ? `<button type="button" class="comp-photo__del" title="Убрать фото" onclick="event.stopPropagation();ComponentsCatalogPage.deleteComponentImage(${comp.id}, ${img.id})">×</button>` : ''}
+                  ${canEdit && img.image_path !== comp.image_path ? `<button type="button" class="comp-photo__cover" title="Сделать обложкой" onclick="event.stopPropagation();ComponentsCatalogPage.setCoverImage(${comp.id}, ${img.id})">обложка</button>` : ''}
+                </div>
+              `).join('')}
+              ${canEdit ? `<button type="button" class="comp-photo comp-photo--add" title="Добавить фото" onclick="ComponentsCatalogPage.uploadComponentImage(${comp.id})">+</button>` : ''}
+            </div>
+            ${removedCount > 0 ? `
+              <button type="button" class="comp-photos__removed" onclick="ComponentsCatalogPage.viewRemovedImages(${comp.id})">
+                Убранные фото (${removedCount}) — вернуть
+              </button>` : ''}
+          </div>
+        </div>` : '';
+
+      // --- Модификации: плотные строки с поиском и «Показать ещё».
       const modsHtml = mods.length > 0 ? `
-        <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-            <div style="font-size:1rem;font-weight:700">🔧 Модификации (${mods.length})</div>
+        <section class="comp-mods" id="comp-mods">
+          <div class="comp-mods__head">
+            <div class="comp-mods__title">Модификации (${mods.length})</div>
             ${canEdit ? `<button class="btn btn-sm btn-primary" onclick="ComponentsCatalogPage.openModificationModal(${id})">+ Добавить</button>` : ''}
           </div>
-          <div style="display:flex;flex-direction:column;gap:10px" id="mods-list">
-            ${mods.map(m => {
-              const fullArticle = comp.article + '.' + m.code;
-              const modPrice = m.price_override !== null ? m.price_override : comp.price;
-              const images = m.images || [];
-              return `
-                <div style="background:var(--bg-main);border:1px solid var(--border);border-radius:10px;padding:12px 14px">
-                  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-                    <div style="flex:1">
-                      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-                        <span style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;color:var(--accent-teal)">${fullArticle}</span>
-                        ${m.is_active === false ? '<span style="font-size:0.7rem;color:#ef4444;font-weight:600">Неактивна</span>' : ''}
-                        ${m.price_override !== null ? `<span style="font-weight:600;font-size:0.85rem">${Table.formatMoneyRaw(modPrice)}</span>` : ''}
-                      </div>
-                      ${m.name ? `<div style="font-size:0.88rem;line-height:1.4;color:var(--text-secondary)">${m.name}</div>` : ''}
-                    </div>
-                    ${canEdit ? `
-                      <div style="display:flex;gap:4px;flex-shrink:0">
-                        <button class="btn btn-icon btn-sm" onclick="event.stopPropagation();ComponentsCatalogPage.openModificationModal(${id}, ${m.id})" title="Редактировать">${Table.editIcon}</button>
-                        <button class="btn btn-icon btn-sm btn-danger" onclick="event.stopPropagation();ComponentsCatalogPage.deleteModification(${id}, ${m.id})" title="Удалить">${Table.deleteIcon}</button>
-                      </div>
-                    ` : ''}
-                  </div>
-                  ${images.length > 0 ? `
-                    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-                      ${images.map(img => `
-                        <div style="position:relative;width:80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid var(--border);cursor:pointer" onclick="event.stopPropagation();ComponentsCatalogPage.viewModImage('${img.image_path}')">
-                          <img src="${img.image_path}" style="width:100%;height:100%;object-fit:cover">
-                          ${canEdit ? `<button style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center" onclick="event.stopPropagation();ComponentsCatalogPage.deleteModImage(${id}, ${m.id}, ${img.id})">×</button>` : ''}
-                        </div>
-                      `).join('')}
-                      ${canEdit ? `<div style="width:80px;height:80px;border-radius:8px;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);font-size:20px" onclick="event.stopPropagation();ComponentsCatalogPage.uploadModImage(${id}, ${m.id})" title="Добавить фото">+</div>` : ''}
-                    </div>
-                  ` : (canEdit ? `
-                    <div style="margin-top:6px">
-                      <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();ComponentsCatalogPage.uploadModImage(${id}, ${m.id})">📷 Добавить фото</button>
-                    </div>
-                  ` : '')}
-                </div>
-              `;
-            }).join('')}
+          ${mods.length > this.MOD_PAGE_SIZE ? `
+            <div class="comp-mods__tools">
+              <input type="search" id="comp-mod-search" class="comp-mods__search" value="${esc(this._modView.query)}"
+                     placeholder="Артикул, длина, потребитель…" oninput="ComponentsCatalogPage.filterMods()">
+              <button type="button" class="mod-chip${this._modView.filter === 'all' ? ' is-active' : ''}" data-mod-filter="all" onclick="ComponentsCatalogPage.setModFilter('all')">Все</button>
+              <button type="button" class="mod-chip${this._modView.filter === 'photo' ? ' is-active' : ''}" data-mod-filter="photo" onclick="ComponentsCatalogPage.setModFilter('photo')">С фото</button>
+            </div>
+          ` : ''}
+          <div class="comp-mods__list" id="mods-list">
+            ${mods.map((m, index) => this._modRowHtml(comp, m, canEdit, index, hitModIds.has(m.id))).join('')}
           </div>
-        </div>
+          <div class="comp-mods__empty" id="mods-empty" hidden>
+            Ничего не найдено
+            <button type="button" class="btn btn-sm btn-secondary" onclick="ComponentsCatalogPage.resetModFilter()">Сбросить</button>
+          </div>
+          <button type="button" class="comp-mods__more" id="mods-more" onclick="ComponentsCatalogPage.showAllMods()"></button>
+        </section>
       ` : (canEdit ? `
-        <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <div style="font-size:1rem;font-weight:700">🔧 Модификации</div>
+        <section class="comp-mods">
+          <div class="comp-mods__head">
+            <div class="comp-mods__title">Модификации</div>
             <button class="btn btn-sm btn-primary" onclick="ComponentsCatalogPage.openModificationModal(${id})">+ Добавить</button>
           </div>
-          <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.85rem">Нет модификаций</div>
-        </div>
+          <div class="comp-mods__empty">Нет модификаций</div>
+        </section>
       ` : '');
 
+      // --- Документы: свёрнутый блок, количество подставляется после загрузки.
+      const docsOpen = this.isGroupOpen('comp-docs');
+      const docsHtml = `
+        <div class="comp-view__group">
+          <button type="button" class="comp-view__disclosure" aria-expanded="${docsOpen ? 'true' : 'false'}" onclick="ComponentsCatalogPage.toggleGroup(this, 'comp-docs')">
+            <span>Документы <span class="comp-view__count" id="comp-docs-count"></span></span>${chevron}
+          </button>
+          <div class="comp-view__group-body" id="comp-docs"${docsOpen ? '' : ' hidden'}>
+            <div class="comp-view__docs-bar" id="comp-docs-bar" hidden>
+              <button type="button" class="btn btn-sm btn-secondary" onclick="window.open('/api/components/${comp.id}/documents/download-all','_blank')" title="Скачать все документы ZIP">📦 Скачать ZIP</button>
+            </div>
+            <div id="view-comp-docs" class="comp-docs"><div class="text-muted">Загрузка...</div></div>
+          </div>
+        </div>`;
+
       Modal.open({
-        title: comp.name,
+        // артикул — первым: менеджеры ищут изделие по нему, название — ниже
+        title: comp.article,
+        titleAction: this._copyButton(comp.article),
         wide: true,
-        body: `
-          <div style="display:grid;grid-template-columns:${comp.image_path ? '1fr 1fr' : '1fr'};gap:20px">
-            ${comp.image_path ? `
-              <div style="border-radius:12px;overflow:hidden;border:1px solid var(--border);max-height:350px">
-                <img src="${comp.image_path}" alt="${comp.name}" style="width:100%;height:100%;object-fit:cover">
-              </div>
-            ` : ''}
-            <div>
-              <div style="margin-bottom:16px">
-                <div style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;color:var(--accent-teal);margin-bottom:4px">${comp.article}</div>
-                <div style="font-size:1.3rem;font-weight:700;margin-bottom:8px">${comp.name}</div>
-                ${comp.category_name ? `<span class="badge badge-in_progress" style="font-size:0.8rem">${comp.category_name}</span>` : ''}
-              </div>
-              <div style="background:var(--bg-main);border-radius:10px;padding:16px;border:1px solid var(--border);margin-bottom:12px">
-                <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px">Базовая цена</div>
-                <div style="font-size:1.6rem;font-weight:700;color:var(--accent-teal)">${Table.formatMoney(comp.price)}</div>
-              </div>
-              ${comp.description ? `
-                <div style="margin-bottom:12px">
-                  <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">Описание</div>
-                  <div style="font-size:0.9rem;line-height:1.5">${comp.description}</div>
-                </div>
-              ` : ''}
-              ${comp.comment ? `
-                <div style="margin-bottom:12px">
-                  <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">Комментарий</div>
-                  <div style="font-size:0.9rem;line-height:1.5;color:var(--text-secondary)">${comp.comment}</div>
-                </div>
-              ` : ''}
-              ${comp.gisp_url ? `
-                <div style="margin-bottom:12px">
-                  <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:4px">ГИСП</div>
-                  <a href="${comp.gisp_url}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:#1d4ed822;color:#3b82f6;border-radius:8px;font-size:0.85rem;font-weight:600;text-decoration:none;border:1px solid #3b82f644;transition:all 0.2s" onmouseover="this.style.background='#1d4ed833'" onmouseout="this.style.background='#1d4ed822'">🏢 Открыть в ГИСП ↗</a>
-                </div>
-              ` : ''}
-              <div style="display:flex;gap:12px;font-size:0.82rem;color:var(--text-muted)">
-                <span>Статус: ${comp.is_active !== false ? '🟢 Активен' : '🔴 Неактивен'}</span>
-              </div>
-            </div>
-          </div>
-          ${modsHtml}
-          <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-              <div style="font-size:1rem;font-weight:700">📎 Документы</div>
-              <button class="btn btn-sm btn-secondary" onclick="window.open('/api/components/${comp.id}/documents/download-all?token='+API.getToken(),'_blank')" title="Скачать все документы ZIP">📦 Скачать ZIP</button>
-            </div>
-            <div id="view-comp-docs" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div style="color:var(--text-muted);font-size:0.82rem;grid-column:1/-1">Загрузка...</div></div>
-          </div>
-        `,
+        className: 'modal-comp',
+        autoFocus: false,
+        body: `${headHtml}${descHtml}${commentHtml}${photosHtml}${modsHtml}${docsHtml}`,
         footer: `
           <button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>
           ${canEdit ? `<button class="btn btn-primary" onclick="Modal.close();ComponentsCatalogPage.openComponentModal(${comp.id})">✏️ Редактировать</button>` : ''}
         `,
       });
 
+      this._viewCompId = id;
+
+      // строки сверх лимита уже скрыты в разметке — кнопка «Показать ещё» считается здесь
+      this._applyModFilter();
+      if (prevScroll) {
+        const body = document.getElementById('modal-body');
+        if (body) body.scrollTop = prevScroll;
+      }
+
+      // найденная модификация может быть далеко в длинном списке — показываем сразу
+      if (hitModIds.size > 0 && typeof document.querySelector === 'function' && typeof setTimeout === 'function') {
+        setTimeout(() => {
+          const row = document.querySelector('.mod-row--hit');
+          if (row && typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'center' });
+        }, 60);
+      }
+
       // Загрузить документы для просмотра
       this._loadViewDocs(comp.id);
     } catch (err) { Toast.error(err.message); }
+  },
+
+  /** Битая картинка: вместо значка поломки — спокойная заглушка. */
+  imageFallback(img) {
+    if (!img || img.dataset.broken) return;
+    img.dataset.broken = '1';
+    img.removeAttribute('src');
+    img.classList.add('is-broken');
+    const holder = img.parentElement;
+    if (holder && holder.classList) holder.classList.add('is-broken');
+  },
+
+  /** Описание без повторения названия: в заголовке карточки оно уже есть. */
+  _descriptionWithoutName(comp) {
+    const name = String(comp.name || '').trim();
+    let text = String(comp.description || '').trim();
+    if (name && text.toLowerCase().startsWith(name.toLowerCase())) {
+      text = text.slice(name.length).replace(/^[\s.,;:—–-]+/, '');
+    }
+    return text;
+  },
+
+  /** Одна строка модификации: артикул, две строки названия, кнопки.
+   *  Фото и полное описание — в раскрывающемся блоке, поэтому список не пухнет. */
+  _modRowHtml(comp, m, canEdit, index, isHit) {
+    const modArticle = fullArticle(comp.article, m.code, m.full_article);
+    const images = m.images || [];
+    const hasPrice = m.price_override !== null && m.price_override !== undefined;
+    const isOpen = Boolean(this._openMods && this._openMods.has(m.id));
+    const matchesFilter = this._modView.filter !== 'photo' || images.length > 0;
+    const overLimit = index >= this._modView.limit && !isHit && !isOpen;
+    const hidden = !matchesFilter || overLimit;
+    const searchable = [modArticle, m.code, m.name].filter(Boolean).join(' ');
+
+    return `
+      <div class="mod-row${isHit ? ' mod-row--hit' : ''}${isOpen ? ' is-open' : ''}${hidden ? ' mod-row--hidden' : ''}"
+           data-mod-id="${m.id}" data-has-photo="${images.length > 0 ? '1' : '0'}"
+           data-search="${esc(searchable)}">
+        <div class="mod-row__main" onclick="ComponentsCatalogPage.toggleMod(${m.id})">
+          <div class="mod-row__line">
+            <span class="mod-row__art">${esc(modArticle)}</span>${this._copyButton(modArticle)}
+            ${images.length > 0 ? `<span class="mod-row__flag" title="Есть фото: ${images.length}">${images.length} фото</span>` : ''}
+            ${isHit ? '<span class="mod-row__flag mod-row__flag--hit">совпадение</span>' : ''}
+            ${m.is_active === false ? '<span class="mod-row__flag mod-row__flag--off">неактивна</span>' : ''}
+            ${hasPrice ? `<span class="mod-row__price">${Table.formatMoneyRaw(m.price_override)}</span>` : ''}
+            <svg class="mod-row__chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="mod-row__name">${m.name ? esc(m.name) : '<span class="text-muted">без описания</span>'}</div>
+        </div>
+        <div class="mod-row__detail"${isOpen ? '' : ' hidden'}>
+          ${hasPrice ? `<div class="mod-row__detail-price">Цена исполнения: <b>${Table.formatMoney(m.price_override)}</b></div>` : ''}
+          ${images.length > 0 ? `
+            <div class="comp-photos">
+              ${images.map((img, imgIndex) => `
+                <div class="comp-photo" onclick="ComponentsCatalogPage.viewModImage(${m.id}, ${imgIndex})">
+                  <img src="${img.image_path}" alt="" onerror="ComponentsCatalogPage.imageFallback(this)">
+                  ${canEdit ? `<button type="button" class="comp-photo__del" title="Убрать фото" onclick="event.stopPropagation();ComponentsCatalogPage.deleteModImage(${comp.id}, ${m.id}, ${img.id})">×</button>` : ''}
+                </div>
+              `).join('')}
+              ${canEdit ? `<button type="button" class="comp-photo comp-photo--add" title="Добавить фото" onclick="ComponentsCatalogPage.uploadModImage(${comp.id}, ${m.id})">+</button>` : ''}
+            </div>
+          ` : (canEdit ? `
+            <button type="button" class="btn btn-sm btn-secondary" onclick="ComponentsCatalogPage.uploadModImage(${comp.id}, ${m.id})">Добавить фото</button>
+          ` : '')}
+          ${canEdit ? `
+            <div class="mod-row__detail-acts">
+              <button type="button" class="btn btn-sm btn-secondary" onclick="ComponentsCatalogPage.openModificationModal(${comp.id}, ${m.id})">${Table.editIcon} Редактировать</button>
+              <button type="button" class="btn btn-sm btn-danger" onclick="ComponentsCatalogPage.deleteModification(${comp.id}, ${m.id})">${Table.deleteIcon} Удалить</button>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  },
+
+  /** Раскрыть/свернуть строку модификации: фото и полное описание. */
+  toggleMod(modId) {
+    if (typeof document.querySelector !== 'function') return;
+    const row = document.querySelector(`.mod-row[data-mod-id="${modId}"]`);
+    if (!row) return;
+    const open = row.classList.toggle('is-open');
+    const detail = row.querySelector('.mod-row__detail');
+    if (detail) detail.hidden = !open;
+    if (!this._openMods) this._openMods = new Set();
+    if (open) this._openMods.add(modId);
+    else this._openMods.delete(modId);
+  },
+
+  /** Раскрыт ли блок карточки (фотографии, документы). */
+  isGroupOpen(id) {
+    return Boolean(this._openGroups && this._openGroups.has(id));
+  },
+
+  /** Раскрыть/свернуть блок карточки (фотографии, документы). */
+  toggleGroup(button, id) {
+    const body = document.getElementById(id);
+    if (!body) return;
+    const open = body.hidden;
+    body.hidden = !open;
+    if (!this._openGroups) this._openGroups = new Set();
+    if (open) this._openGroups.add(id);
+    else this._openGroups.delete(id);
+    if (button && button.setAttribute) button.setAttribute('aria-expanded', open ? 'true' : 'false');
+  },
+
+  /** Описание карточки: три строки или целиком. */
+  toggleDescription() {
+    const text = document.getElementById('comp-view-desc');
+    const button = document.getElementById('comp-view-desc-btn');
+    if (!text) return;
+    const clamped = text.classList.toggle('is-clamped');
+    if (button) button.textContent = clamped ? 'ещё' : 'свернуть';
+  },
+
+  /** Поиск по модификациям внутри открытой карточки. */
+  filterMods() {
+    const input = document.getElementById('comp-mod-search');
+    this._modView.query = input ? input.value : '';
+    this._applyModFilter();
+  },
+
+  /** Фильтр «Все» / «С фото». */
+  setModFilter(filter) {
+    this._modView.filter = filter === 'photo' ? 'photo' : 'all';
+    if (typeof document.querySelectorAll === 'function') {
+      document.querySelectorAll('.mod-chip').forEach(chip => {
+        chip.classList.toggle('is-active', chip.dataset.modFilter === this._modView.filter);
+      });
+    }
+    this._applyModFilter();
+  },
+
+  resetModFilter() {
+    const input = document.getElementById('comp-mod-search');
+    if (input) input.value = '';
+    this._modView.query = '';
+    this.setModFilter('all');
+  },
+
+  showAllMods() {
+    this._modView.limit = Number.POSITIVE_INFINITY;
+    this._applyModFilter();
+  },
+
+  /** Пересчитывает видимые строки модификаций: поиск, «с фото», лимит показа. */
+  _applyModFilter() {
+    if (typeof document.querySelectorAll !== 'function') return;
+    const state = this._modView;
+    const query = state.query ? this._buildSearchQuery(state.query) : null;
+    const rows = Array.from(document.querySelectorAll('.mod-row'));
+    let matched = 0;
+    let shown = 0;
+
+    rows.forEach(row => {
+      const text = row.dataset.search || '';
+      const matchesQuery = !query || this._searchMatch(text, query);
+      const matchesPhoto = state.filter !== 'photo' || row.dataset.hasPhoto === '1';
+      if (!matchesQuery || !matchesPhoto) {
+        row.classList.add('mod-row--hidden');
+        return;
+      }
+      matched += 1;
+      // подсвеченное совпадение и раскрытую строку не прячем за лимитом;
+      // при активном поиске или фильтре лимит не действует — нужны все совпадения
+      const filtering = Boolean(query) || state.filter !== 'all';
+      const alwaysVisible = filtering || row.classList.contains('mod-row--hit') || row.classList.contains('is-open');
+      const visible = alwaysVisible || shown < state.limit;
+      if (visible) shown += 1;
+      row.classList.toggle('mod-row--hidden', !visible);
+    });
+
+    const more = document.getElementById('mods-more');
+    if (more) {
+      const left = matched - shown;
+      more.textContent = `Показать ещё ${left}`;
+      more.classList.toggle('is-visible', left > 0);
+    }
+
+    const empty = document.getElementById('mods-empty');
+    if (empty) empty.hidden = matched > 0;
   },
 
   async _loadViewDocs(componentId) {
@@ -498,8 +926,14 @@ const ComponentsCatalogPage = {
     try {
       const res = await API.get(`/components/${componentId}/documents`);
       const docs = res.data || [];
+      // количество в свёрнутой строке — чтобы было видно, есть ли что раскрывать
+      const counter = document.getElementById('comp-docs-count');
+      if (counter) counter.textContent = `(${docs.length})`;
+      // ZIP предлагаем, только когда есть что скачивать
+      const bar = document.getElementById('comp-docs-bar');
+      if (bar) bar.hidden = docs.length === 0;
       if (docs.length === 0) {
-        container.innerHTML = '<div style="color:var(--text-muted);font-size:0.82rem;grid-column:1/-1">Нет документов</div>';
+        container.innerHTML = '<div style="color:var(--text-muted);font-size:0.82rem">Нет документов</div>';
         return;
       }
       const certs = docs.filter(d => d.doc_type === 'certificate');
@@ -543,7 +977,7 @@ const ComponentsCatalogPage = {
       if (select) {
         const val = select.value;
         select.innerHTML = '<option value="">Все категории</option>' +
-          this.categories.map(c => `<option value="${c.id}" ${val == c.id ? 'selected' : ''}>${c.name}</option>`).join('');
+          this.categories.map(c => `<option value="${c.id}" ${val == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
       }
     } catch (err) {
       console.error(err);
@@ -569,7 +1003,7 @@ const ComponentsCatalogPage = {
             <tbody>
               ${this.categories.map(c => `
                 <tr ${canEdit ? `style="cursor:pointer" onclick="ComponentsCatalogPage.openCategoryModal(${c.id})" title="Редактировать категорию"` : ''}>
-                  <td><strong>${c.name}</strong></td>
+                  <td><strong>${esc(c.name)}</strong></td>
                   <td class="text-right">${c.sort_order}</td>
                   ${hasActions ? `<td class="text-right" onclick="event.stopPropagation()">
                     <div class="table-actions" style="justify-content:flex-end">
@@ -678,7 +1112,7 @@ const ComponentsCatalogPage = {
               <div id="comp-image-preview">
                 ${isEdit && comp.image_path
                   ? `<img src="${comp.image_path}" style="max-height:120px;border-radius:8px">`
-                  : '<div style="padding:24px;text-align:center;color:var(--text-muted)">📷 Перетащите изображение или нажмите для выбора</div>'}
+                  : '<div style="padding:24px;text-align:center;color:var(--text-muted)">📷 Перетащите изображение или нажмите для выбора<div style="font-size:0.75rem;margin-top:6px">JPG, PNG, WebP, GIF · HEIC с iPhone конвертируется сам</div></div>'}
               </div>
               <input type="file" id="comp-image-input" accept="image/*" style="display:none">
             </div>
@@ -820,6 +1254,12 @@ const ComponentsCatalogPage = {
             <label>Описание</label>
             <textarea class="form-control" id="mod-name" rows="3" placeholder="Описание модификации">${isEdit ? (mod.name || '') : ''}</textarea>
           </div>
+          <div class="form-group">
+            <label>Полный артикул</label>
+            <input type="text" class="form-control" id="mod-full-article" value="${isEdit ? esc(mod.full_article || '') : ''}"
+                   placeholder="Пусто — артикул изделия и код через дефис">
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px">Заполняйте, только если печатный артикул отличается: А.3731.023.1-01.00-150</div>
+          </div>
           <div class="form-row">
             <div class="form-group">
               <label>Порядок сортировки</label>
@@ -845,6 +1285,7 @@ const ComponentsCatalogPage = {
     const data = {
       code: document.getElementById('mod-code').value.trim(),
       name: document.getElementById('mod-name').value.trim(),
+      full_article: document.getElementById('mod-full-article').value.trim(),
       price_override: priceVal !== '' ? parseFloat(priceVal) : null,
       sort_order: parseInt(document.getElementById('mod-sort').value) || 0,
       is_active: document.getElementById('mod-active').checked,
@@ -913,13 +1354,134 @@ const ComponentsCatalogPage = {
     } catch (err) { Toast.error(err.message); }
   },
 
-  viewModImage(imagePath) {
+  /** Просмотр фото модификации: листаются все фото этой модификации. */
+  viewModImage(modId, index = 0) {
+    const images = (this._modPhotos && this._modPhotos[modId]) || [];
+    if (!images.length) return;
+    const code = this._modCodes && this._modCodes[modId];
+    const canEdit = API.can('components', 'edit');
+    Lightbox.open({
+      images,
+      index,
+      title: code ? `Фото модификации ${code}` : 'Фото модификации',
+      onRotate: canEdit
+        ? (src, delta) => this.rotatePhoto(src, delta, this._viewCompId)
+        : null,
+    });
+  },
+
+  // === ГАЛЕРЕЯ ПОЗИЦИИ ===
+  uploadComponentImage(componentId) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = true;
+    input.addEventListener('change', async (e) => {
+      const files = e.target.files;
+      if (!files.length) return;
+      for (const file of files) {
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          const res = await API.upload('/upload/image', formData);
+          await API.post(`/components/${componentId}/images`, { image_path: res.path });
+        } catch (err) {
+          Toast.error(`Ошибка загрузки ${file.name}: ${err.message}`);
+        }
+      }
+      Toast.success('Фото добавлены');
+      this.viewComponent(componentId);
+      this.loadAllComponents().then(() => this.filterAndRender());
+    });
+    input.click();
+  },
+
+  /** Просмотр фото изделия: листаются все фото карточки, карточка не закрывается. */
+  viewComponentImage(index = 0) {
+    const images = this._photos || [];
+    if (!images.length) return;
+    Lightbox.open({
+      images,
+      index,
+      title: this._photoTitle || 'Фото изделия',
+      onRotate: this._photoCanEdit
+        ? (src, delta) => this.rotatePhoto(src, delta, this._photoComponentId)
+        : null,
+    });
+  },
+
+  /**
+   * Поворот фото на сервере. Файл перезаписывается на месте, поэтому после
+   * ответа перерисовываем карточку (обложка и миниатюры смотрят на тот же
+   * адрес) и возвращаем новый src с ?v=, чтобы просмотр не показал старый кэш.
+   */
+  async rotatePhoto(src, delta, componentId) {
+    const base = String(src).split('?')[0];
+    const res = await API.post('/upload/rotate', { path: base, degrees: delta });
+    Toast.success('Положение сохранено');
+    if (componentId) {
+      this.viewComponent(componentId);
+      this.loadAllComponents().then(() => this.filterAndRender()).catch(() => {});
+    }
+    return `${res.path}?v=${Date.now()}`;
+  },
+
+  async setCoverImage(componentId, imageId) {
+    try {
+      await API.put(`/components/${componentId}/images/${imageId}/cover`, {});
+      Toast.success('Обложка обновлена');
+      this.viewComponent(componentId);
+      this.loadAllComponents().then(() => this.filterAndRender());
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  async deleteComponentImage(componentId, imageId) {
+    if (!await ConfirmDialog.delete('Убрать фото из галереи? Импорт каталога его больше не вернёт.')) return;
+    try {
+      await API.del(`/components/${componentId}/images/${imageId}`);
+      Toast.success('Фото убрано');
+      this.viewComponent(componentId);
+      this.loadAllComponents().then(() => this.filterAndRender());
+    } catch (err) { Toast.error(err.message); }
+  },
+
+  /** Убранные фото позиции: импорт их не возвращает, вернуть можно отсюда. */
+  async viewRemovedImages(componentId) {
+    let removed = [];
+    try {
+      const res = await API.get(`/components/${componentId}/images/removed`);
+      removed = res.data || [];
+    } catch (err) { Toast.error(err.message); return; }
+
+    const body = removed.length === 0
+      ? '<div class="empty-state"><div class="empty-state-text">Убранных фото нет</div></div>'
+      : `<div class="comp-photos">
+          ${removed.map(img => `
+            <div class="comp-photo comp-photo--removed">
+              <img src="${safeUrl(img.image_path)}" alt="" onerror="ComponentsCatalogPage.imageFallback(this)">
+              <button type="button" class="comp-photo__restore" title="Вернуть фото"
+                      onclick="ComponentsCatalogPage.restoreComponentImage(${componentId}, ${img.id})">вернуть</button>
+            </div>`).join('')}
+        </div>
+        <div class="form-hint" style="margin-top:8px">
+          Эти снимки убраны в карточке. Загрузка обновлений их не возвращает — только кнопка «вернуть».
+        </div>`;
+
     Modal.open({
-      title: 'Фото модификации',
-      wide: true,
-      body: `<div style="text-align:center"><img src="${imagePath}" style="max-width:100%;max-height:70vh;border-radius:8px"></div>`,
+      title: `Убранные фото (${removed.length})`,
+      body,
       footer: '<button class="btn btn-secondary" onclick="Modal.close()">Закрыть</button>',
     });
+  },
+
+  async restoreComponentImage(componentId, imageId) {
+    try {
+      await API.post(`/components/${componentId}/images/${imageId}/restore`, {});
+      Toast.success('Фото возвращено');
+      Modal.close();
+      this.viewComponent(componentId);
+      this.loadAllComponents().then(() => this.filterAndRender());
+    } catch (err) { Toast.error(err.message); }
   },
 
   // === ДОКУМЕНТЫ КОМПОНЕНТОВ ===
@@ -965,7 +1527,7 @@ const ComponentsCatalogPage = {
   uploadDoc(componentId, docType) {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.pdf,.jpg,.jpeg,.png';
+    input.accept = '.pdf,.jpg,.jpeg,.png,.heic,.heif';
     input.multiple = true;
     input.addEventListener('change', async () => {
       for (const file of input.files) {

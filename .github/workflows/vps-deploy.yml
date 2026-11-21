@@ -1,0 +1,132 @@
+name: Развёртывание на VPS
+
+# Одноразовый мост: песочница разработки не выпускает SSH (порт 22 закрыт для
+# любых хостов), а раннер GitHub подключается к серверу свободно.
+#
+# Запуск:
+#   gh api --method POST repos/<owner>/<repo>/dispatches \
+#     -f event_type=vps-deploy \
+#     -f client_payload[host]=1.2.3.4 -f client_payload[user]=root \
+#     -f client_payload[password]=... \
+#     -f client_payload[branch]=arena/... -f client_payload[with_catalog]=1
+#
+# Пароль живёт только в payload события и в окружении шага (маскируется
+# ::add-mask::), в логи, артефакты и репозиторий он не попадает.
+
+on:
+  repository_dispatch:
+    types: [vps-deploy]
+  workflow_dispatch:
+    inputs:
+      host:
+        description: 'IP или домен сервера'
+        required: true
+      branch:
+        description: 'Ветка репозитория'
+        default: main
+      with_catalog:
+        description: 'Каталог АТЛАНТА-26 (1 — полное наполнение)'
+        default: '1'
+      seed_demo:
+        description: 'Демо-записи (0 — выключить)'
+        default: '1'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: paramiko
+        run: pip install --quiet paramiko
+
+      - name: Проверить доступ
+        if: github.event.client_payload.mode == 'probe'
+        env:
+          VPS_MODE: probe
+          VPS_PORTS: '22 2222 8022'
+          VPS_HOST: ${{ github.event.client_payload.host || inputs.host }}
+          VPS_USER: ${{ github.event.client_payload.user || 'root' }}
+          VPS_PASSWORD: ${{ github.event.client_payload.password || secrets.VPS_PASSWORD }}
+        run: python3 scripts/vps_ssh.py
+
+      - name: Запустить развёртывание
+        if: github.event.client_payload.mode != 'probe'
+        env:
+          VPS_MODE: run
+          VPS_HOST: ${{ github.event.client_payload.host || inputs.host }}
+          VPS_USER: ${{ github.event.client_payload.user || 'root' }}
+          VPS_PASSWORD: ${{ github.event.client_payload.password || secrets.VPS_PASSWORD }}
+          VPS_ARGS: >-
+            BRANCH=${{ github.event.client_payload.branch || inputs.branch || 'main' }}
+            REPO=${{ github.server_url }}/${{ github.repository }}.git
+            WITH_CATALOG=${{ github.event.client_payload.with_catalog || inputs.with_catalog || '1' }}
+            SEED_DEMO=${{ github.event.client_payload.seed_demo || inputs.seed_demo || '1' }}
+            SKIP_PRESEED=${{ github.event.client_payload.skip_preseed || '0' }}
+            DOMAIN=${{ github.event.client_payload.domain || '' }}
+          VPS_SRC: scripts/vps-provision.sh
+        run: |
+          echo "::add-mask::$VPS_PASSWORD"
+          if [ -z "$VPS_PASSWORD" ]; then echo "нет пароля в payload/secrets"; exit 1; fi
+          python3 scripts/vps_ssh.py
+
+      # Скрипт работает в фоне: apt, PostgreSQL, npm и импорт каталога вместе
+      # идут дольше шага workflow, а обрыв канала не должен убивать установку.
+      - name: Ждать окончания
+        if: success() && github.event.client_payload.mode != 'probe'
+        env:
+          VPS_MODE: poll
+          VPS_HOST: ${{ github.event.client_payload.host || inputs.host }}
+          VPS_USER: ${{ github.event.client_payload.user || 'root' }}
+          VPS_PASSWORD: ${{ github.event.client_payload.password || secrets.VPS_PASSWORD }}
+        run: |
+          for i in $(seq 1 320); do          # 320 × 15 c ≈ 80 минут
+            set +e
+            python3 scripts/vps_ssh.py
+            rc=$?
+            set -e
+            if [ "$rc" -eq 0 ]; then
+              echo "развёртывание закончено"
+              marker=$(grep -o '__PROVISION_DONE__ [0-9]*' /tmp/vps-deploy.log | tail -1)
+              code=${marker##* }
+              echo "код провижининга: ${code:-?}"
+              [ "${code:-1}" = "0" ] || exit 1
+              exit 0
+            fi
+            [ "$rc" -eq 3 ] || exit "$rc"
+            sleep 15
+          done
+          echo "не дождались окончания за 80 минут — журнал в issue, работа на сервере продолжается"
+          exit 1
+
+      # Логи запусков GitHub не отдаёт по API, поэтому журнал развёртывания
+      # складывается комментарием в issue — оттуда его читает песочница.
+      - name: Журнал в issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ vars.DEPLOY_ISSUE || '2' }}
+          VPS_PASSWORD: ${{ github.event.client_payload.password || secrets.VPS_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, subprocess
+          log = pathlib.Path('/tmp/vps-deploy.log')
+          text = log.read_text(encoding='utf-8', errors='replace') if log.exists() else 'журнала нет'
+          secret = os.environ.get('VPS_PASSWORD', '')
+          if secret:
+              text = text.replace(secret, '***')
+          text = text[-55000:]
+          body = f"### Развёртывание {os.environ.get('GITHUB_RUN_ID', '')}\n\n```\n{text}\n```"
+          subprocess.run(['gh', 'api', f"repos/{os.environ['REPO']}/issues/{os.environ['ISSUE']}/comments",
+                          '-f', f'body={body}'], check=False)
+          PY

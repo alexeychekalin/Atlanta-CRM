@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
-const adminOnly = require('../middleware/role');
+const { hasPermission } = require('../middleware/role');
 
 const router = express.Router();
 
@@ -31,7 +31,7 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // POST /api/principals
-router.post('/', auth, adminOnly, async (req, res) => {
+router.post('/', auth, hasPermission('settings', 'edit'), async (req, res) => {
   try {
     const { name, agent_commission_pct, phone, email, notes } = req.body;
     if (!name) {
@@ -51,7 +51,7 @@ router.post('/', auth, adminOnly, async (req, res) => {
 });
 
 // PUT /api/principals/:id
-router.put('/:id', auth, adminOnly, async (req, res) => {
+router.put('/:id', auth, hasPermission('settings', 'edit'), async (req, res) => {
   try {
     const { name, agent_commission_pct, phone, email, notes, is_active } = req.body;
     if (!name) {
@@ -75,7 +75,7 @@ router.put('/:id', auth, adminOnly, async (req, res) => {
 });
 
 // DELETE /api/principals/:id
-router.delete('/:id', auth, adminOnly, async (req, res) => {
+router.delete('/:id', auth, hasPermission('settings', 'edit'), async (req, res) => {
   try {
     const result = await db.query('DELETE FROM principals WHERE id = $1 RETURNING id', [req.params.id]);
     if (result.rows.length === 0) {

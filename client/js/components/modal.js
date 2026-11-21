@@ -3,6 +3,7 @@ const Modal = {
   overlay: null,
   modal: null,
   titleEl: null,
+  titleActionEl: null,
   bodyEl: null,
   footerEl: null,
 
@@ -10,6 +11,7 @@ const Modal = {
     this.overlay = document.getElementById('modal-overlay');
     this.modal = document.getElementById('modal');
     this.titleEl = document.getElementById('modal-title');
+    this.titleActionEl = document.getElementById('modal-title-action');
     this.bodyEl = document.getElementById('modal-body');
     this.footerEl = document.getElementById('modal-footer');
 
@@ -23,13 +25,23 @@ const Modal = {
     });
   },
 
-  open({ title, body, footer = '', wide = false }) {
+  /** className — дополнительный класс на окно (например, modal-comp),
+   *  autoFocus — ставить ли курсор в первое поле: в карточке просмотра это
+   *  поле поиска по модификациям, и фокус прокручивал бы карточку вниз.
+   *  titleAction — небольшая кнопка рядом с заголовком (например, копирование
+   *  артикула), чтобы сам заголовок оставался обычным текстом. */
+  open({ title, titleAction = '', body, footer = '', wide = false, className = '', autoFocus = true }) {
     this.titleEl.textContent = title;
+    if (this.titleActionEl) this.titleActionEl.innerHTML = titleAction;
     this.bodyEl.innerHTML = body;
     this.footerEl.innerHTML = footer;
     this.modal.classList.toggle('modal-wide', wide);
+    this.modal.classList.toggle('modal-comp', className === 'modal-comp');
+    this.overlay.classList.toggle('modal-overlay--comp', className === 'modal-comp');
     this.overlay.style.display = 'flex';
     document.body.style.overflow = 'hidden';
+
+    if (!autoFocus) return;
 
     // Focus first input
     setTimeout(() => {
