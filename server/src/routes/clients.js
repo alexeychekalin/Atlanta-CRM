@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { buildRequisitesDocx, requisitesFileName } = require('../services/requisites-docx');
+const { contractPreamble } = require('../services/requisites');
 
 const router = express.Router();
 
@@ -68,7 +69,9 @@ router.get('/:id', auth, async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Клиент не найден' });
     }
-    res.json(result.rows[0]);
+    // Готовая преамбула договора: юристы сверяют формулировку с письмом
+    // контрагента, поэтому она собирается на сервере, а не в интерфейсе
+    res.json({ ...result.rows[0], contract_preamble: contractPreamble(result.rows[0]) });
   } catch (err) {
     console.error('Ошибка получения клиента:', err);
     res.status(500).json({ error: 'Внутренняя ошибка сервера' });

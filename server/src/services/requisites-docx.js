@@ -23,7 +23,9 @@ const {
   VerticalAlign,
   convertMillimetersToTwip,
 } = require('docx');
-const { clientRequisites, officeTitle, requisitesFileName, isIp, text } = require('./requisites');
+const {
+  clientRequisites, officeTitle, requisitesFileName, isIp, text, contractPreamble,
+} = require('./requisites');
 
 const ACCENT = '1F4E79';       // фирменный синий
 const MUTED = '6B7280';
@@ -150,6 +152,21 @@ async function buildRequisitesDocx(client = {}, options = {}) {
   }
 
   children.push(requisitesTable(rows));
+
+  // Готовая преамбула договора: бухгалтерия и юристы копируют её в договор
+  // как есть, поэтому она идёт отдельным блоком после таблицы
+  const preamble = contractPreamble(client);
+  if (preamble) {
+    children.push(new Paragraph({
+      spacing: { before: 320, after: 100 },
+      children: [new TextRun({ text: 'Преамбула для договора', bold: true, size: 20, color: LABEL, font: FONT })],
+    }));
+    children.push(new Paragraph({
+      spacing: { before: 0, after: 0 },
+      children: [new TextRun({ text: preamble.text, size: 22, font: FONT })],
+    }));
+  }
+
   children.push(...signatureBlock(client));
   children.push(new Paragraph({
     alignment: AlignmentType.RIGHT,

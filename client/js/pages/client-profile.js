@@ -144,6 +144,13 @@ const ClientProfilePage = {
               ${c.corr_account ? `<span class="profile-contact-item">К/С: ${esc(c.corr_account)}</span>` : ''}
               ${c.bank_name ? `<span class="profile-contact-item">🏦 ${esc(c.bank_name)}${c.bik ? ', БИК: ' + esc(c.bik) : ''}</span>` : ''}
               ${c.director ? `<span class="profile-contact-item">👤 ${c.client_type === 'ip' ? '' : `${esc(c.director_position || 'Руководитель')}: `}${esc(c.director)}${c.director_basis ? ` (действует на основании ${esc(c.director_basis)})` : ''}</span>` : ''}
+              ${c.contract_preamble ? `
+                <div class="profile-preamble">
+                  <span class="profile-preamble__label">Преамбула для договора</span>
+                  <span class="profile-preamble__text">${esc(c.contract_preamble.text)}</span>
+                  <button type="button" class="profile-preamble__copy" title="Скопировать преамбулу"
+                          onclick="ClientProfilePage.copyPreamble(this)">Копировать</button>
+                </div>` : ''}
               ${c.bank_details ? `<span class="profile-contact-item" style="color:var(--text-muted);font-size:0.78rem">📋 ${esc(c.bank_details)}</span>` : ''}
             </div>` : ''}
 
@@ -438,6 +445,34 @@ const ClientProfilePage = {
     if (mod10 === 1 && mod100 !== 11) return one;
     if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
     return many;
+  },
+
+  /** Скопировать преамбулу договора в буфер обмена — её вставляют в договор. */
+  copyPreamble(button) {
+    const text = this.client && this.client.contract_preamble
+      ? this.client.contract_preamble.text : '';
+    if (!text) return;
+    const done = () => {
+      if (button) {
+        const label = button.textContent;
+        button.textContent = 'Скопировано';
+        setTimeout(() => { button.textContent = label; }, 1500);
+      }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => {
+        if (typeof Toast !== 'undefined') Toast.error('Не удалось скопировать');
+      });
+      return;
+    }
+    // старый браузер без Clipboard API: выделяем текст и просим скопировать
+    const area = document.createElement('textarea');
+    area.value = text;
+    document.body.appendChild(area);
+    area.select();
+    try { document.execCommand('copy'); done(); }
+    catch (_) { if (typeof Toast !== 'undefined') Toast.error('Не удалось скопировать'); }
+    document.body.removeChild(area);
   },
 
   // === Реквизиты: выгрузка в Word ===

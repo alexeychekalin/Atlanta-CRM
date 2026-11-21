@@ -423,3 +423,33 @@ test('предзаполнение: Вологодские машины — ба
   assert.ok(vol.documents.some(doc => doc.file === 'vologodskie-mashiny-requisites.pdf'),
     'карточка предприятия должна быть приложена к карточке клиента');
 });
+
+// Карточка «Воронежсельмаша» пришла сканом с печатью; цифры сверены с полями
+// PDF вручную. Тест держит их, чтобы при правке записи не поехали реквизиты.
+test('предзаполнение: «Воронежсельмаш» заведён по присланной карточке', () => {
+  const { clients } = readConfig();
+  const vsm = clients.find(c => c.inn === '3664104210');
+  assert.ok(vsm, 'в clients.json нет клиента с ИНН 3664104210');
+
+  assert.equal(vsm.name, 'ООО «Воронежсельмаш»');
+  assert.equal(vsm.full_name, 'Общество с ограниченной ответственностью «Воронежсельмаш»');
+  assert.equal(vsm.kpp, '366301001');
+  assert.equal(vsm.ogrn, '1103668017551');
+  assert.equal(vsm.okpo, '65649237');
+  assert.equal(vsm.legal_address, vsm.postal_address, 'в карточке адрес один — юридический и почтовый');
+  assert.match(vsm.legal_address, /394056.*Солдатское поле, дом 285\/5/);
+  assert.equal(vsm.bank_account, '40702810500000038458');
+  assert.equal(vsm.bik, '044525700');
+  assert.equal(vsm.corr_account, '30101810200000000700');
+  assert.equal(vsm.director, 'Корчагин Виталий Владимирович');
+  assert.equal(vsm.director_position, 'Генеральный директор');
+  assert.equal(vsm.director_basis, 'Устава');
+  assert.equal(vsm.email, 'info@vselmash.ru');
+  assert.equal(vsm.phone, '+7 (473) 206-77-77');
+
+  // PDF из карточки лежит рядом с данными и подписан на вложение
+  const doc = (vsm.documents || [])[0];
+  assert.ok(doc, 'у клиента нет вложенной карточки');
+  assert.equal(doc.file, 'voronezhselmash-card.pdf');
+  assert.ok(fs.existsSync(path.join(FILES_DIR, doc.file)), 'файла карточки нет в files/');
+});

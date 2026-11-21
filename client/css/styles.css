@@ -2805,6 +2805,54 @@ input.search-clear-host,
   gap: 4px;
 }
 
+/* Преамбула договора: готовая формулировка «в лице ... на основании ...» */
+.profile-preamble {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-teal);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+
+.profile-preamble__label {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.profile-preamble__text {
+  flex: 1 1 260px;
+  min-width: 0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.profile-preamble__copy {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent-teal);
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.profile-preamble__copy:hover {
+  background: rgba(38, 166, 154, 0.1);
+}
+
 .kpi-card {
   background: var(--bg-card);
   border: 1px solid var(--border);

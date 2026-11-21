@@ -6,6 +6,7 @@ const JSZip = require('jszip');
 
 const {
   clientRequisites, officeTitle, requisitesFileName, isIp,
+  contractPreamble, positionGenitive, fioGenitive,
 } = require('../src/services/requisites');
 const { buildRequisitesDocx } = require('../src/services/requisites-docx');
 
@@ -153,4 +154,77 @@ test('docx: маршрут в CRM и кнопка в карточке клиен
 
   const sw = fs.readFileSync(path.join(__dirname, '../../client/sw.js'), 'utf8');
   assert.match(sw, /'\/js\/components\/download\.js'/, 'новый файл нужно добавить в кэш service worker');
+});
+
+// «Воронежсельмаш»: карточка пришла сканом, а преамбулу договора контрагент
+// прислал отдельным письмом — «в лице генерального директора Корчагина
+// Виталия Владимировича, действующего на основании Устава». Функция должна
+// собрать ровно эту формулировку из полей карточки.
+const VORONEZHSELMASH = {
+  name: 'ООО «Воронежсельмаш»',
+  full_name: 'Общество с ограниченной ответственностью «Воронежсельмаш»',
+  client_type: 'ooo',
+  inn: '3664104210',
+  kpp: '366301001',
+  ogrn: '1103668017551',
+  legal_address: '394056, РФ, Воронежская обл., г. Воронеж, ул. Солдатское поле, дом 285/5',
+  bank_account: '40702810500000038458',
+  bank_name: 'АО «Райффайзенбанк»',
+  bik: '044525700',
+  corr_account: '30101810200000000700',
+  director: 'Корчагин Виталий Владимирович',
+  director_position: 'Генеральный директор',
+  director_basis: 'Устава',
+};
+
+test('преамбула: формулировка договора совпадает с письмом контрагента', () => {
+  const preamble = contractPreamble(VORONEZHSELMASH);
+  assert.equal(preamble.text,
+    'Общество с ограниченной ответственностью «Воронежсельмаш», в лице генерального '
+    + 'директора Корчагина Виталия Владимировича, действующего на основании Устава');
+  assert.equal(preamble.basis, 'Устава');
+});
+
+test('преамбула: должность и ФИО склоняются, незнакомые — не ломаются', () => {
+  const text = position => contractPreamble({ ...VORONEZHSELMASH, director_position: position }).text;
+  assert.match(text('Директор'), /в лице директора Корчагина/);
+  assert.match(text('Исполнительный директор'), /в лице исполнительного директора/);
+  // незнакомая должность остаётся как в карточке — лучше так, чем выдумка
+  assert.match(text('Главный инженер'), /в лице Главный инженер/);
+  assert.equal(positionGenitive(''), 'руководителя');
+
+  assert.equal(fioGenitive('Корчагин Виталий Владимирович'), 'Корчагина Виталия Владимировича');
+  assert.equal(fioGenitive('Холов Наиль Хусанович'), 'Холова Наиля Хусановича');
+  assert.equal(fioGenitive('Барановская Виктория Сергеевна'), 'Барановской Виктории Сергеевны');
+  // уже склонённое ФИО повторно не трогаем
+  assert.equal(fioGenitive('Корчагина Виталия Владимировича'), 'Корчагина Виталия Владимировича');
+});
+
+test('преамбула: у ИП — предприниматель, без руководителя — null', () => {
+  const ip = contractPreamble({
+    name: 'ИП Барановская Виктория Сергеевна',
+    full_name: 'Индивидуальный предприниматель Барановская Виктория Сергеевна',
+    client_type: 'ip', director: 'Барановская Виктория Сергеевна', ogrnip: '319463200033261',
+  });
+  assert.match(ip.text, /в лице предпринимателя Барановской Виктории Сергеевны/);
+  assert.equal(contractPreamble({ name: 'ООО «Без руководителя»' }), null);
+});
+
+test('преамбула: в docx отдельным блоком, в карточке клиента и в API', async () => {
+  const buffer = await buildRequisitesDocx(VORONEZHSELMASH, { date: new Date(2026, 10, 21) });
+  const zip = await JSZip.loadAsync(buffer);
+  const xml = await zip.file('word/document.xml').async('string');
+  assert.ok(xml.includes('Преамбула для договора'), 'в docx нет блока преамбулы');
+  assert.ok(xml.includes('Корчагина Виталия Владимировича'), 'в docx нет склонённого ФИО');
+
+  const route = fs.readFileSync(path.join(__dirname, '../src/routes/clients.js'), 'utf8');
+  assert.match(route, /contract_preamble: contractPreamble\(/,
+    'GET /api/clients/:id должен отдавать преамбулу');
+
+  const page = fs.readFileSync(path.join(__dirname, '../../client/js/pages/client-profile.js'), 'utf8');
+  assert.match(page, /contract_preamble/, 'карточка клиента не показывает преамбулу');
+  assert.match(page, /copyPreamble/, 'преамбулу надо уметь скопировать в договор');
+
+  const css = fs.readFileSync(path.join(__dirname, '../../client/css/styles.css'), 'utf8');
+  assert.match(css, /\.profile-preamble__text/, 'нет стилей блока преамбулы');
 });
