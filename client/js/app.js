@@ -108,14 +108,20 @@ const App = {
 
     // Проверяем авторизацию
     if (API.getToken()) {
-      // Обновляем профиль и права с сервера (роль могла измениться)
-      API.get('/auth/me')
-        .then(user => {
-          API.setUser(user);
-          this.updateNavPermissions();
-        })
-        .catch(() => {});
+      // Обновляем профиль и права с сервера (роль могла измениться).
+      // Заодно сервер продлевает сессию, если прошла половина срока.
+      this.refreshSession();
       this.showApp();
+      // Вкладка спала или её свернули на ночь: при возврате продлеваем сессию,
+      // чтобы человек не попал на экран входа посреди работы
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && API.getToken()) this.refreshSession();
+      });
+      // И раз в час, пока вкладка открыта: смена может длиться дольше срока
+      // токена, а человек так и не перезагрузит страницу
+      setInterval(() => {
+        if (document.visibilityState === 'visible' && API.getToken()) this.refreshSession();
+      }, 60 * 60 * 1000);
     } else if (API.isGuest()) {
       // Гостевой режим уже активирован ранее
       this.showApp();
@@ -167,6 +173,28 @@ const App = {
       this._guestPermissions = guest.permissions;
     }
     this.showLogin();
+  },
+
+  /**
+   * Обновить профиль с сервера. Сервер по ходу дела продлевает сессию
+   * (скользящий срок), поэтому вызываем не только при загрузке: при возврате
+   * во вкладку и после долгой паузы. Ошибку молча глотаем — если сессия
+   * действительно истекла, следующий запрос покажет экран входа.
+   */
+  refreshSession() {
+    return API.get('/auth/me')
+      .then(user => {
+        // Сервер вернул новый токен — сохраняем, иначе localStorage останется
+        // со старым и после перезагрузки сессия снова укоротится
+        if (user && user.token) {
+          API.setToken(user.token);
+          delete user.token;
+        }
+        API.setUser(user);
+        this.updateNavPermissions();
+        return user;
+      })
+      .catch(() => null);
   },
 
   showLogin() {

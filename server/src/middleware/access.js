@@ -67,16 +67,19 @@ async function resolveUserFromToken(token) {
   const decoded = jwt.verify(token, process.env.JWT_SECRET);
   if (!decoded || !decoded.id) return null;
 
+  // iat — свойство конкретного токена, а не пользователя: его нельзя класть
+  // в кэш, иначе после продления мы будем смотреть на дату старого токена
   const cached = userCache.get(Number(decoded.id));
-  if (cached && cached.expires > Date.now()) return cached.user;
+  if (cached && cached.expires > Date.now()) {
+    if ((decoded.tv || 0) !== (cached.user.token_version || 0)) return null;
+    return { ...cached.user, iat: decoded.iat };
+  }
 
   const user = await loadUserById(decoded.id);
   // Смена пароля увеличивает token_version — старые токены перестают работать
   if (!user || (decoded.tv || 0) !== (user.token_version || 0)) return null;
-  if (user) {
-    userCache.set(Number(decoded.id), { user, expires: Date.now() + CACHE_TTL_MS });
-  }
-  return user;
+  userCache.set(Number(decoded.id), { user, expires: Date.now() + CACHE_TTL_MS });
+  return { ...user, iat: decoded.iat };
 }
 
 async function getGuestPermissions() {
