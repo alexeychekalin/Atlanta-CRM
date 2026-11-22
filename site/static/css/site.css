@@ -2394,3 +2394,139 @@ ul {
   .product { grid-template-columns: 1fr; }
   .gallery { position: static; }
 }
+
+/* ------------------------------------------------- корзина-заявка и файлы */
+
+/* Счётчик в шапке: сколько позиций уже набрано. Появляется, только когда
+   в заявке что-то есть, — пустой бейдж в шапке выглядит как ошибка. */
+.request-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--paper);
+  color: var(--accent-deep);
+  font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.request-pill span {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+}
+
+.request-pill:hover { border-color: var(--accent); }
+
+/* Список набранных позиций прямо в форме: человек видит, что отправляет */
+.form__basket {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-soft);
+  margin-bottom: 14px;
+}
+
+.basket__head {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.basket__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.basket__article { font-weight: 600; color: var(--accent-deep); white-space: nowrap; }
+.basket__name { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.basket__qty {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.basket__qty input {
+  width: 64px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  font: inherit;
+  text-align: center;
+}
+
+.basket__remove {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.basket__remove:hover { background: #fdecea; color: #c0392b; }
+
+/* Приложение файлов: фото детали или схема */
+.form__files { margin-bottom: 14px; }
+
+.form__files-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+}
+
+.form__files-label span {
+  font-weight: 400;
+  color: var(--muted-light);
+}
+
+.form__files input[type="file"] {
+  width: 100%;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.form__files-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.form__file {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent-wash);
+  color: var(--accent-deep);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .basket__row { grid-template-columns: 1fr auto; }
+  .basket__name { grid-column: 1 / -1; }
+  .request-pill { display: none; }
+}

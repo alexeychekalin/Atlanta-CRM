@@ -265,16 +265,134 @@
   }
 
   /* ------------------------------------------------------------ заявка */
-  var form = document.querySelector('[data-request-form]');
-  if (form) {
-    var note = form.querySelector('[data-form-note]');
-    var endpoint = form.getAttribute('data-endpoint') || '';
+  /* Заявка на несколько позиций: клиент набирает артикулы по каталогу
+     (опт берёт 5–20 позиций за раз), список живёт в localStorage и
+     отправляется вместе с формой. Цен на сайте нет — в заявке только
+     артикул, название и количество. */
+  var BASKET_KEY = 'atlanta_request_items';
 
-    var say = function (text, isError) {
-      if (!note) return;
-      note.textContent = text;
-      note.style.color = isError ? '#ff9d8a' : '#f5a524';
-    };
+  var readBasket = function () {
+    try {
+      var raw = window.localStorage.getItem(BASKET_KEY);
+      var list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list : [];
+    } catch (e) { return []; }
+  };
+
+  var writeBasket = function (list) {
+    try { window.localStorage.setItem(BASKET_KEY, JSON.stringify(list)); } catch (e) { /* private mode */ }
+  };
+
+  var basket = readBasket();
+
+  var renderBasket = function () {
+    var count = basket.reduce(function (sum, item) { return sum + (Number(item.quantity) || 1); }, 0);
+    document.querySelectorAll('[data-basket-pill]').forEach(function (pill) {
+      pill.hidden = basket.length === 0;
+    });
+    document.querySelectorAll('[data-basket-count]').forEach(function (el) {
+      el.textContent = String(basket.length);
+    });
+    var slots = document.querySelector('[data-basket-slots]');
+    if (slots) {
+      if (basket.length === 0) {
+        slots.hidden = true;
+        slots.innerHTML = '';
+      } else {
+        slots.hidden = false;
+        slots.innerHTML = '<div class="basket__head">Позиции в заявке (' + basket.length + ')</div>' +
+          basket.map(function (item, index) {
+            return '<div class="basket__row">' +
+              '<span class="basket__article">' + escapeHtml(item.article) + '</span>' +
+              '<span class="basket__name">' + escapeHtml(item.name || '') + '</span>' +
+              '<label class="basket__qty">шт. <input type="number" min="1" max="9999" value="' +
+                (Number(item.quantity) || 1) + '" data-basket-qty="' + index + '"></label>' +
+              '<button type="button" class="basket__remove" data-basket-remove="' + index + '" ' +
+                'title="Убрать из заявки">×</button>' +
+            '</div>';
+          }).join('');
+      }
+    }
+    var input = document.querySelector('[data-basket-input]');
+    if (input) input.value = basket.length ? JSON.stringify(basket.map(function (item) {
+      return { article: item.article, name: item.name, quantity: Number(item.quantity) || 1 };
+    })) : '';
+    if (count === 0 && slots) slots.hidden = true;
+  };
+
+  var escapeHtml = function (value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  };
+
+  document.querySelectorAll('[data-add-to-request]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var article = button.getAttribute('data-article') || '';
+      var name = button.getAttribute('data-name') || '';
+      var existing = basket.filter(function (item) { return item.article === article; })[0];
+      if (existing) {
+        existing.quantity = (Number(existing.quantity) || 1) + 1;
+      } else {
+        basket.push({ article: article, name: name, quantity: 1 });
+      }
+      writeBasket(basket);
+      renderBasket();
+      button.textContent = '✓ В заявке';
+      setTimeout(function () { button.textContent = '+ В заявку'; }, 1400);
+    });
+  });
+
+  document.addEventListener('click', function (event) {
+    var remove = event.target.closest('[data-basket-remove]');
+    if (remove) {
+      basket.splice(Number(remove.getAttribute('data-basket-remove')), 1);
+      writeBasket(basket);
+      renderBasket();
+      return;
+    }
+  });
+
+  document.addEventListener('input', function (event) {
+    var qty = event.target.closest('[data-basket-qty]');
+    if (qty) {
+      var index = Number(qty.getAttribute('data-basket-qty'));
+      var value = Math.max(1, Math.min(9999, Number(qty.value) || 1));
+      if (basket[index]) basket[index].quantity = value;
+      writeBasket(basket);
+      var input = document.querySelector('[data-basket-input]');
+      if (input) input.value = JSON.stringify(basket);
+    }
+  });
+
+  /* Файлы: показываем, что выбрано, и не даём приложить больше пяти */
+  var filesInput = document.querySelector('#f-files');
+  if (filesInput) {
+    filesInput.addEventListener('change', function () {
+      var list = document.querySelector('[data-files-list]');
+      var files = Array.prototype.slice.call(filesInput.files || []);
+      if (files.length > 5) {
+        files = files.slice(0, 5);
+        say('Можно приложить не больше 5 файлов — лишние отброшены.', true);
+      }
+      if (list) {
+        list.innerHTML = files.map(function (file) {
+          return '<span class="form__file">' + escapeHtml(file.name) + '</span>';
+        }).join('');
+      }
+    });
+  }
+
+  var form = document.querySelector('[data-request-form]');
+  var say = function (text, isError) {
+    var note = form && form.querySelector('[data-form-note]');
+    if (!note) return;
+    note.textContent = text;
+    note.style.color = isError ? '#ff9d8a' : '#f5a524';
+  };
+
+  if (form) {
+    var endpoint = form.getAttribute('data-endpoint') || '';
 
     form.addEventListener('submit', function (event) {
       event.preventDefault();
@@ -296,11 +414,19 @@
         return;
       }
 
+      var items = readBasket();
+
       if (!endpoint) {
         var body = 'Заявка с сайта\n\nИмя: ' + data.name + '\nТелефон: ' + data.phone +
           (data.email ? '\nПочта: ' + data.email : '') +
           (data.article ? '\nАртикул: ' + data.article : '') +
           (data.message ? '\nСообщение: ' + data.message : '');
+        if (items.length) {
+          body += '\n\nПозиции:\n' + items.map(function (item) {
+            return '  • ' + item.article + (item.name ? ' — ' + item.name : '') +
+              (Number(item.quantity) > 1 ? ' × ' + item.quantity : '');
+          }).join('\n');
+        }
         var mailto = form.getAttribute('data-mailto') || '';
         say('Открываем письмо — отправьте его, и мы ответим в рабочее время.');
         window.location.href = 'mailto:' + mailto +
@@ -313,19 +439,38 @@
       if (button) button.disabled = true;
       say('Отправляем…');
 
-      fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      }).then(function (response) {
-        if (!response.ok) throw new Error('HTTP ' + response.status);
+      // FormData, а не JSON: вместе с заявкой уходят фото детали.
+      // Сервер принимает и JSON (старая сборка формы), и multipart.
+      var payload = new FormData();
+      Object.keys(data).forEach(function (key) { payload.append(key, data[key]); });
+      if (items.length) payload.append('items', JSON.stringify(items));
+      var files = filesInput ? filesInput.files : null;
+      if (files) {
+        Array.prototype.slice.call(files, 0, 5).forEach(function (file) {
+          payload.append('files', file);
+        });
+      }
+
+      fetch(endpoint, { method: 'POST', body: payload }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (result) {
+          if (!response.ok) throw new Error(result.error || ('HTTP ' + response.status));
+          return result;
+        });
+      }).then(function () {
         form.reset();
+        basket = [];
+        writeBasket(basket);
+        renderBasket();
+        var list = document.querySelector('[data-files-list]');
+        if (list) list.innerHTML = '';
         say('Заявка отправлена. Свяжемся в рабочее время.');
-      }).catch(function () {
-        say('Не удалось отправить. Позвоните или напишите в Telegram — ссылки ниже.', true);
+      }).catch(function (error) {
+        say(error.message || 'Не удалось отправить. Позвоните или напишите в Telegram — ссылки ниже.', true);
       }).finally(function () {
         if (button) button.disabled = false;
       });
     });
   }
+
+  renderBasket();
 })();

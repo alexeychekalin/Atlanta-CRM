@@ -2806,6 +2806,20 @@ input.search-clear-host,
 }
 
 /* Преамбула договора: готовая формулировка «в лице ... на основании ...» */
+.nav-item .nav-badge {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-red, #ef4444);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+
 .profile-preamble {
   display: flex;
   flex-wrap: wrap;

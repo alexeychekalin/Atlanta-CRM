@@ -356,6 +356,47 @@ sed -i 's/^COOKIE_SECURE=.*/COOKIE_SECURE=true/' /opt/atlanta-crm/server/.env
 sudo systemctl restart atlanta-crm
 ```
 
+### Заявки с сайта
+
+Форма на сайте отправляет заявку в CRM — `POST /api/public/leads`. Дальше CRM
+сохраняет её в раздел «Заявки» и уведомляет Telegram и почту. Настройка
+подробно описана в README («Заявки с сайта: подключить Telegram и почту»),
+здесь — что важно именно на сервере.
+
+```bash
+cd /opt/atlanta-crm
+nano server/.env
+```
+
+```bash
+# Telegram: бот пишет в группу отдела продаж и в личку администратору
+TELEGRAM_BOT_TOKEN=123456789:AA…
+TELEGRAM_CHAT_IDS=-1001234567890,123456789
+CRM_PUBLIC_URL=https://crm.ваш-домен.ru
+
+# Сайт и CRM на разных доменах — иначе браузер отрежет ответ формы
+CORS_ORIGINS=https://atlanta.ru,https://www.atlanta.ru
+```
+
+Проверка после перезапуска: в логе `Telegram: уведомления включены, получателей 2`.
+
+```bash
+sudo systemctl restart atlanta-crm
+sudo journalctl -u atlanta-crm -n 20 | grep -i telegram
+
+# тестовая заявка (создаст настоящую запись в CRM)
+curl -X POST https://crm.ваш-домен.ru/api/public/leads \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Проверка","phone":"+7 900 000-00-00","message":"тест"}'
+```
+
+Файлы заявок лежат в `server/uploads/leads` (в git не попадают, как и все
+загрузки). Лимит одного файла — 10 МБ, поэтому `client_max_body_size` в nginx
+для CRM уже 50 МБ и менять его не нужно.
+
+Если Telegram заблокирован в сети сервера, заявки всё равно сохраняются: в
+карточке будет «✗ не отправлено», кнопка «📨 Уведомить» отправит ещё раз.
+
 ### Сколько живёт сессия
 
 По умолчанию 7 суток, и срок скользящий: пока сотрудник работает в CRM, сессия

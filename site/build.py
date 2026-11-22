@@ -666,6 +666,9 @@ class Site:
     <div class="header-actions">
       <a class="header-phone" href="tel:{esc(office['phone_href'])}">{esc(office['phone'])}
         <span>{esc(office['city'])} · Пн–Пт 9–18</span></a>
+      <a class="request-pill" href="/#request" data-basket-pill hidden>
+        Заявка<span data-basket-count>0</span>
+      </a>
       <a class="btn btn--primary btn--sm" href="/#request">Запросить цену</a>
       <button class="burger" type="button" aria-label="Меню" aria-expanded="false"><span></span></button>
     </div>
@@ -865,7 +868,15 @@ class Site:
             data-mailto="{esc(office['email'])}" data-article="{esc(article)}" novalidate>
         <div class="form__row">{fields_html}</div>
         {rest}
+        <div class="form__basket" data-basket-slots hidden></div>
+        <div class="form__files">
+          <label class="form__files-label" for="f-files">📎 Фото детали или схема <span>до 5 файлов, 10 МБ каждый</span></label>
+          <input id="f-files" name="files" type="file" multiple
+                 accept=".jpg,.jpeg,.png,.webp,.heic,.heif,.pdf">
+          <div class="form__files-list" data-files-list></div>
+        </div>
         <div class="honeypot"><label>Компания<input name="company" tabindex="-1" autocomplete="off"></label></div>
+        <input type="hidden" name="items" data-basket-input value="">
         <button class="btn btn--accent" type="submit">{esc(data['button'])} {icon('arrow')}</button>
         <div class="form__note" data-form-note></div>
         <p class="form__consent">{esc(data['consent']).replace('политикой обработки персональных данных', '<a href="/privacy/">политикой обработки персональных данных</a>')}</p>
@@ -1550,6 +1561,10 @@ class Site:
       {lead_html}
       <div class="product__actions">
         <a class="btn btn--primary" href="#request">Запросить цену {icon('arrow')}</a>
+        <button class="btn btn--ghost" type="button" data-add-to-request
+                data-article="{esc(article)}" data-name="{esc(component['name'])}">
+          + В заявку
+        </button>
         <a class="btn btn--ghost" href="#docs">Документы</a>
       </div>
       <p class="product__note">Цены не публикуем: стоимость зависит от исполнения и объёма партии.</p>

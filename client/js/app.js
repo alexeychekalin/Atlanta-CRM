@@ -7,6 +7,7 @@ const App = {
   pageMap: {
     dashboard: { title: 'Дашборд', render: () => DashboardPage.render() },
     orders: { title: 'Заказы', render: () => OrdersPage.render() },
+    leads: { title: 'Заявки с сайта', render: () => LeadsPage.render() },
     clients: { title: 'Клиенты', render: () => ClientsPage.render() },
     'client-profile': { title: 'Карточка клиента', render: (id) => ClientProfilePage.render(id), sidebarPage: 'clients' },
     drawings: { title: 'Рассчитанные чертежи', render: () => DrawingsPage.render() },
@@ -112,6 +113,7 @@ const App = {
       // Заодно сервер продлевает сессию, если прошла половина срока.
       this.refreshSession();
       this.showApp();
+      this.refreshLeadsBadge();
       // Вкладка спала или её свернули на ночь: при возврате продлеваем сессию,
       // чтобы человек не попал на экран входа посреди работы
       document.addEventListener('visibilitychange', () => {
@@ -181,6 +183,24 @@ const App = {
    * во вкладку и после долгой паузы. Ошибку молча глотаем — если сессия
    * действительно истекла, следующий запрос покажет экран входа.
    */
+  /**
+   * Счётчик новых заявок в меню: сколько человек ни разу не открыл.
+   * Менеджер не должен узнавать о заявке, только зайдя в раздел.
+   * Тихо пропускаем ошибку — счётчик не повод ломать загрузку CRM.
+   */
+  refreshLeadsBadge() {
+    if (!API.can('leads', 'view')) return;
+    API.get('/leads?status=new')
+      .then(res => {
+        const count = (res.counts && res.counts.new) || 0;
+        const badge = document.getElementById('leads-badge');
+        if (!badge) return;
+        badge.textContent = count > 99 ? '99+' : String(count);
+        badge.hidden = count === 0;
+      })
+      .catch(() => { /* нет прав или сеть — просто без счётчика */ });
+  },
+
   refreshSession() {
     return API.get('/auth/me')
       .then(user => {
@@ -281,6 +301,7 @@ const App = {
     const sectionMap = {
       dashboard: 'dashboard',
       orders: 'orders',
+      leads: 'leads',
       clients: 'clients',
       drawings: 'drawings',
       products: 'drawings',
@@ -311,7 +332,7 @@ const App = {
   },
 
   getFirstAllowedPage() {
-    const pages = ['dashboard', 'orders', 'proposals', 'clients', 'drawings', 'calculator', 'components', 'equipment', 'reports', 'documents', 'settings'];
+    const pages = ['dashboard', 'leads', 'orders', 'proposals', 'clients', 'drawings', 'calculator', 'components', 'equipment', 'reports', 'documents', 'settings'];
     for (const p of pages) {
       if (API.can(p, 'view')) return p;
     }
@@ -384,6 +405,7 @@ const App = {
     const sectionMap = {
       dashboard: 'dashboard',
       orders: 'orders',
+      leads: 'leads',
       clients: 'clients',
       'client-profile': 'clients',
       drawings: 'drawings',

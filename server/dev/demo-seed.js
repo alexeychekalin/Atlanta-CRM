@@ -525,6 +525,71 @@ async function seed() {
     );
   }
 
+  // ---------- Заявки с сайта ----------
+  // Пять заявок в разных статусах: видно, как работает раздел, фильтры и
+  // «Уведомление не отправлено» (в демо Telegram не настроен — так и должно быть).
+  const demoLeads = [
+    {
+      name: 'Сергей Морозов', phone: '+7 903 118-42-76', email: 'morozov@translog.ru',
+      company: 'ООО «ТрансЛог»', message: 'Нужны габаритные огни на полуприцепы, партия 40 комплектов. Пришлите цены и сроки.',
+      page: '/catalog/gabaritnye-fonari/', status: 'new', days: 0,
+      items: [{ article: 'А.3731.006', name: 'Фонарь габаритный', quantity: 40 }],
+    },
+    {
+      name: 'Альбина Хабибуллина', phone: '+7 987 654-32-10', email: 'a.habibullina@agro-holding.ru',
+      company: 'Агрохолдинг «Восход»', message: 'Подбираем светотехнику на сельхозприцепы. Есть ли влагозащита IP68?',
+      page: '/catalog/fonari-osveshcheniya/', status: 'in_progress', days: 1,
+      items: [
+        { article: 'А.3776.001', name: 'Жгут электропроводов', quantity: 15 },
+        { article: 'А.3776.005', name: 'Фонарь задний', quantity: 15 },
+      ],
+    },
+    {
+      name: 'Дмитрий Ковалёв', phone: '+7 921 555-77-33', email: 'kovalev@spb-trailer.ru',
+      company: 'ООО «СПб-Прицеп»', message: 'Интересует разъём 7-контактный, 200 шт.',
+      page: '/catalog/razyomy/', status: 'converted', days: 3,
+      items: [{ article: 'А.3731.010', name: 'Разъём 7-контактный', quantity: 200 }],
+    },
+    {
+      name: 'Олег Тихонов', phone: '+7 910 222-11-00', company: '',
+      message: 'Сколько стоит фонарь? Нужен один.', page: '/catalog/', status: 'rejected', days: 6,
+      items: [],
+    },
+    {
+      name: 'Марина Лебедева', phone: '+7 962 404-19-58', email: 'lebedeva@mts-auto.ru',
+      company: 'ООО «МТС-Авто»', message: 'Просим КП на плафоны в салон, 12 шт. И фото внешнего вида.',
+      page: '/catalog/plafony/', status: 'new', days: 0,
+      items: [{ article: 'А.3776.006', name: 'Плафон', quantity: 12 }],
+    },
+  ];
+
+  for (const lead of demoLeads) {
+    const inserted = await q(
+      `INSERT INTO leads (name, phone, email, company, message, page, source,
+                          article, item_count, file_count, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'site', $7, $8, 0, $9,
+               now() - ($10 || ' days')::interval, now() - ($10 || ' days')::interval)
+       RETURNING id`,
+      [lead.name, lead.phone, lead.email || null, lead.company || null, lead.message,
+        lead.page, lead.items[0] ? lead.items[0].article : null, lead.items.length,
+        lead.status, String(lead.days)]
+    );
+    const leadId = inserted.rows[0].id;
+    for (const [index, item] of lead.items.entries()) {
+      await q(
+        `INSERT INTO lead_items (lead_id, article, name, quantity, sort_order)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [leadId, item.article, item.name, item.quantity, index]
+      );
+    }
+    // в демо Telegram не настроен: честно показываем «уведомление не отправлено»
+    await q(
+      `INSERT INTO lead_notifications (lead_id, channel, ok, detail)
+       VALUES ($1, 'telegram', false, $2)`,
+      [leadId, JSON.stringify({ ok: false, skipped: true, error: 'TELEGRAM_BOT_TOKEN не задан (демо)' })]
+    );
+  }
+
   // ---------- Настройки ----------
   await q(
     `INSERT INTO system_settings (key, value, updated_at) VALUES ('vat', $1, now())
@@ -538,6 +603,7 @@ async function seed() {
       (SELECT count(*)::int FROM drawings) drawings,
       (SELECT count(*)::int FROM orders) orders,
       (SELECT count(*)::int FROM proposals) proposals,
+      (SELECT count(*)::int FROM leads) leads,
       (SELECT count(*)::int FROM roles) roles`);
   console.log('✅ Демо-данные созданы:', counts.rows[0]);
   await db.close();

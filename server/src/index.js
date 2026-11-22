@@ -124,6 +124,9 @@ app.use(express.static(path.join(__dirname, '../../client'), {
 
 // --- Публичные API (без пользователя) ---
 app.use('/api/auth', require('./routes/auth'));
+// Заявки с сайта: POST /api/public/leads — без авторизации, с лимитом и
+// проверкой полей. Раздел «Заявки» в CRM требует права leads.
+app.use('/api/public/leads', require('./routes/public-leads'));
 
 // Дальше все API получают актуального пользователя из токена/cookie
 app.use('/api', attachUser);
@@ -148,6 +151,7 @@ app.use('/api/clients/:clientId/approvals', requirePermission('clients'), requir
 // Файлы администратора в карточке клиента: маршрут сам требует роль admin
 app.use('/api/clients/:clientId/files', requireAuth, require('./routes/client-files'));
 app.use('/api/client-statuses', requirePermission('clients'), require('./routes/client-statuses'));
+app.use('/api/leads', require('./routes/leads'));
 app.use('/api/clients', requirePermission('clients'), require('./routes/clients'));
 
 app.use('/api/orders', requirePermission('orders'), require('./routes/orders'));
@@ -251,7 +255,16 @@ app.use((err, req, res, next) => {
 const server = app.listen(PORT, () => {
   console.log(`\n🚀 CRM «Атланта» запущена на http://localhost:${PORT}`);
   console.log(`   API: http://localhost:${PORT}/api`);
-  console.log(`   Режим: ${process.env.NODE_ENV || 'development'}\n`);
+  console.log(`   Режим: ${process.env.NODE_ENV || 'development'}`);
+  // Сразу видно, заработают ли уведомления о заявках: чаще всего «заявки не
+  // приходят» — это незаполненный TELEGRAM_BOT_TOKEN или пустой TELEGRAM_CHAT_IDS
+  console.log(`   ${require('./services/telegram').describeConfig()}`);
+  const mail = require('./services/mail');
+  console.log(`   Почта: ${mail.isConfigured() ? 'SMTP настроен' : 'выключена (нет SMTP_HOST)'}`);
+  if (mail.isConfigured() && !String(process.env.LEAD_EMAIL_TO || '').trim()) {
+    console.log('   ⚠️  SMTP есть, но LEAD_EMAIL_TO пуст — письмо о заявке не уйдёт');
+  }
+  console.log('');
 });
 
 // Корректное завершение: дождаться закрытия соединений и пула БД
