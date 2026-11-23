@@ -367,6 +367,9 @@ def build_images(components, out_dir, skip=False):
     """Пережать фото в два размера: карточки и галерея."""
     img_dir = out_dir / 'img'
     img_dir.mkdir(parents=True, exist_ok=True)
+    # Отпечатки исходников — вне папки сборки: в веб-корень они не нужны.
+    cache_dir = Path(__file__).resolve().parent / '.image-cache'
+    cache_dir.mkdir(parents=True, exist_ok=True)
     names = set()
     for component in components:
         names.update(component.get('images') or [])
@@ -393,9 +396,16 @@ def build_images(components, out_dir, skip=False):
         source = FILES_DIR / name
         if not source.exists():
             continue
+        # Отпечаток исходника: сравнение по mtime обманывает, когда файл
+        # приезжает с сервера (git checkout, rsync, распаковка) со старым
+        # временем — тогда пережатие пропускается и на сайте остаётся
+        # прежняя картинка под тем же именем.
+        source_stamp = f'{source.stat().st_size}-{int(source.stat().st_mtime)}'
         for width in IMAGE_SIZES:
             target = img_dir / f'{Path(name).stem}-{width}.jpg'
-            if target.exists() and target.stat().st_mtime >= source.stat().st_mtime:
+            stamp = cache_dir / f'{Path(name).stem}-{width}.src'
+            if (target.exists() and target.stat().st_mtime >= source.stat().st_mtime
+                    and stamp.exists() and stamp.read_text(encoding='utf-8') == source_stamp):
                 continue
             try:
                 with Image.open(source) as image:
@@ -408,6 +418,9 @@ def build_images(components, out_dir, skip=False):
                         pass
                     image.save(target, 'JPEG', quality=82, optimize=True, progressive=True)
                     dims[target.name] = image.size
+                # отпечаток пишем после успешного сохранения: следующий сбор
+                # увидит, что пережимать нечего
+                stamp.write_text(source_stamp, encoding='utf-8')
                 made += 1
             except Exception as error:                    # noqa: BLE001 — фото не критично
                 print(f'  ! {name} ({width}): {error}')

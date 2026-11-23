@@ -441,9 +441,10 @@ test('фото из CRM: новые снимки добавляются, ста�
 
   assert.equal(report.components, 1);
   assert.equal(components[0].image, 'a-1_newcover.jpg');
-  // порядок каталога сохраняется, новые снимки — в конец
-  assert.deepEqual(components[0].images, ['cover-old.jpeg', 'old-2.jpeg', 'a-1_new3.jpg']);
-  assert.deepEqual(components[0].modifications[0].images, ['mod-old.jpeg', 'a-1_modnew.jpg']);
+  // порядок задаёт CRM — иначе перестановка снимков в карточке не была бы видна
+  // на сайте; снимок, которого в карточке уже нет, уходит в конец, но остаётся
+  assert.deepEqual(components[0].images, ['old-2.jpeg', 'a-1_new3.jpg', 'cover-old.jpeg']);
+  assert.deepEqual(components[0].modifications[0].images, ['a-1_modnew.jpg', 'mod-old.jpeg']);
   assert.deepEqual(components[0].modifications[1].images, ['a-1_mod2.jpg']);
 
   // без --prune пустой ответ базы галерею не стирает
@@ -487,6 +488,87 @@ test('фото из CRM: --prune снимает с сайта только уб�
   // позиция без записи в базе сохраняет фото: иначе --prune стёр бы каталог
   assert.deepEqual(components[1].images, ['only.jpeg']);
   assert.equal(components[1].image, 'only.jpeg');
+});
+
+test('фото из CRM: удалённая обложка не остаётся, даже если файла уже нет', () => {
+  const { applyImages } = require('../scripts/catalog/export_images');
+
+  // Менеджер удалил все снимки в карточке. Файлов в uploads/images уже нет
+  // (почистили), поэтому place() возвращает null — раньше это значило «снять
+  // нечего», и обложка удалённого фото продолжала висеть на сайте.
+  const component = {
+    article: 'А.1', image: 'a-1_one.jpg',
+    images: ['a-1_one.jpg', 'a-1_two.jpg'], modifications: [],
+  };
+  applyImages([component],
+    new Map([['А.1', { image: null, images: [], mods: new Map() }]]),
+    {
+      place: () => null,
+      prune: true,
+      removed: new Map([['А.1', {
+        images: ['/uploads/images/a-1_one.jpg', '/uploads/images/a-1_two.jpg'],
+        mods: new Map(),
+      }]]),
+    });
+
+  assert.deepEqual(component.images, [], 'галерея очищена');
+  assert.equal(component.image, undefined, 'обложка удалённого фото не осталась');
+});
+
+test('фото из CRM: удалённый снимок снимается, даже если файла нет в uploads', () => {
+  const { applyImages } = require('../scripts/catalog/export_images');
+
+  const component = {
+    article: 'А.1', image: 'a-1_two.jpg',
+    images: ['a-1_one.jpg', 'a-1_two.jpg'], modifications: [],
+  };
+  applyImages([component],
+    new Map([['А.1', { image: 'a-1_two.jpg', images: ['a-1_two.jpg'], mods: new Map() }]]),
+    {
+      // a-1_one.jpg в uploads/images уже нет — имя ищем по пути из базы
+      place: url => (url.endsWith('one.jpg') ? null : 'a-1_two.jpg'),
+      prune: true,
+      removed: new Map([['А.1', { images: ['/uploads/images/a-1_one.jpg'], mods: new Map() }]]),
+    });
+
+  assert.deepEqual(component.images, ['a-1_two.jpg'], 'удалённый снимок снят с сайта');
+});
+
+test('фото из CRM: порядок снимков на сайте совпадает с карточкой', () => {
+  const { applyImages } = require('../scripts/catalog/export_images');
+
+  // В CRM переставили снимки: last стал первым, он же обложка.
+  const component = {
+    article: 'А.1', image: 'first.jpg',
+    images: ['first.jpg', 'middle.jpg', 'last.jpg'], modifications: [],
+  };
+  applyImages([component],
+    new Map([['А.1', {
+      image: '/uploads/images/last.jpg',
+      images: ['/uploads/images/last.jpg', '/uploads/images/first.jpg', '/uploads/images/middle.jpg'],
+      mods: new Map(),
+    }]]),
+    { place: url => url.split('/').pop() });
+
+  assert.equal(component.image, 'last.jpg', 'обложка зависит от CRM');
+  assert.deepEqual(component.images, ['last.jpg', 'first.jpg', 'middle.jpg'],
+    'порядок галереи — как в карточке');
+});
+
+test('обновление: фото из карточек выгружаются и без WITH_CATALOG', () => {
+  const script = require('fs').readFileSync(
+    require('path').join(__dirname, '../../update.sh'), 'utf8');
+
+  // Раньше шаг стоял внутри `if [ "$WITH_CATALOG" = "1" ]`. На сервере, где
+  // каталог импортировали один раз (или не включали импорт при установке),
+  // правки фото в карточках до сайта не доезжали вовсе.
+  const start = script.indexOf('export_images.js --prune');
+  assert.ok(start > 0, 'в update.sh нет выгрузки фото');
+  const before = script.slice(Math.max(0, start - 900), start);
+  const lastIf = before.lastIndexOf('if [ "$WITH_CATALOG"');
+  const lastFi = before.lastIndexOf('\nfi\n');
+  assert.ok(lastIf === -1 || lastFi > lastIf,
+    'выгрузка фото не должна зависеть от WITH_CATALOG');
 });
 
 test('фото из CRM: убранные снимки читаются из базы отдельно от живых', () => {

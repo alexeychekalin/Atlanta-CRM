@@ -159,11 +159,14 @@ function applyImages(components, fromDb, { place, prune = false, removed = new M
     if (prune && drop.size > 0) {
       report.removed += (current || []).filter(name => drop.has(name)).length;
     }
-    if (names.length === 0) return (current || []).filter(name => !drop.has(name));
-    // порядок каталога — основной: правки в CRM только добавляют снимки,
-    // иначе каждая выгрузка тасовала бы галереи и засоряла историю
-    const merged = (current || []).filter(name => !drop.has(name)).slice();
-    for (const name of names) {
+    const kept = (current || []).filter(name => !drop.has(name));
+    if (names.length === 0) return kept;
+    // Порядок задаёт CRM: менеджер переставляет снимки и меняет обложку, и это
+    // должно быть видно на сайте. Прежние «хвосты» (фото, которое в карточке
+    // уже не показывается) уходят в конец, а не пропадают: в каталоге бывают
+    // позиции, которых в базе нет, и терять их снимки нельзя.
+    const merged = names.slice();
+    for (const name of kept) {
       if (!merged.includes(name)) merged.push(name);
     }
     return merged;
@@ -175,9 +178,17 @@ function applyImages(components, fromDb, { place, prune = false, removed = new M
     if (!entry && gone.images.length === 0) continue;
 
     const put = (url, hints = []) => place(url, component.article, hints);
-    // путь убранного в карточке снимка → имя файла в каталоге (файл там уже есть)
+    // путь убранного в карточке снимка → имя файла в каталоге (файл там уже есть).
+    // Если файла в uploads/images уже нет (почистили), place() вернёт null — тогда
+    // ищем имя по имени файла из пути: иначе удалённое фото так и осталось бы
+    // на сайте, ведь отметка deleted_at есть, а снять её не с чем.
     const droppedNames = gone.images
-      .map(url => place(url, component.article, component.images || []))
+      .map(url => {
+        const placed = place(url, component.article, component.images || []);
+        if (placed) return placed;
+        const file = uploadName(url);
+        return file ? path.basename(file) : null;
+      })
       .filter(Boolean);
     const before = JSON.stringify([component.image, component.images,
       (component.modifications || []).map(mod => mod.images)]);
@@ -188,9 +199,15 @@ function applyImages(components, fromDb, { place, prune = false, removed = new M
       : null;
     const gallery = merge(component.images, living, put, droppedNames);
 
+    const coverGone = droppedNames.includes(component.image);
     if (cover && !droppedNames.includes(cover)) component.image = cover;
     else if (cover && droppedNames.includes(cover)) {
       // обложку убрали — на сайте первой становится первая оставшаяся
+      component.image = gallery[0];
+      if (!component.image) delete component.image;
+    } else if (coverGone || (!cover && droppedNames.includes(component.image))) {
+      // обложку убрали, и других фото не осталось: поле image указывало на
+      // удалённый файл — на сайте он бы продолжал показываться
       component.image = gallery[0];
       if (!component.image) delete component.image;
     }
