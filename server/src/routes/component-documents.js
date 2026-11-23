@@ -4,10 +4,18 @@ const auth = require('../middleware/auth');
 const fs = require('fs');
 const archiver = require('archiver');
 const { safeUploadPath, normalizeUploadPath, safeArchiveName } = require('../utils/files');
+const { mimeType, isPreviewable, contentDisposition } = require('../services/document-library');
 
 const router = express.Router({ mergeParams: true });
 
-const DOC_TYPES = new Set(['certificate', 'info']);
+const DOC_TYPES = new Set(['certificate', 'info', 'drawing']);
+
+// Папка типа документа в ZIP-архивах: подписи для человека
+const DOC_FOLDERS = { certificate: 'Сертификаты', info: 'Информация', drawing: 'Чертежи' };
+
+function docFolder(docType) {
+  return DOC_FOLDERS[docType] || 'Документы';
+}
 
 // GET /api/components/:id/documents
 router.get('/', auth, async (req, res) => {
@@ -33,7 +41,7 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ error: 'doc_type, file_path и original_name обязательны' });
     }
     if (!DOC_TYPES.has(doc_type)) {
-      return res.status(400).json({ error: 'doc_type должен быть certificate или info' });
+      return res.status(400).json({ error: 'doc_type должен быть certificate, info или drawing' });
     }
 
     // Принимаем только файлы, реально загруженные в /uploads
@@ -91,6 +99,40 @@ router.delete('/:docId', auth, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/components/:id/documents/:docId/file — открыть или скачать документ.
+ *
+ * Файлы лежат в /uploads, но отдаются оттуда как octet-stream: у DWG и DXF
+ * нет типа в стандартной таблице, а имя в Content-Disposition не умеет
+ * кириллицу. Здесь тип берётся по расширению, а имя кодируется по RFC 5987 —
+ * поэтому «Вал привода.dwg» скачивается с настоящим именем.
+ * ?download=1 — всегда скачивать, даже картинку или PDF.
+ */
+router.get('/:docId/file', auth, async (req, res) => {
+  try {
+    const { id, docId } = req.params;
+    const result = await db.query(
+      'SELECT * FROM component_documents WHERE id = $1 AND component_id = $2',
+      [docId, id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Документ не найден' });
+
+    const doc = result.rows[0];
+    const absolute = safeUploadPath(doc.file_path);
+    if (!absolute || !fs.existsSync(absolute)) {
+      return res.status(404).json({ error: 'Файл не найден в хранилище' });
+    }
+
+    const inline = !req.query.download && isPreviewable(doc.original_name);
+    res.setHeader('Content-Type', mimeType(doc.original_name));
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', contentDisposition(inline ? 'inline' : 'attachment', doc.original_name));
+    return res.sendFile(absolute);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/components/:id/documents/download-all — ZIP-архив всех документов компонента
 router.get('/download-all', auth, async (req, res) => {
   try {
@@ -123,7 +165,7 @@ router.get('/download-all', auth, async (req, res) => {
     archive.pipe(res);
 
     for (const { doc, filePath } of files) {
-      const folder = doc.doc_type === 'certificate' ? 'Сертификаты' : 'Информация';
+      const folder = docFolder(doc.doc_type);
       archive.file(filePath, { name: `${folder}/${safeArchiveName(doc.original_name)}` });
     }
 

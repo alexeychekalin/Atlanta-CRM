@@ -219,11 +219,11 @@ CREATE TABLE IF NOT EXISTS component_images (
   created_at TIMESTAMP DEFAULT now()
 );
 
--- Документы компонентов (сертификаты и информационные сообщения)
+-- Документы компонентов (сертификаты, информационные сообщения и чертежи)
 CREATE TABLE IF NOT EXISTS component_documents (
   id SERIAL PRIMARY KEY,
   component_id INT NOT NULL REFERENCES components(id) ON DELETE CASCADE,
-  doc_type VARCHAR(20) NOT NULL CHECK (doc_type IN ('certificate', 'info')),
+  doc_type VARCHAR(20) NOT NULL CHECK (doc_type IN ('certificate', 'info', 'drawing')),
   file_path VARCHAR(500) NOT NULL,
   original_name VARCHAR(255) NOT NULL,
   file_type VARCHAR(10),

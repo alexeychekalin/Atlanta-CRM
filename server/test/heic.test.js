@@ -178,8 +178,8 @@ test('file_type в ответе берётся по фактическому ф�
   assert.match(source, /function uploadedFileType\(req\)/);
   assert.equal(
     (source.match(/file_type: uploadedFileType\(req\)/g) || []).length,
-    5,
-    'file_type должен считаться по файлу на диске во всех четырёх маршрутах'
+    6,
+    'file_type должен считаться по файлу на диске во всех маршрутах загрузки'
   );
   // originalname допустим только в проверке сигнатуры — там он ещё .heic
   assert.equal(

@@ -612,8 +612,8 @@ test('каталог: документ копируется под стабил�
   const runner = {
     query: async (sql, params) => {
       if (/^SELECT id FROM component_documents/.test(sql.trim())) {
-        // в вставке [component_id, file_path, original_name, …]
-        return { rows: rows.some(row => row[0] === params[0] && row[2] === params[1]) ? [{ id: 1 }] : [] };
+        // в вставке [component_id, doc_type, file_path, original_name, …]
+        return { rows: rows.some(row => row[0] === params[0] && row[3] === params[1]) ? [{ id: 1 }] : [] };
       }
       if (/^INSERT INTO component_documents/.test(sql.trim())) {
         rows.push(params);
@@ -626,9 +626,11 @@ test('каталог: документ копируется под стабил�
   assert.equal(await ensureComponentDocuments(runner, 7, [source]), 1);
   assert.equal(await ensureComponentDocuments(runner, 7, [source]), 0, 'повторный импорт не дублирует');
   assert.equal(rows.length, 1);
-  assert.equal(rows[0][1], first.url);
-  assert.equal(rows[0][2], path.basename(source));
-  assert.equal(rows[0][5], 'Габаритный чертёж изготовителя');
+  // порядок параметров: component_id, doc_type, file_path, original_name, file_type, size, comment
+  assert.equal(rows[0][1], 'drawing', 'габаритный чертёж импортируется в группу «Чертежи»');
+  assert.equal(rows[0][2], first.url);
+  assert.equal(rows[0][3], path.basename(source));
+  assert.equal(rows[0][6], 'Габаритный чертёж изготовителя');
 
   fs.rmSync(target, { recursive: true, force: true });
   for (const name of new Set([path.basename(first.url)])) {
@@ -747,7 +749,7 @@ test('каталог: одинаковый чертёж не прикладыв�
     query: async (sql, params) => {
       if (/^SELECT id FROM component_documents/.test(sql.trim())) {
         // params: [component_id, original_name, file_path]
-        return { rows: rows.some(row => row[0] === params[0] && row[2] === params[1]) ? [{ id: 1 }] : [] };
+        return { rows: rows.some(row => row[0] === params[0] && row[3] === params[1]) ? [{ id: 1 }] : [] };
       }
       if (/^INSERT INTO component_documents/.test(sql.trim())) {
         rows.push(params);
@@ -761,7 +763,7 @@ test('каталог: одинаковый чертёж не прикладыв�
     'две одинаковые копии должны дать одну запись');
   assert.equal(rows.length, 1);
 
-  for (const url of new Set(rows.map(row => path.basename(row[1])))) {
+  for (const url of new Set(rows.map(row => path.basename(row[2])))) {
     const leftover = path.resolve(__dirname, '../../uploads/files', url);
     if (fs.existsSync(leftover)) fs.rmSync(leftover, { force: true });
   }

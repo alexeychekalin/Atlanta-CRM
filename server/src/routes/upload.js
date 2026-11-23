@@ -75,6 +75,15 @@ const compDocFilter = extensionFilter(
   'Допустимые форматы: PDF, JPG, PNG, HEIC'
 );
 
+// Чертежи в карточке компонента: не только сканы, но и заводские файлы CAD.
+// DWG/DXF браузер не открывает — их скачивают и кладут в архив подборки.
+const compDrawingFilter = extensionFilter(
+  ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.tif', '.tiff', '.heic', '.heif',
+    '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods',
+    '.zip', '.rar', '.7z', '.txt', '.csv', '.md', '.dwg', '.dxf'],
+  'Недопустимый формат чертежа. Разрешены PDF, изображения, DWG, DXF, документы и архивы'
+);
+
 // Документы в карточку клиента: договоры, счета, письма, презентации и фото.
 // Раздел «Документы» карточки — не только сканы: люди кладут туда Word, Excel,
 // PowerPoint и обычный текст, поэтому формат не сужаем до PDF и картинок.
@@ -127,6 +136,13 @@ const uploadCompDoc = multer({
   storage: buildStorage(documentsDir, 'doc'),
   fileFilter: compDocFilter,
   limits: { fileSize: 20 * 1024 * 1024 },
+});
+
+// --- Чертежи компонентов: крупнее документов, CAD-файлы весят больше ---
+const uploadCompDrawing = multer({
+  storage: buildStorage(documentsDir, 'drw'),
+  fileFilter: compDrawingFilter,
+  limits: { fileSize: 50 * 1024 * 1024 },
 });
 
 // --- Файлы клиента (только администратор) ---
@@ -308,6 +324,12 @@ router.post('/drawing', auth, canUploadDrawing, uploadDrawing.single('file'), ve
 
 // POST /api/upload/component-doc — сертификаты и информационные документы
 router.post('/component-doc', auth, canEditComponents, uploadCompDoc.single('file'), verifyUploadedFile, convertHeicUpload, fixPhotoOrientation, (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+  return fileResponse(req, res, 'documents', { file_type: uploadedFileType(req) });
+});
+
+// POST /api/upload/component-drawing — чертежи в карточке компонента
+router.post('/component-drawing', auth, canEditComponents, uploadCompDrawing.single('file'), verifyUploadedFile, convertHeicUpload, fixPhotoOrientation, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
   return fileResponse(req, res, 'documents', { file_type: uploadedFileType(req) });
 });

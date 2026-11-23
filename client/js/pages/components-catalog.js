@@ -938,21 +938,24 @@ const ComponentsCatalogPage = {
       }
       const certs = docs.filter(d => d.doc_type === 'certificate');
       const infos = docs.filter(d => d.doc_type === 'info');
+      // чертежи — отдельная группа: их ищут, чтобы скачать DWG/DXF или PDF
+      const drawings = docs.filter(d => d.doc_type === 'drawing');
       const renderGroup = (title, icon, items, color) => {
         if (items.length === 0) return '';
         return `<div>
           <div style="font-size:0.85rem;font-weight:600;color:${color};margin-bottom:6px">${icon} ${title} (${items.length})</div>
           ${items.map(doc => {
-            const fi = doc.file_type === 'pdf' ? '📄' : '🖼️';
+            const fi = this._docIcon(doc);
             return `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg-tertiary);border-radius:6px;margin-bottom:3px;border:1px solid var(--border)">
               <span>${fi}</span>
               <span style="flex:1;font-size:0.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${doc.original_name}">${doc.original_name}</span>
-              <a href="${doc.file_path}" download="${doc.original_name}" style="color:var(--accent-teal);font-size:0.75rem;text-decoration:none" title="Скачать">⬇️</a>
+              <a href="${this._docHref(componentId, doc)}?download=1" download="${doc.original_name}" style="color:var(--accent-teal);font-size:0.75rem;text-decoration:none" title="Скачать">⬇️</a>
             </div>`;
           }).join('')}
         </div>`;
       };
       container.innerHTML = renderGroup('Сертификаты', '📜', certs, 'var(--accent-teal)') +
+                             renderGroup('Чертежи', '📐', drawings, 'var(--accent-violet)') +
                              renderGroup('Инфо. сообщения', '📋', infos, 'var(--accent-blue)');
     } catch (err) {
       container.innerHTML = '<div style="color:var(--accent-red);font-size:0.8rem;grid-column:1/-1">Ошибка загрузки документов</div>';
@@ -1136,7 +1139,7 @@ const ComponentsCatalogPage = {
           ${isEdit ? `
           <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px">
             <div style="font-size:1rem;font-weight:700;margin-bottom:12px">📎 Документы</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
               <div>
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                   <div style="font-size:0.85rem;font-weight:600;color:var(--accent-teal)">📜 Сертификаты</div>
@@ -1150,6 +1153,13 @@ const ComponentsCatalogPage = {
                   <button type="button" class="btn btn-sm btn-secondary" onclick="ComponentsCatalogPage.uploadDoc(${comp.id}, 'info')">+ Добавить</button>
                 </div>
                 <div id="comp-docs-info" style="min-height:40px"><div style="color:var(--text-muted);font-size:0.82rem;padding:8px 0">Загрузка...</div></div>
+              </div>
+              <div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                  <div style="font-size:0.85rem;font-weight:600;color:var(--accent-violet)">📐 Чертежи</div>
+                  <button type="button" class="btn btn-sm btn-secondary" onclick="ComponentsCatalogPage.uploadDoc(${comp.id}, 'drawing')">+ Добавить</button>
+                </div>
+                <div id="comp-docs-drawing" style="min-height:40px"><div style="color:var(--text-muted);font-size:0.82rem;padding:8px 0">Загрузка...</div></div>
               </div>
             </div>
           </div>
@@ -1485,19 +1495,39 @@ const ComponentsCatalogPage = {
   },
 
   // === ДОКУМЕНТЫ КОМПОНЕНТОВ ===
+  /** Иконка по типу файла: чертежи CAD — линейка, PDF, картинки, документы, архивы. */
+  _docIcon(doc) {
+    const type = String(doc.file_type || '').toLowerCase();
+    if (type === 'dwg' || type === 'dxf') return '📐';
+    if (type === 'pdf') return '📄';
+    if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'tif', 'tiff', 'heic', 'heif'].includes(type)) return '🖼️';
+    if (['doc', 'docx', 'odt', 'rtf', 'txt', 'md'].includes(type)) return '📝';
+    if (['xls', 'xlsx', 'ods', 'csv'].includes(type)) return '📊';
+    if (['ppt', 'pptx'].includes(type)) return '📽️';
+    if (['zip', 'rar', '7z'].includes(type)) return '🗜️';
+    return '📄';
+  },
+
+  /** Ссылка на файл: через API, иначе у DWG имя с кириллицей теряется. */
+  _docHref(componentId, doc) {
+    return `/api/components/${componentId}/documents/${doc.id}/file`;
+  },
+
   async loadComponentDocs(componentId) {
     try {
       const res = await API.get(`/components/${componentId}/documents`);
       const docs = res.data || [];
       const certs = docs.filter(d => d.doc_type === 'certificate');
       const infos = docs.filter(d => d.doc_type === 'info');
+      const drawings = docs.filter(d => d.doc_type === 'drawing');
       this._renderDocList('comp-docs-certificate', certs, componentId);
       this._renderDocList('comp-docs-info', infos, componentId);
+      this._renderDocList('comp-docs-drawing', drawings, componentId);
     } catch (err) {
-      const el1 = document.getElementById('comp-docs-certificate');
-      const el2 = document.getElementById('comp-docs-info');
-      if (el1) el1.innerHTML = '<div style="color:var(--accent-red);font-size:0.8rem">Ошибка загрузки</div>';
-      if (el2) el2.innerHTML = '<div style="color:var(--accent-red);font-size:0.8rem">Ошибка загрузки</div>';
+      ['comp-docs-certificate', 'comp-docs-info', 'comp-docs-drawing'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '<div style="color:var(--accent-red);font-size:0.8rem">Ошибка загрузки</div>';
+      });
     }
   },
 
@@ -1509,7 +1539,7 @@ const ComponentsCatalogPage = {
       return;
     }
     el.innerHTML = docs.map(doc => {
-      const icon = doc.file_type === 'pdf' ? '📄' : '🖼️';
+      const icon = this._docIcon(doc);
       const sizeKb = doc.file_size ? `${(doc.file_size / 1024).toFixed(0)} КБ` : '';
       return `
         <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg-tertiary);border-radius:8px;margin-bottom:4px;border:1px solid var(--border)">
@@ -1518,7 +1548,7 @@ const ComponentsCatalogPage = {
             <div style="font-size:0.82rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${doc.original_name}">${doc.original_name}</div>
             ${sizeKb ? `<div style="font-size:0.7rem;color:var(--text-muted)">${sizeKb}</div>` : ''}
           </div>
-          <a href="${doc.file_path}" download="${doc.original_name}" style="color:var(--accent-teal);font-size:0.8rem;text-decoration:none;white-space:nowrap" title="Скачать">⬇️</a>
+          <a href="${this._docHref(componentId, doc)}?download=1" download="${doc.original_name}" style="color:var(--accent-teal);font-size:0.8rem;text-decoration:none;white-space:nowrap" title="Скачать">⬇️</a>
           <button type="button" onclick="ComponentsCatalogPage.deleteDoc(${componentId}, ${doc.id})" style="background:none;border:none;color:var(--accent-red);cursor:pointer;font-size:0.8rem;padding:2px" title="Удалить">✕</button>
         </div>`;
     }).join('');
@@ -1527,14 +1557,19 @@ const ComponentsCatalogPage = {
   uploadDoc(componentId, docType) {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.pdf,.jpg,.jpeg,.png,.heic,.heif';
+    // чертежи — широкий набор: сканы, PDF и заводские CAD-файлы
+    const isDrawing = docType === 'drawing';
+    input.accept = isDrawing
+      ? '.pdf,.jpg,.jpeg,.png,.webp,.gif,.tif,.tiff,.heic,.heif,.dwg,.dxf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.zip,.rar,.7z,.txt,.csv,.md'
+      : '.pdf,.jpg,.jpeg,.png,.heic,.heif';
     input.multiple = true;
     input.addEventListener('change', async () => {
+      let failed = 0;
       for (const file of input.files) {
         try {
           const formData = new FormData();
           formData.append('file', file);
-          const res = await API.upload('/upload/component-doc', formData);
+          const res = await API.upload(isDrawing ? '/upload/component-drawing' : '/upload/component-doc', formData);
           await API.post(`/components/${componentId}/documents`, {
             doc_type: docType,
             file_path: res.path,
@@ -1543,10 +1578,11 @@ const ComponentsCatalogPage = {
             file_size: res.size,
           });
         } catch (err) {
+          failed += 1;
           Toast.error(`Ошибка загрузки ${file.name}: ${err.message}`);
         }
       }
-      Toast.success('Документ(ы) загружен(ы)');
+      if (failed === 0) Toast.success(isDrawing ? 'Чертёж(и) загружен(ы)' : 'Документ(ы) загружен(ы)');
       this.loadComponentDocs(componentId);
     });
     input.click();

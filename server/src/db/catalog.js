@@ -204,6 +204,16 @@ function documentComment(fileName) {
   return 'Документ изготовителя';
 }
 
+/**
+ * Тип документа изготовителя. Габаритные чертежи (ГЧ) — это чертежи, их
+ * место в группе «Чертежи» карточки, а паспорта и прочее — информационные
+ * документы. Раньше все шли одним типом 'info'.
+ */
+function documentType(fileName) {
+  if (/ГЧ|габарит/i.test(fileName)) return 'drawing';
+  return 'info';
+}
+
 /** Прикладывает документы изготовителя к карточке; повторный импорт не дублирует. */
 async function ensureComponentDocuments(runner, componentId, files) {
   let created = 0;
@@ -223,8 +233,9 @@ async function ensureComponentDocuments(runner, componentId, files) {
     await runner.query(
       `INSERT INTO component_documents
          (component_id, doc_type, file_path, original_name, file_type, file_size, comment)
-       VALUES ($1, 'info', $2, $3, $4, $5, $6)`,
-      [componentId, placed.url, originalName, path.extname(originalName).slice(1).toLowerCase(),
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [componentId, documentType(originalName), placed.url, originalName,
+        path.extname(originalName).slice(1).toLowerCase(),
         placed.size, documentComment(originalName)]
     );
     created += 1;

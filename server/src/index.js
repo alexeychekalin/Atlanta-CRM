@@ -224,7 +224,8 @@ app.get(
       for (const doc of result.rows) {
         const filePath = safeUploadPath(doc.file_path);
         if (!filePath || !fs.existsSync(filePath)) continue;
-        const folder = doc.doc_type === 'certificate' ? 'Сертификаты' : 'Информация';
+        const folder = doc.doc_type === 'certificate' ? 'Сертификаты'
+          : (doc.doc_type === 'drawing' ? 'Чертежи' : 'Информация');
         const compFolder = `${safeArchiveName(doc.article, 'comp')} - ${safeArchiveName(doc.component_name, 'Без названия')}`;
         archive.file(filePath, { name: `${compFolder}/${folder}/${safeArchiveName(doc.original_name)}` });
       }
