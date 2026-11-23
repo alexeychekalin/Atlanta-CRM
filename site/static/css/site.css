@@ -2386,6 +2386,131 @@ ul {
   .hero__caption { font-size: 11.5px; }
 }
 
+/* ------------------------------------------------- слайдер «Популярное» */
+
+/* Лента прокручивается нативно — колесом, пальцем и стрелками клавиатуры.
+   Без JS это обычная горизонтальная прокрутка, поэтому карточки остаются
+   доступными, даже если site.js не загрузился. */
+.slider {
+  position: relative;
+}
+
+.slider__viewport {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  padding: 6px 2px 10px;
+}
+
+.slider__viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.slider__viewport:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius);
+}
+
+.slider__track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: calc((100% - 3 * 18px) / 4);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.slider__track > * {
+  scroll-snap-align: start;
+  min-width: 0;
+}
+
+.slider__nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.slider__btn {
+  width: 42px;
+  height: 42px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--paper);
+  color: var(--accent-deep);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+.slider__btn:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.slider__btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.slider__btn--prev svg {
+  transform: rotate(180deg);
+}
+
+.slider__dots {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.slider__dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--line-strong);
+  cursor: pointer;
+  transition: width 0.2s, background 0.2s;
+}
+
+.slider__dot[aria-current="true"] {
+  width: 22px;
+  background: var(--accent);
+}
+
+/* без JS лента листается пальцем, а кнопки-стрелки не нужны */
+.no-js .slider__nav {
+  display: none;
+}
+
+@media (max-width: 1080px) {
+  .slider__track {
+    grid-auto-columns: calc((100% - 2 * 18px) / 3);
+  }
+}
+
+@media (max-width: 900px) {
+  .slider__track {
+    grid-auto-columns: calc((100% - 18px) / 2);
+  }
+}
+
+@media (max-width: 560px) {
+  .slider__track {
+    grid-auto-columns: 78%;
+    gap: 12px;
+  }
+  .slider__nav {
+    margin-top: 16px;
+  }
+}
+
 /* --------------------------------------------------------------- печать */
 
 @media print {

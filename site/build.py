@@ -886,6 +886,34 @@ class Site:
 </section>
 '''
 
+    def featured_components(self, limit=8):
+        """Позиции для слайдера на главной: по одной из разных разделов.
+
+        Раньше брались просто первые по числу фотографий — почти весь ряд
+        оказывался из задних фонарей одного семейства. Теперь обходим разделы
+        по кругу: сначала лучшая позиция каждого раздела, затем вторая и так
+        далее, пока не наберём limit.
+        """
+        pools = {}
+        for item in self.components:
+            if not (item.get('images') or item.get('image')):
+                continue
+            if item['category'] == 'accessory':
+                continue  # чехлы и крепёж — не витрина
+            pools.setdefault(item['category'], []).append(item)
+        for items in pools.values():
+            items.sort(key=lambda item: (-len(item.get('images') or []),
+                                         -len(item.get('modifications') or [])))
+        picked = []
+        depth = 0
+        while len(picked) < limit and any(len(items) > depth for items in pools.values()):
+            for key in CATEGORY_ORDER:
+                items = pools.get(key) or []
+                if len(items) > depth and len(picked) < limit:
+                    picked.append(items[depth])
+            depth += 1
+        return picked
+
     def product_card(self, component, lazy=True):
         images = component.get('images') or []
         if not images and component.get('image'):
@@ -1022,10 +1050,7 @@ class Site:
                        f'<p>{esc(item["text"])}</p></div>'
                        for item in content['applications'])
 
-        featured = [item for item in self.components
-                    if item.get('images') and item['category'] != 'harness']
-        featured.sort(key=lambda item: (-len(item.get('images') or []), -len(item.get('modifications') or [])))
-        featured = featured[:8]
+        featured = self.featured_components()
         featured_html = ''.join(self.product_card(item) for item in featured)
 
         about = content['about']
@@ -1074,10 +1099,10 @@ class Site:
     <div class="section__head">
       <div>
         <div class="eyebrow">Продукция</div>
-        <h2>11 разделов: от габаритного огня до жгута</h2>
-        <p>Светотехника, электрожгуты и разъёмы для грузовых и легковых прицепов,
-           грузовиков, автобусов и спецтехники. Внутри каждого раздела — исполнения
-           под разные разъёмы, длину кабеля и сторону установки.</p>
+        <h2>Широкий ассортимент: от габаритного огня до жгута</h2>
+        <p>Светотехника, электрожгуты и разъёмы для грузовиков, автобусов, прицепов
+           и спецтехники. Внутри каждого раздела — исполнения под разные разъёмы,
+           длину кабеля и сторону установки.</p>
       </div>
       <a class="section__link" href="/catalog/">Весь каталог {icon('arrow', 14)}</a>
     </div>
@@ -1103,11 +1128,21 @@ class Site:
       <div>
         <div class="eyebrow">Популярное</div>
         <h2>Часто заказывают</h2>
-        <p>Позиции с фотографиями и полными характеристиками. Всего в каталоге {self.counts_text}.</p>
+        <p>Позиции из разных разделов каталога — всего {self.counts_text}.</p>
       </div>
       <a class="section__link" href="/catalog/">Смотреть все {icon('arrow', 14)}</a>
     </div>
-    <div class="product-grid">{featured_html}</div>
+    <div class="slider" data-slider>
+      <div class="slider__viewport" data-slider-viewport tabindex="0"
+           role="group" aria-roledescription="карусель" aria-label="Популярные позиции каталога">
+        <div class="slider__track">{featured_html}</div>
+      </div>
+      <div class="slider__nav">
+        <button class="slider__btn slider__btn--prev" type="button" data-slider-prev aria-label="Предыдущие позиции">{icon('arrow', 16)}</button>
+        <div class="slider__dots" data-slider-dots role="group" aria-label="Страницы подборки"></div>
+        <button class="slider__btn" type="button" data-slider-next aria-label="Следующие позиции">{icon('arrow', 16)}</button>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -1161,7 +1196,7 @@ class Site:
 '''
         body += self.request_block()
         return self.page(
-            'Светотехника и электрожгуты для грузовых и легковых прицепов',
+            self.site['tagline'],
             'Производство автомобильной светотехники, электрожгутов и разъёмов: '
             f'{self.counts_text}. Сертификаты ТР ТС 018/2011 и E28, защита до IP69.',
             '/', body,
@@ -1174,7 +1209,7 @@ class Site:
   <div class="wrap">
     <div class="eyebrow">Каталог</div>
     <h1 style="margin-top:14px">Вся продукция завода</h1>
-    <p>{len(self.components)} {plural(len(self.components), ('позиция', 'позиции', 'позиций'))} в 11 разделах: фонари, плафоны, жгуты, разъёмы и прочие изделия.
+    <p>{len(self.components)} {plural(len(self.components), ('позиция', 'позиции', 'позиций'))}: фонари, плафоны, жгуты, разъёмы и прочие изделия.
        Фильтруйте по названию или артикулу — поиск работает без перезагрузки страницы.
        Изделия с отметкой «Сделано в России» собраны
        <a href="/made-in-russia/" style="border-bottom:1px solid var(--line-strong)">в отдельном разделе</a>.</p>

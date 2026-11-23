@@ -472,5 +472,102 @@
     });
   }
 
+  /* ---------------------------------------------- слайдер «Популярное» */
+  /* Лента — обычная горизонтальная прокрутка: без JS карточки листаются
+     пальцем. Скрипт добавляет кнопки и точки, а прокрутку подтягивает
+     к границе карточки (scroll-snap делает то же самое для пальца). */
+  document.querySelectorAll('[data-slider]').forEach(function (box) {
+    var viewport = box.querySelector('.slider__viewport');
+    var track = box.querySelector('.slider__track');
+    var prev = box.querySelector('[data-slider-prev]');
+    var next = box.querySelector('[data-slider-next]');
+    var dots = box.querySelector('[data-slider-dots]');
+    if (!viewport || !track || !prev || !next) return;
+
+    var cards = Array.prototype.slice.call(track.children);
+    if (cards.length < 2) {
+      var nav = box.querySelector('.slider__nav');
+      if (nav) nav.hidden = true;
+      return;
+    }
+
+    /* ширина карточки вместе с промежутком */
+    var step = function () {
+      return cards[1].offsetLeft - cards[0].offsetLeft;
+    };
+    var perView = function () {
+      return Math.max(1, Math.round(viewport.clientWidth / step()));
+    };
+    var pageCount = function () {
+      return Math.max(1, Math.ceil(cards.length / perView()));
+    };
+    var currentIndex = function () {
+      return Math.round(viewport.scrollLeft / step());
+    };
+    var goTo = function (index) {
+      index = Math.max(0, Math.min(cards.length - 1, index));
+      viewport.scrollTo({
+        left: cards[index].offsetLeft - cards[0].offsetLeft,
+        behavior: 'smooth'
+      });
+    };
+
+    var paint = function () {
+      prev.disabled = viewport.scrollLeft <= 2;
+      next.disabled = viewport.scrollLeft + viewport.clientWidth >= viewport.scrollWidth - 2;
+
+      if (!dots) return;
+      var count = pageCount();
+      if (dots.childElementCount !== count) {
+        dots.innerHTML = '';
+        for (var i = 0; i < count; i += 1) {
+          var dot = document.createElement('button');
+          dot.type = 'button';
+          dot.className = 'slider__dot';
+          dot.setAttribute('data-slider-dot', String(i));
+          dot.setAttribute('aria-label', 'Страница ' + (i + 1));
+          dots.appendChild(dot);
+        }
+      }
+      var active = Math.min(count - 1, Math.round(currentIndex() / perView()));
+      Array.prototype.forEach.call(dots.children, function (dot, i) {
+        dot.setAttribute('aria-current', i === active ? 'true' : 'false');
+      });
+    };
+
+    prev.addEventListener('click', function () {
+      goTo(currentIndex() - perView());
+    });
+    next.addEventListener('click', function () {
+      goTo(currentIndex() + perView());
+    });
+
+    if (dots) {
+      dots.addEventListener('click', function (event) {
+        var dot = event.target.closest ? event.target.closest('[data-slider-dot]') : null;
+        if (!dot) return;
+        goTo(Number(dot.getAttribute('data-slider-dot')) * perView());
+      });
+    }
+
+    viewport.addEventListener('keydown', function (event) {
+      if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+      event.preventDefault();
+      goTo(currentIndex() + (event.key === 'ArrowRight' ? 1 : -1));
+    });
+
+    var ticking = false;
+    viewport.addEventListener('scroll', function () {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(function () {
+        ticking = false;
+        paint();
+      });
+    });
+    window.addEventListener('resize', paint);
+    paint();
+  });
+
   renderBasket();
 })();
