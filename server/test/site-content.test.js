@@ -124,3 +124,55 @@ test('сайт: в собранных страницах нет старых ц�
   assert.doesNotMatch(all, /до терминала в Москве/);
   assert.doesNotMatch(all, /для прицепов — грузовых и легковых/);
 });
+
+test('сайт: один телефон и две почты, без разбивки по городам', () => {
+  const contacts = CONTENT.contacts;
+  assert.equal(contacts.phone, '+7 985 964-11-23');
+  assert.equal(contacts.phone_href, '+79859641123');
+  assert.deepEqual(contacts.emails, ['alexey.chekalin@gmail.com', 'atlanta-shop@bk.ru']);
+  assert.equal(contacts.email, contacts.emails[0], 'основная почта — первая в списке');
+  assert.equal(contacts.offices, undefined, 'офисов по городам больше нет');
+
+  // старые телефоны и почты не должны остаться нигде в текстах сайта
+  const texts = JSON.stringify(CONTENT);
+  assert.doesNotMatch(texts, /spb\.atlas|regions\.atlas/, 'почты СПб и регионов убраны');
+  assert.doesNotMatch(texts, /993 364-10-78|79933641078/, 'телефон СПб убран');
+});
+
+test('сайт: страница контактов — карта Яндекса и без регионов', () => {
+  const BUILD = fs.readFileSync(path.join(ROOT, 'site/build.py'), 'utf8');
+  const map = CONTENT.contacts.map;
+  assert.equal(map.constructor, 'a8d08a63a123d9f4c185b078f16346fecf535c1601c3cf87b6a2bd434e44e2c7');
+  assert.match(BUILD, /api-maps\.yandex\.ru\/services\/constructor\/1\.0\/js\//,
+    'карта подключается конструктором Яндекса');
+  assert.match(BUILD, /id="yandex-map"/, 'у карты есть свой контейнер');
+  // скрипт карты ставится в конце body, после site.js — иначе он тормозит вёрстку
+  assert.match(BUILD, /def footer\(self, scripts=''\)/);
+  assert.match(BUILD, /def page\([^)]*extra_scripts=None/s);
+  assert.doesNotMatch(BUILD, /'Москва, Санкт-Петербург, регионы\.'/,
+    'описание страницы контактов больше не перечисляет регионы');
+});
+
+test('сайт: после сборки телефон и почты одинаковы на всех страницах', () => {
+  const build = spawnSync('python3', ['site/build.py', '--skip-images', '--out', OUT],
+    { cwd: ROOT, encoding: 'utf8', timeout: 300000 });
+  assert.equal(build.status, 0, build.stderr);
+
+  const pages = ['index.html', 'contacts/index.html', 'catalog/index.html',
+    'about/index.html', 'delivery/index.html', 'privacy/index.html'];
+  for (const page of pages) {
+    const html = fs.readFileSync(path.join(OUT, page), 'utf8');
+    assert.doesNotMatch(html, /spb\.atlas|regions\.atlas|993 364-10-78|79933641078/,
+      `${page}: старые контакты остались`);
+    assert.match(html, /\+7 985 964-11-23/, `${page}: нет рабочего телефона`);
+    if (page !== 'privacy/index.html') {
+      assert.match(html, /alexey\.chekalin@gmail\.com/, `${page}: нет первой почты`);
+      assert.match(html, /atlanta-shop@bk\.ru/, `${page}: нет второй почты`);
+    }
+  }
+
+  // на карте — ссылка конструктора, а не голый iframe с чужими размерами
+  const contacts = fs.readFileSync(path.join(OUT, 'contacts/index.html'), 'utf8');
+  assert.match(contacts, /api-maps\.yandex\.ru\/services\/constructor/);
+  assert.match(contacts, /um=constructor%3Aa8d08a63a123d9f4c185b078f16346fecf535c1601c3cf87b6a2bd434e44e2c7/);
+});

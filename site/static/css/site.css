@@ -1073,6 +1073,18 @@ ul {
   margin-right: 8px;
 }
 
+/* две почты — каждая с новой строки, а не в одну слипшуюся строку */
+.request__mail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+}
+
+.request__mail span {
+  flex: 0 0 auto;
+}
+
 .form {
   position: relative;
   display: grid;
@@ -2259,6 +2271,51 @@ ul {
   font-weight: 500;
   color: var(--muted);
   font-size: 14px;
+}
+
+/* ------------------------------------------------------ карта проезда */
+
+/* Конструктор Яндекса вставляет внутрь .map__frame свой iframe
+   с фиксированными размерами — растягиваем его на всю ширину блока. */
+.map {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--paper-soft);
+}
+
+.map__frame {
+  position: relative;
+  width: 100%;
+  min-height: 320px;
+}
+
+.map__frame iframe {
+  display: block;
+  width: 100%;
+  min-height: 320px;
+  border: 0;
+}
+
+.map__lead {
+  margin-top: 10px;
+  color: var(--muted);
+}
+
+.map__fallback {
+  margin: 0;
+  padding: 28px 24px;
+  color: var(--muted);
+}
+
+.contact-card__mail {
+  overflow-wrap: anywhere;
+}
+
+/* почты в подвале — столбиком, с отступом друг от друга */
+.footer__list a[href^="mailto:"] {
+  overflow-wrap: anywhere;
 }
 
 /* --------------------------------------------------------------- утилиты */

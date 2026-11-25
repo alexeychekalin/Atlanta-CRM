@@ -13,33 +13,25 @@
     "$form_endpoint_changed": "Подставьте домен вашей CRM, если он не crm.atlanta.ru"
   },
   "contacts": {
-    "offices": [
-      {
-        "city": "Москва",
-        "phone": "+7 985 964-11-23",
-        "phone_href": "+79859641123",
-        "email": "alexey.chekalin@gmail.com"
-      },
-      {
-        "city": "Санкт-Петербург",
-        "phone": "+7 993 364-10-78",
-        "phone_href": "+79933641078",
-        "email": "spb.atlas@gmail.com"
-      },
-      {
-        "city": "Регионы",
-        "phone": "+7 993 364-10-78",
-        "phone_href": "+79933641078",
-        "email": "regions.atlas@gmail.com"
-      }
+    "phone": "+7 985 964-11-23",
+    "phone_href": "+79859641123",
+    "emails": [
+      "alexey.chekalin@gmail.com",
+      "atlanta-shop@bk.ru"
     ],
+    "email": "alexey.chekalin@gmail.com",
     "production": {
       "title": "Производство",
       "address": "Липецкая область, Усманский район, село Московка, ул. Центральная, стр. 53"
     },
     "telegram": "https://t.me/edchek",
     "whatsapp": "https://wa.me/79859641123",
-    "hours": "Пн–Пт, 9:00–18:00 (МСК)"
+    "hours": "Пн–Пт, 9:00–18:00 (МСК)",
+    "map": {
+      "title": "Как добраться",
+      "constructor": "a8d08a63a123d9f4c185b078f16346fecf535c1601c3cf87b6a2bd434e44e2c7",
+      "note": "Визит согласуйте заранее — встретим и покажем производство."
+    }
   },
   "hero": {
     "eyebrow": "Для транспорта и техники",

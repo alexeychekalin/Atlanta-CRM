@@ -671,14 +671,14 @@ class Site:
         links = ''.join(
             f'<a href="{href}"{self.active(key, current)}>{label}</a>'
             for href, label, key in nav_items)
-        office = self.content['contacts']['offices'][0]
+        contacts = self.content['contacts']
         return f'''<header class="site-header">
   <div class="wrap site-header__inner">
     {self.logo()}
     <nav class="nav" data-open="false" aria-label="Основная навигация">{links}</nav>
     <div class="header-actions">
-      <a class="header-phone" href="tel:{esc(office['phone_href'])}">{esc(office['phone'])}
-        <span>{esc(office['city'])} · Пн–Пт 9–18</span></a>
+      <a class="header-phone" href="tel:{esc(contacts['phone_href'])}">{esc(contacts['phone'])}
+        <span>Пн–Пт 9–18</span></a>
       <a class="request-pill" href="/#request" data-basket-pill hidden>
         Заявка<span data-basket-count>0</span>
       </a>
@@ -689,12 +689,11 @@ class Site:
 </header>
 '''
 
-    def footer(self):
+    def footer(self, scripts=''):
         contacts = self.content['contacts']
-        offices = ''.join(
-            f'<div><a href="tel:{esc(item["phone_href"])}">{esc(item["phone"])}</a>'
-            f'<div style="margin-top:2px">{esc(item["city"])}</div></div>'
-            for item in contacts['offices'])
+        emails = ''.join(
+            f'<a href="mailto:{esc(item)}">{esc(item)}</a>'
+            for item in contacts['emails'])
         catalog_links = ''.join(
             f'<a href="/catalog/{CATEGORY_SLUGS[key]}/">{esc(self.categories[key]["name"])}</a>'
             for key in CATEGORY_ORDER if key in self.categories)
@@ -716,8 +715,9 @@ class Site:
       </div>
       <div>
         <div class="footer__title">Контакты</div>
-        <div class="footer__list">{offices}
-          <a href="mailto:{esc(contacts['offices'][0]['email'])}">{esc(contacts['offices'][0]['email'])}</a>
+        <div class="footer__list">
+          <a href="tel:{esc(contacts['phone_href'])}">{esc(contacts['phone'])}</a>
+          {emails}
         </div>
       </div>
       <div>
@@ -737,6 +737,7 @@ class Site:
   </div>
 </footer>
 <script src="/static/js/site.js?v={asset_version('js/site.js')}" defer></script>
+{scripts}
 </body>
 </html>
 '''
@@ -762,10 +763,18 @@ class Site:
         meta = f'<meta http-equiv="refresh" content="0; url={target}">'
         return html.replace('</head>', f'  {meta}\n</head>', 1)
 
-    def page(self, title, description, canonical, body, current='', schemas=None, og_image=''):
+    def page(self, title, description, canonical, body, current='', schemas=None,
+             og_image='', extra_scripts=None):
+        """Страница целиком.
+
+        extra_scripts — теги в конце <body>, после site.js: карта Яндекса
+        подключается там же, где и остальные скрипты, и не тормозит вёрстку.
+        """
         extra = ''.join(self.ld(item) for item in (schemas or []))
+        scripts = ''.join(f'<script src="{esc(item)}" async></script>'
+                          for item in (extra_scripts or []))
         return (self.head(title, description, canonical, og_image=og_image, extra=extra) + self.header(current) +
-                f'<main id="main">{body}</main>\n' + self.footer())
+                f'<main id="main">{body}</main>\n' + self.footer(scripts))
 
     # ------------------------------------------------------------ микроразметка
     @staticmethod
@@ -800,9 +809,8 @@ class Site:
                         'streetAddress': 'ул. Центральная, 53'},
             'contactPoint': [
                 {'@type': 'ContactPoint', 'contactType': 'sales',
-                 'telephone': office['phone'], 'email': office['email'],
-                 'areaServed': 'RU', 'availableLanguage': 'ru'}
-                for office in contacts['offices']],
+                 'telephone': contacts['phone'], 'email': contacts['email'],
+                 'areaServed': 'RU', 'availableLanguage': 'ru'}],
         }
 
     def schema_product(self, component):
@@ -848,7 +856,7 @@ class Site:
     # ------------------------------------------------------------ общие блоки
     def request_block(self, article=''):
         data = self.content['request']
-        office = self.content['contacts']['offices'][0]
+        contacts = self.content['contacts']
         fields = data['fields']
         input_html = []
         for field in fields:
@@ -872,13 +880,15 @@ class Site:
         <h2>{esc(data['title'])}</h2>
         <p>{esc(data['text'])}</p>
         <div class="request__contacts">
-          <div><span>Телефон</span><a href="tel:{esc(office['phone_href'])}">{esc(office['phone'])}</a></div>
-          <div><span>Почта</span><a href="mailto:{esc(office['email'])}">{esc(office['email'])}</a></div>
+          <div><span>Телефон</span><a href="tel:{esc(contacts['phone_href'])}">{esc(contacts['phone'])}</a></div>
+          <div class="request__mail"><span>Почта</span>
+            {''.join(f'<a href="mailto:{esc(item)}">{esc(item)}</a>' for item in contacts['emails'])}
+          </div>
           <div><span>Telegram</span><a href="{esc(self.content['contacts']['telegram'])}" rel="noopener">@edchek</a></div>
         </div>
       </div>
       <form class="form" data-request-form data-endpoint="{esc(self.site.get('form_endpoint') or '')}"
-            data-mailto="{esc(office['email'])}" data-article="{esc(article)}" novalidate>
+            data-mailto="{esc(contacts['email'])}" data-article="{esc(article)}" novalidate>
         <div class="form__row">{fields_html}</div>
         {rest}
         <div class="form__basket" data-basket-slots hidden></div>
@@ -1765,11 +1775,33 @@ class Site:
 
     def contacts_page(self):
         contacts = self.content['contacts']
-        cards = ''.join(
-            f'<div class="contact-card"><h3>{esc(item["city"])}</h3>'
-            f'<a href="tel:{esc(item["phone_href"])}">{esc(item["phone"])}</a>'
-            f'<a class="muted" href="mailto:{esc(item["email"])}">{esc(item["email"])}</a></div>'
-            for item in contacts['offices'])
+        map_data = contacts['map']
+        emails = ''.join(
+            f'<a class="contact-card__mail" href="mailto:{esc(item)}">{esc(item)}</a>'
+            for item in contacts['emails'])
+        cards = f'''
+<div class="contact-card">
+  <h3>Телефон</h3>
+  <a href="tel:{esc(contacts['phone_href'])}">{esc(contacts['phone'])}</a>
+  <p class="muted">{esc(contacts['hours'])}</p>
+</div>
+<div class="contact-card">
+  <h3>Почта</h3>
+  {emails}
+  <p class="muted">Ответим в течение рабочего дня.</p>
+</div>
+<div class="contact-card">
+  <h3>Мессенджеры</h3>
+  <a href="{esc(contacts['telegram'])}" rel="noopener">Telegram</a>
+  <a href="{esc(contacts['whatsapp'])}" rel="noopener">WhatsApp</a>
+  <p class="muted">Пришлите фото детали — подберём аналог.</p>
+</div>'''
+        # Карта — конструктор Яндекса: подключение отдаёт iframe и само
+        # ставит его в контейнер. Размеры в URL фиксированные, поэтому
+        # карту растягиваем по ширине блока через CSS.
+        map_src = ('https://api-maps.yandex.ru/services/constructor/1.0/js/'
+                   f'?um=constructor%3A{map_data["constructor"]}'
+                   '&width=100%25&height=420&lang=ru_RU&scroll=true')
         body = f'''
 {self.crumbs([('Главная', '/'), ('Контакты', None)])}
 <div class="wrap prose" style="padding-bottom:0">
@@ -1780,19 +1812,27 @@ class Site:
 <section class="section section--tight">
   <div class="wrap"><div class="contacts-grid">{cards}</div></div>
 </section>
-<div class="wrap prose" style="padding-top:0">
-  <h2>Производство</h2>
-  <p>{esc(contacts['production']['address'])}</p>
-  <h2>Как добраться</h2>
-  <p>Площадка находится в Липецкой области, Усманский район, село Московка.
-     Визит согласуйте заранее — встретим и покажем производство.</p>
-</div>
+<section class="section section--tight">
+  <div class="wrap">
+    <h2>{esc(map_data['title'])}</h2>
+    <p class="map__lead">{esc(contacts['production']['address'])}</p>
+    <div class="map">
+      <div class="map__frame" id="yandex-map" role="region"
+           aria-label="Карта: {esc(contacts['production']['address'])}">
+        <noscript><p class="map__fallback">Для карты нужен JavaScript.
+          Адрес производства: {esc(contacts['production']['address'])}</p></noscript>
+      </div>
+    </div>
+    <p class="muted">{esc(map_data['note'])}</p>
+  </div>
+</section>
 '''
         body += self.request_block()
-        return self.page('Контакты', 'Телефоны, почта и адрес производства АТЛАНТА. '
-                         'Москва, Санкт-Петербург, регионы.',
+        return self.page('Контакты', 'Телефон, почта и карта проезда к производству АТЛАНТА '
+                         'в Липецкой области.',
                          '/contacts/', body, current='contacts',
-                         schemas=[self.schema_breadcrumbs([('Главная', '/'), ('Контакты', '/contacts/')])])
+                         schemas=[self.schema_breadcrumbs([('Главная', '/'), ('Контакты', '/contacts/')])],
+                         extra_scripts=[map_src])
 
     def privacy_page(self):
         body = f'''
