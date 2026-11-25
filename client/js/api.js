@@ -165,6 +165,10 @@ const API = {
   post(path, body) { return this.request('POST', path, body); },
   put(path, body) { return this.request('PUT', path, body); },
   del(path) { return this.request('DELETE', path); },
+  // `delete` — зарезервированное слово, но ключом объекта оно законно:
+  // оставлено псевдонимом к `del`, чтобы вызовы API.delete(...) не падали
+  // с «API.delete is not a function».
+  delete(path) { return this.request('DELETE', path); },
   patch(path, body) { return this.request('PATCH', path, body); },
   getBlob(path) { return this.request('GET', path, null, true); },
   upload(path, formData) { return this.request('POST', path, formData); },

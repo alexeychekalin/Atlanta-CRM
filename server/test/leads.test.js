@@ -144,7 +144,8 @@ test('telegram: один недоступный чат не мешает ост�
     assert.equal(result.sent, 1);
     assert.equal(result.failed.length, 1);
     assert.equal(result.failed[0].chatId, '-100');
-    assert.match(result.failed[0].error, /blocked/);
+    // ошибка переведена на русский и подсказывает действие
+    assert.match(result.failed[0].error, /заблокирован/);
     assert.equal(result.ok, true, 'хотя бы один получатель — уже успех');
     assert.deepEqual(calls, ['-100', '555']);
   } finally {
@@ -154,6 +155,59 @@ test('telegram: один недоступный чат не мешает ост�
     if (saved.base === undefined) delete process.env.TELEGRAM_API_BASE;
     else process.env.TELEGRAM_API_BASE = saved.base;
   }
+});
+
+test('telegram: токен и chat_id чистятся от кавычек и пробелов', () => {
+  const saved = { token: process.env.TELEGRAM_BOT_TOKEN, chats: process.env.TELEGRAM_CHAT_IDS };
+  const token = '123456789:AAHfake_token_for_tests_only_1234567';
+  try {
+    process.env.TELEGRAM_BOT_TOKEN = ` "${token}" `;
+    process.env.TELEGRAM_CHAT_IDS = ' "-1001234567890" , 123456789 ';
+    // токен в кавычках ушёл бы в URL и Telegram ответил 404 — чистим до проверки
+    assert.equal(telegram.botToken(), token);
+    assert.equal(telegram.isConfigured(), true);
+    assert.deepEqual(telegram.chatIds(), ['-1001234567890', '123456789']);
+  } finally {
+    if (saved.token === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = saved.token;
+    if (saved.chats === undefined) delete process.env.TELEGRAM_CHAT_IDS;
+    else process.env.TELEGRAM_CHAT_IDS = saved.chats;
+  }
+});
+
+test('telegram: configProblems объясняет, что не так с настройками', () => {
+  const saved = { token: process.env.TELEGRAM_BOT_TOKEN, chats: process.env.TELEGRAM_CHAT_IDS };
+  const token = '123456789:AAHfake_token_for_tests_only_1234567';
+  try {
+    process.env.TELEGRAM_BOT_TOKEN = '';
+    delete process.env.TELEGRAM_CHAT_IDS;
+    assert.match(telegram.configProblems().join(' '), /TELEGRAM_BOT_TOKEN/);
+
+    process.env.TELEGRAM_BOT_TOKEN = `"${token}"`;
+    process.env.TELEGRAM_CHAT_IDS = 'abc';
+    const problems = telegram.configProblems().join('; ');
+    assert.match(problems, /кавычки|пробелы/, 'кавычки видны в отчёте');
+    assert.match(problems, /abc.*не похож на chat_id/s);
+
+    process.env.TELEGRAM_BOT_TOKEN = token;
+    process.env.TELEGRAM_CHAT_IDS = '-1001234567890,123456789';
+    assert.deepEqual(telegram.configProblems(), [], 'нормальные настройки — без замечаний');
+    assert.match(telegram.describeConfig(), /получателей 2/);
+  } finally {
+    if (saved.token === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = saved.token;
+    if (saved.chats === undefined) delete process.env.TELEGRAM_CHAT_IDS;
+    else process.env.TELEGRAM_CHAT_IDS = saved.chats;
+  }
+});
+
+test('telegram: ошибки Telegram объясняются по-человечески', () => {
+  assert.match(telegram.explainError('Bad Request: chat not found', '-100'),
+    /не найден/);
+  assert.match(telegram.explainError('Forbidden: bot was blocked by the user', '555'),
+    /заблокирован/);
+  assert.match(telegram.explainError('Unauthorized', '', 401),
+    /токен/i);
 });
 
 test('telegram: длинный текст обрезается, а не отклоняется API', () => {

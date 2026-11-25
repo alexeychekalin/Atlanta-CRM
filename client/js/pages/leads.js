@@ -156,9 +156,23 @@ const LeadsPage = {
     let notifyLine = '<span style="color:var(--text-muted)">Уведомление ещё не отправлялось</span>';
     if (notifyState) {
       const when = Table.formatDateTime(notifyState.created_at);
-      notifyLine = notifyState.ok
-        ? `<span style="color:var(--accent-green)">✓ Отправлено ${when}</span>`
-        : `<span style="color:var(--accent-red)">✗ Не отправлено ${when}</span> <span style="color:var(--text-muted);font-size:0.8rem">— проверьте токен бота и chat_id</span>`;
+      if (notifyState.ok) {
+        notifyLine = `<span style="color:var(--accent-green)">✓ Отправлено ${when}</span>`;
+      } else {
+        // detail — JSON результата: показываем, что именно ответил Telegram,
+        // иначе «не отправлено» не подсказывает, что чинить
+        let reason = '';
+        try {
+          const detail = typeof notifyState.detail === 'string'
+            ? JSON.parse(notifyState.detail) : (notifyState.detail || {});
+          const failed = (detail.failed || []).map((f) => f.error).filter(Boolean);
+          reason = failed.join('; ');
+        } catch (e) { /* старые записи без detail */ }
+        notifyLine = `<span style="color:var(--accent-red)">✗ Не отправлено ${when}</span>`
+          + (reason
+            ? `<div style="color:var(--text-muted);font-size:0.8rem;margin-top:4px;max-width:420px">${esc(reason)}</div>`
+            : ' <span style="color:var(--text-muted);font-size:0.8rem">— проверьте токен бота и chat_id</span>');
+      }
     }
 
     content.innerHTML = `

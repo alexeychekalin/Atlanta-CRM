@@ -35,7 +35,8 @@
     "demo:import-gisp": "node dev/run.js scripts/catalog/import_gisp.js",
     "demo:data": "node dev/data.js",
     "db:init:full": "npm run db:init && npm run db:catalog",
-    "demo:init:full": "npm run demo:init && npm run demo:catalog"
+    "demo:init:full": "npm run demo:init && npm run demo:catalog",
+    "telegram:check": "node scripts/telegram_check.js"
   },
   "dependencies": {
     "archiver": "^5.3.2",
