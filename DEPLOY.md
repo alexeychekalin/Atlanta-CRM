@@ -406,6 +406,27 @@ npm run telegram:check -- --send
 или не имеет прав. В карточке заявки причина тоже видна — под строкой
 «✗ Не отправлено».
 
+#### Установка через systemd: где живут переменные
+
+Сервис запускается как `/usr/bin/node server/src/index.js`, а `src/index.js`
+в первой строке читает **`server/.env`**. Значит для systemd-установки все
+переменные — только там, `/etc/systemd/system/atlanta-crm.service` для этого
+править не нужно (в нём достаточно `Environment=NODE_ENV=production`).
+
+Проверить, что видит именно сервис, а не ваша оболочка:
+
+```bash
+sudo systemctl show atlanta-crm -p Environment | tr ' ' '\n'
+sudo -u www-data env -i PATH=/usr/bin:/bin \
+  node -e "require('dotenv').config({path:'/opt/atlanta-crm/server/.env'}); \
+  console.log(require('/opt/atlanta-crm/server/src/services/telegram').describeConfig())"
+sudo journalctl -u atlanta-crm -n 30 | grep -i -E 'telegram|почта'
+```
+
+В логе при старте всегда есть строка `Telegram: …` — в ней либо «включены,
+получателей N», либо конкретная причина, почему нет. После `./update.sh`
+такая же строка печатается последним шагом.
+
 Куда смотреть, если правили настройки:
 
 - `.env` — **это `server/.env`**, а не корневой `.env` (корневой нужен только

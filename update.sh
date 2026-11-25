@@ -29,7 +29,7 @@ echo ""
 # update.sh не делает git pull — это отдельный шаг. Но если репозиторий стоит
 # не на той ветке, `git pull` пишет «Already up to date», и обновления молча
 # не приезжают. Поэтому печатаем ветку, коммит и все ветки origin.
-echo -e "${CYAN}━━━ 0/5 • Версия кода ━━━${NC}"
+echo -e "${CYAN}━━━ 0/6 • Версия кода ━━━${NC}"
 cd "$APP_DIR"
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '—')"
@@ -71,12 +71,12 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 
 # 1. Остановить сервис
-echo -e "${CYAN}━━━ 1/5 • Остановка сервиса ━━━${NC}"
+echo -e "${CYAN}━━━ 1/6 • Остановка сервиса ━━━${NC}"
 systemctl stop atlanta-crm 2>/dev/null || warn "Сервис не был запущен"
 log "Сервис остановлен"
 
 # 2. Установить зависимости (нужны для раннера миграций)
-echo -e "${CYAN}━━━ 2/5 • Зависимости ━━━${NC}"
+echo -e "${CYAN}━━━ 2/6 • Зависимости ━━━${NC}"
 cd "$APP_DIR/server"
 npm install --omit=dev 2>&1 | tail -3
 cd "$APP_DIR"
@@ -108,7 +108,7 @@ else
 fi
 export SKIP_PRESEED="${SKIP_PRESEED:-0}"
 
-echo -e "${CYAN}━━━ 3/5 • Данные ━━━${NC}"
+echo -e "${CYAN}━━━ 3/6 • Данные ━━━${NC}"
 if [ -f "$APP_DIR/server/src/db/data.js" ]; then
   if node src/db/data.js; then
     if [ "$WITH_CATALOG" = "1" ]; then
@@ -136,7 +136,7 @@ else
 fi
 
 # 4. Запустить сервис
-echo -e "${CYAN}━━━ 4/5 • Запуск сервиса ━━━${NC}"
+echo -e "${CYAN}━━━ 4/6 • Запуск сервиса ━━━${NC}"
 systemctl start atlanta-crm
 sleep 2
 
@@ -169,10 +169,10 @@ if [ -f "$APP_DIR/server/.site-enabled" ]; then
 fi
 
 if [ "$SITE_MODE" = "0" ]; then
-  echo -e "${CYAN}━━━ 5/5 • Сайт завода ━━━${NC}"
+  echo -e "${CYAN}━━━ 5/6 • Сайт завода ━━━${NC}"
   log "пропущен: WITH_SITE=0"
 elif [ "$SITE_MODE" = "1" ] || [ "$SITE_AUTO" = "1" ]; then
-  echo -e "${CYAN}━━━ 5/5 • Сайт завода ━━━${NC}"
+  echo -e "${CYAN}━━━ 5/6 • Сайт завода ━━━${NC}"
   cd "$APP_DIR"
   if ! python3 -c "import PIL" >/dev/null 2>&1; then
     warn "нет Pillow — сайт не собран: pip3 install --break-system-packages pillow"
@@ -184,10 +184,22 @@ elif [ "$SITE_MODE" = "1" ] || [ "$SITE_AUTO" = "1" ]; then
     warn "Сайт не выложен (см. сообщения выше) — CRM при этом работает"
   fi
 else
-  echo -e "${CYAN}━━━ 5/5 • Сайт завода ━━━${NC}"
+  echo -e "${CYAN}━━━ 5/6 • Сайт завода ━━━${NC}"
   warn "сайта нет в $SITE_ROOT — выкладка пропущена"
   warn "  разово: WITH_SITE=1 ./update.sh   или   ./scripts/deploy-site.sh root@host"
 fi
+
+# 6. Уведомления о заявках: без токена и chat_id заявки с сайта молча
+# копятся в CRM. Показываем состояние сразу после обновления.
+echo -e "${CYAN}━━━ 6/6 • Уведомления о заявках ━━━${NC}"
+cd "$APP_DIR/server"
+if node -e "process.exit(require('./src/services/telegram').configProblems().length ? 1 : 0)" 2>/dev/null; then
+  log "$(node -e "console.log(require('./src/services/telegram').describeConfig())")"
+else
+  warn "$(node -e "console.log(require('./src/services/telegram').describeConfig())" 2>/dev/null || echo 'Telegram: настройки не прочитаны')"
+  warn "  проверка: cd $APP_DIR/server && npm run telegram:check"
+fi
+cd "$APP_DIR"
 
 echo ""
 echo -e "${GREEN}✅ Обновление завершено!${NC}"

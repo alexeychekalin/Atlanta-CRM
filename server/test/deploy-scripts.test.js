@@ -33,6 +33,15 @@ test('update.sh: до остановки сервиса печатает вет�
   assert.match(script, /git status --porcelain/, 'нет предупреждения о незакоммиченных правках');
 });
 
+test('update.sh: после обновления показывает состояние Telegram', () => {
+  const script = fs.readFileSync(updateScript, 'utf8');
+  assert.match(script, /describeConfig\(\)/, 'нет проверки настроек Telegram в конце');
+  assert.match(script, /npm run telegram:check/, 'не подсказывает команду проверки');
+  const notify = script.indexOf('Уведомления о заявках');
+  const done = script.indexOf('Обновление завершено');
+  assert.ok(notify > 0 && done > notify, 'проверка идёт до финального «готово»');
+});
+
 test('DEPLOY.md: описано, что делать с «Already up to date»', () => {
   const doc = fs.readFileSync(deployDoc, 'utf8');
 
