@@ -197,3 +197,36 @@ test('сайт: после сборки телефон и почты одина�
   assert.match(css, /\.map--failed \.map__fallback/, 'фолбэк виден при ошибке загрузки карты');
   assert.match(css, /\.map__fallback \{[^}]*display: none/, 'в обычном режиме фолбэка не видно');
 });
+
+test('сайт: MAX — в контактах, подвале и микроразметке', () => {
+  const max = CONTENT.contacts.max;
+  assert.equal(max, 'https://max.ru/u/f9LHodD0cOITfm9aA5JyC-ejqNGUtBennJYCFOqQmqbnfyP0i__ytwDv4_I');
+  const buildText = fs.readFileSync(path.join(ROOT, 'site/build.py'), 'utf8');
+  assert.match(buildText, /contacts\['max'\]/, 'ссылка берётся из content.json');
+
+  const build = spawnSync('python3', ['site/build.py', '--skip-images', '--out', OUT],
+    { cwd: ROOT, encoding: 'utf8', timeout: 300000 });
+  assert.equal(build.status, 0, build.stderr);
+
+  const contacts = fs.readFileSync(path.join(OUT, 'contacts/index.html'), 'utf8');
+  assert.match(contacts, /<h3>Мессенджеры<\/h3>[\s\S]*?MAX<\/a>/, 'MAX в карточке мессенджеров');
+  assert.match(contacts, /href="https:\/\/max\.ru\/u\/f9LHodD0cOITfm9aA5JyC-ejqNGUtBennJYCFOqQmqbnfyP0i__ytwDv4_I"/);
+
+  // подвал есть на каждой странице
+  for (const page of ['index.html', 'contacts/index.html', 'about/index.html', 'catalog/index.html']) {
+    const html = fs.readFileSync(path.join(OUT, page), 'utf8');
+    assert.match(html, /<footer[\s\S]*?https:\/\/max\.ru\/u\/f9LHodD0cOITfm9aA5JyC-ejqNGUtBennJYCFOqQmqbnfyP0i__ytwDv4_I/,
+      `${page}: в подвале нет MAX`);
+  }
+
+  // микроразметка: все мессенджеры в sameAs организации (Organization — на главной)
+  for (const page of ['index.html']) {
+    const html = fs.readFileSync(path.join(OUT, page), 'utf8');
+    const org = html.match(/<script type="application\/ld\+json">(\{"@context":"https:\/\/schema\.org","@type":"Organization".*?)<\/script>/);
+    assert.ok(org, `${page}: нет Organization в микроразметке`);
+    const data = JSON.parse(org[1]);
+    assert.ok(data.sameAs.includes(max), `${page}: MAX не попал в sameAs`);
+    assert.ok(data.sameAs.includes(CONTENT.contacts.telegram));
+    assert.ok(data.sameAs.includes(CONTENT.contacts.whatsapp));
+  }
+});

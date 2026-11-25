@@ -726,6 +726,7 @@ class Site:
           <span>{esc(contacts['production']['address'])}</span>
           <a href="{esc(contacts['telegram'])}" rel="noopener">Telegram</a>
           <a href="{esc(contacts['whatsapp'])}" rel="noopener">WhatsApp</a>
+          <a href="{esc(contacts['max'])}" rel="noopener">MAX</a>
         </div>
       </div>
     </div>
@@ -804,6 +805,8 @@ class Site:
                 {'@type': 'ContactPoint', 'contactType': 'sales',
                  'telephone': contacts['phone'], 'email': contacts['email'],
                  'areaServed': 'RU', 'availableLanguage': 'ru'}],
+            'sameAs': [item for item in (contacts['telegram'], contacts['whatsapp'],
+                                         contacts['max']) if item],
         }
 
     def schema_product(self, component):
@@ -877,7 +880,8 @@ class Site:
           <div class="request__mail"><span>Почта</span>
             {''.join(f'<a href="mailto:{esc(item)}">{esc(item)}</a>' for item in contacts['emails'])}
           </div>
-          <div><span>Telegram</span><a href="{esc(self.content['contacts']['telegram'])}" rel="noopener">@edchek</a></div>
+          <div><span>Telegram</span><a href="{esc(contacts['telegram'])}" rel="noopener">@edchek</a></div>
+          <div><span>MAX</span><a href="{esc(contacts['max'])}" rel="noopener">Написать в MAX</a></div>
         </div>
       </div>
       <form class="form" data-request-form data-endpoint="{esc(self.site.get('form_endpoint') or '')}"
@@ -1787,6 +1791,7 @@ class Site:
   <h3>Мессенджеры</h3>
   <a href="{esc(contacts['telegram'])}" rel="noopener">Telegram</a>
   <a href="{esc(contacts['whatsapp'])}" rel="noopener">WhatsApp</a>
+  <a href="{esc(contacts['max'])}" rel="noopener">MAX</a>
   <p class="muted">Пришлите фото детали — подберём аналог.</p>
 </div>'''
         # Карта — конструктор Яндекса: подключение отдаёт iframe и само
