@@ -146,9 +146,13 @@ test('сайт: страница контактов — карта Яндекс�
   assert.match(BUILD, /api-maps\.yandex\.ru\/services\/constructor\/1\.0\/js\//,
     'карта подключается конструктором Яндекса');
   assert.match(BUILD, /id="yandex-map"/, 'у карты есть свой контейнер');
-  // скрипт карты ставится в конце body, после site.js — иначе он тормозит вёрстку
-  assert.match(BUILD, /def footer\(self, scripts=''\)/);
-  assert.match(BUILD, /def page\([^)]*extra_scripts=None/s);
+  // Конструктор вставляет iframe туда, где стоит его <script>, поэтому тег
+  // должен лежать внутри #yandex-map — иначе карта уедет в конец страницы.
+  const contactsPage = BUILD.slice(BUILD.indexOf('def contacts_page'), BUILD.indexOf('def privacy_page'));
+  assert.match(contactsPage, /id="yandex-map"[\s\S]*<script src="\{esc\(map_src\)\}"/,
+    'скрипт карты подключён внутри контейнера #yandex-map');
+  assert.doesNotMatch(contactsPage, /<noscript/, 'фолбэк карты не прячется в noscript');
+  assert.doesNotMatch(BUILD, /def footer\(self, scripts=/);
   assert.doesNotMatch(BUILD, /'Москва, Санкт-Петербург, регионы\.'/,
     'описание страницы контактов больше не перечисляет регионы');
 });
@@ -175,4 +179,21 @@ test('сайт: после сборки телефон и почты одина�
   const contacts = fs.readFileSync(path.join(OUT, 'contacts/index.html'), 'utf8');
   assert.match(contacts, /api-maps\.yandex\.ru\/services\/constructor/);
   assert.match(contacts, /um=constructor%3Aa8d08a63a123d9f4c185b078f16346fecf535c1601c3cf87b6a2bd434e44e2c7/);
+
+  // скрипт карты стоит внутри #yandex-map, а не после подвала
+  const mapBlock = contacts.slice(contacts.indexOf('id="yandex-map"'), contacts.indexOf('</footer>'));
+  assert.match(mapBlock, /api-maps\.yandex\.ru\/services\/constructor/,
+    'скрипт карты внутри блока карты');
+  const withoutMap = contacts.slice(0, contacts.indexOf('id="yandex-map"'))
+    + contacts.slice(contacts.indexOf('</footer>'));
+  assert.doesNotMatch(withoutMap, /api-maps\.yandex\.ru/,
+    'именно скрипт: вне блока карты его быть не должно');
+
+  // фолбэк прячется, как только отработал JS (no-js / map--failed)
+  const js = fs.readFileSync(path.join(ROOT, 'site/static/js/site.js'), 'utf8');
+  assert.match(js, /classList\.remove\('no-js'\)/, 'site.js снимает класс no-js');
+  const css = fs.readFileSync(path.join(ROOT, 'site/static/css/site.css'), 'utf8');
+  assert.match(css, /\.no-js \.map__fallback/, 'фолбэк виден без JS');
+  assert.match(css, /\.map--failed \.map__fallback/, 'фолбэк виден при ошибке загрузки карты');
+  assert.match(css, /\.map__fallback \{[^}]*display: none/, 'в обычном режиме фолбэка не видно');
 });

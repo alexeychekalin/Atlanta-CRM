@@ -2303,10 +2303,28 @@ ul {
   color: var(--muted);
 }
 
+/* Фолбэк карты: виден, только если JS выключен (.no-js) или конструктор
+   не загрузился (.map--failed). Иначе карта занимает блок целиком. */
 .map__fallback {
+  display: none;
   margin: 0;
   padding: 28px 24px;
   color: var(--muted);
+  line-height: 1.6;
+}
+
+.map__fallback .muted {
+  font-size: 14px;
+}
+
+.no-js .map__fallback,
+.map--failed .map__fallback {
+  display: block;
+}
+
+.no-js .map__frame,
+.map--failed .map__frame {
+  min-height: 0;
 }
 
 .contact-card__mail {

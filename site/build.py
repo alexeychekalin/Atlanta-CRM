@@ -689,7 +689,7 @@ class Site:
 </header>
 '''
 
-    def footer(self, scripts=''):
+    def footer(self):
         contacts = self.content['contacts']
         emails = ''.join(
             f'<a href="mailto:{esc(item)}">{esc(item)}</a>'
@@ -737,7 +737,6 @@ class Site:
   </div>
 </footer>
 <script src="/static/js/site.js?v={asset_version('js/site.js')}" defer></script>
-{scripts}
 </body>
 </html>
 '''
@@ -764,17 +763,11 @@ class Site:
         return html.replace('</head>', f'  {meta}\n</head>', 1)
 
     def page(self, title, description, canonical, body, current='', schemas=None,
-             og_image='', extra_scripts=None):
-        """Страница целиком.
-
-        extra_scripts — теги в конце <body>, после site.js: карта Яндекса
-        подключается там же, где и остальные скрипты, и не тормозит вёрстку.
-        """
+             og_image=''):
+        """Страница целиком."""
         extra = ''.join(self.ld(item) for item in (schemas or []))
-        scripts = ''.join(f'<script src="{esc(item)}" async></script>'
-                          for item in (extra_scripts or []))
         return (self.head(title, description, canonical, og_image=og_image, extra=extra) + self.header(current) +
-                f'<main id="main">{body}</main>\n' + self.footer(scripts))
+                f'<main id="main">{body}</main>\n' + self.footer())
 
     # ------------------------------------------------------------ микроразметка
     @staticmethod
@@ -1819,8 +1812,9 @@ class Site:
     <div class="map">
       <div class="map__frame" id="yandex-map" role="region"
            aria-label="Карта: {esc(contacts['production']['address'])}">
-        <noscript><p class="map__fallback">Для карты нужен JavaScript.
-          Адрес производства: {esc(contacts['production']['address'])}</p></noscript>
+        <p class="map__fallback">Адрес производства: {esc(contacts['production']['address'])}<br>
+          <span class="muted">Карта не загрузилась — позвоните, подскажем дорогу.</span></p>
+        <script src="{esc(map_src)}" onerror="this.parentNode.classList.add('map--failed')"></script>
       </div>
     </div>
     <p class="muted">{esc(map_data['note'])}</p>
@@ -1831,8 +1825,7 @@ class Site:
         return self.page('Контакты', 'Телефон, почта и карта проезда к производству АТЛАНТА '
                          'в Липецкой области.',
                          '/contacts/', body, current='contacts',
-                         schemas=[self.schema_breadcrumbs([('Главная', '/'), ('Контакты', '/contacts/')])],
-                         extra_scripts=[map_src])
+                         schemas=[self.schema_breadcrumbs([('Главная', '/'), ('Контакты', '/contacts/')])])
 
     def privacy_page(self):
         body = f'''

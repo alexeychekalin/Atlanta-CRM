@@ -2,6 +2,10 @@
 (function () {
   'use strict';
 
+  /* JS работает — включаем то, что без него не нужно (стрелки слайдера,
+     фолбэк карты прячем) */
+  document.documentElement.classList.remove('no-js');
+
   /* ------------------------------------------------------------ меню */
   var burger = document.querySelector('.burger');
   var nav = document.querySelector('.nav');
