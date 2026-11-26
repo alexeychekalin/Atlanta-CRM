@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { normalizeUploadPath } = require('../utils/files');
+const { usageColumn, usageOrder } = require('../services/modification-order');
 
 const router = express.Router();
 
@@ -27,7 +28,7 @@ router.get('/', auth, async (req, res) => {
         COALESCE((
           SELECT json_agg(json_build_object('id', cm.id, 'code', cm.code, 'name', cm.name,
                                             'full_article', cm.full_article)
-                          ORDER BY cm.sort_order, cm.code)
+                          ORDER BY ${usageOrder('cm')})
           FROM component_modifications cm WHERE cm.component_id = c.id
         ), '[]'::json) AS modifications
       FROM components c
@@ -86,9 +87,11 @@ router.get('/:id', auth, async (req, res) => {
 
     const comp = result.rows[0];
 
-    // Загрузить модификации с фото
+    // Загрузить модификации с фото. Ходовые исполнения — выше: у габаритных
+    // фонарей их десятки, и менеджеру нужен тот, что применяется чаще.
     const modsRes = await db.query(
       `SELECT cm.*,
+        ${usageColumn('cm')},
         COALESCE(
           (SELECT json_agg(json_build_object('id', cmi.id, 'image_path', cmi.image_path, 'sort_order', cmi.sort_order) ORDER BY cmi.sort_order, cmi.id)
            FROM component_modification_images cmi WHERE cmi.modification_id = cm.id
@@ -96,7 +99,7 @@ router.get('/:id', auth, async (req, res) => {
         ) as images
        FROM component_modifications cm
        WHERE cm.component_id = $1
-       ORDER BY cm.sort_order, cm.code`,
+       ORDER BY ${usageOrder('cm')}`,
       [req.params.id]
     );
     comp.modifications = modsRes.rows;

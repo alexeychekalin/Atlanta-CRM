@@ -759,6 +759,36 @@ test('каталог: у А.3776.006 — 25 исполнений по черте
     ['кабель 0,5 м с открытым концом']);
 });
 
+test('каталог: импорт ставит sort_order из документа, а без него — порядок списка', async () => {
+  const inserts = [];
+  const runner = {
+    query: async (sql, params) => {
+      if (/^SELECT id, name FROM component_modifications/.test(sql.trim())) {
+        return { rows: [] };                    // всё новое
+      }
+      if (/^INSERT INTO component_modifications/.test(sql.trim())) {
+        inserts.push(params);
+        return { rows: [{ id: 100 + inserts.length }] };
+      }
+      return { rows: [], rowCount: 1 };
+    },
+  };
+
+  await ensureModifications(runner, 3, {
+    article: 'А.3731.010-01',
+    modifications: [
+      // порядок строки таблицы чертежа: 10, затем 20, хотя в списке они наоборот
+      { code: '01.20', name: 'вторая строка', full_article: 'А.3731.010-01.20', sort_order: 10 },
+      { code: '01.10', name: 'первая строка', full_article: 'А.3731.010-01.10', sort_order: 5 },
+      // позиции без sort_order — как раньше: по индексу в списке
+      { code: '01.30', name: 'без порядка' },
+    ],
+  });
+
+  assert.deepEqual(inserts.map(row => row[4]), [10, 5, 2],
+    'sort_order из документа главнее индекса; без него — индекс');
+});
+
 test('каталог: rename_from меняет прежнее название, правку из интерфейса не трогает', async () => {
   const updates = [];
   const rows = { '02.02': { id: 11, name: 'кабель 0,5 м с открытым концом' },

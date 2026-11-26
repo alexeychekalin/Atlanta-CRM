@@ -2,14 +2,18 @@ const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { normalizeUploadPath } = require('../utils/files');
+const { usageColumn, usageOrder } = require('../services/modification-order');
 
 const router = express.Router({ mergeParams: true });
 
 // GET /api/components/:id/modifications — список модификаций компонента
 router.get('/', auth, async (req, res) => {
   try {
+    // Ходовые исполнения — выше. Порядок тот же, что в карточке компонента
+    // и калькуляторе (см. services/modification-order).
     const modsRes = await db.query(
-      `SELECT cm.*, 
+      `SELECT cm.*,
+        ${usageColumn('cm')},
         COALESCE(
           (SELECT json_agg(json_build_object('id', cmi.id, 'image_path', cmi.image_path, 'sort_order', cmi.sort_order) ORDER BY cmi.sort_order, cmi.id)
            FROM component_modification_images cmi WHERE cmi.modification_id = cm.id
@@ -17,7 +21,7 @@ router.get('/', auth, async (req, res) => {
         ) as images
        FROM component_modifications cm
        WHERE cm.component_id = $1
-       ORDER BY cm.sort_order, cm.code`,
+       ORDER BY ${usageOrder('cm')}`,
       [req.params.id]
     );
     res.json({ data: modsRes.rows });

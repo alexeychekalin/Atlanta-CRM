@@ -360,10 +360,14 @@ async function ensureModifications(runner, componentId, entry) {
       continue;
     }
 
+    // sort_order из документа — порядок строк в таблице чертежа; без него
+    // порядок задаёт индекс в списке, чтобы поведение не менялось у позиций,
+    // которые его не задают.
+    const sortOrder = Number.isInteger(mod.sort_order) ? mod.sort_order : i;
     const inserted = await runner.query(
       `INSERT INTO component_modifications (component_id, code, name, full_article, sort_order)
        VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [componentId, mod.code, mod.name || null, mod.full_article || null, i]
+      [componentId, mod.code, mod.name || null, mod.full_article || null, sortOrder]
     );
     items.push({ id: inserted.rows[0].id, mod });
     created += 1;

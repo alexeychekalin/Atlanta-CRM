@@ -148,8 +148,10 @@ test('каталог: семейства по стороне описаны в c
   const children = components.filter(c => c.split_from);
   assert.equal(children.length, 37, 'новых изделий по стороне');
 
+  // 1186 = 1003 + 183 исполнения А.3731.010 из чертежа (69 длин/способов
+  // подключения × передний/задний/боковой), которых раньше не было в каталоге.
   const total = components.reduce((sum, c) => sum + (c.modifications || []).length, 0);
-  assert.equal(total, 1003, 'число исполнений не изменилось');
+  assert.equal(total, 1186, 'число исполнений не изменилось');
 
   for (const family of families) {
     assert.ok(family.article && family.name, 'у семейства нет артикула или названия');
