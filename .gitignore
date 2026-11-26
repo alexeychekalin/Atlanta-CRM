@@ -11,6 +11,9 @@ server/.env
 server/.env.*
 !server/.env.example
 
+# Дампы базы и архив загрузок (scripts/backup-db.sh) — не в git
+backups/
+
 # User uploads and runtime files
 server/uploads/*
 !server/uploads/.gitkeep

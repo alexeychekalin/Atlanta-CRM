@@ -752,15 +752,56 @@ python3 site/publish.py --to /var/www/atlanta --dry-run          # что изм
 
 ## 🛟 Резервное копирование
 
+**Перед любой заливкой каталога или миграцией — сначала бэкап.**
+
+```bash
+cd /opt/atlanta-crm && sudo ./scripts/backup-db.sh
+```
+
+Скрипт берёт `DATABASE_URL` из `server/.env` и делает три вещи:
+
+1. `pg_dump -Fc` — дамп базы (включая роли и владельцев) в `backups/`;
+2. **проверяет дамп** через `pg_restore --list`: читается ли файл и есть ли в нём
+   таблицы `components`, `component_modifications`, `clients`, `drawings`, `leads`;
+   если дамп битый или пустой — скрипт завершается с ошибкой и ничего не объявляет успехом;
+3. пакует `server/uploads/` (фото каталога, чертежи, документы клиентов) в архив
+   и кладёт рядом `.sha256` на оба файла.
+
+Держит последние 7 копий (`--keep N`), лишние удаляет. Каталог можно сменить:
+`--dir /mnt/backups`. Только база: `--no-uploads`.
+
+Восстановление (сервис остановить, иначе приложение пишет в базу во время отката):
+
+```bash
+cd /opt/atlanta-crm
+sudo systemctl stop atlanta-crm
+PGPASSWORD='<пароль из server/.env>' pg_restore -h localhost -U atlanta_user -d atlanta_crm \
+  --clean --if-exists --single-transaction backups/atlanta_crm_<дата>.dump
+tar xzf backups/uploads_<дата>.tar.gz -C server
+sudo systemctl start atlanta-crm
+```
+
+`--clean --if-exists` удаляет старые таблицы и заливает данные заново —
+база возвращается ровно к состоянию на момент дампа. `--single-transaction`
+означает «всё или ничего»: при обрыве база остаётся прежней, а ненаполовину восстановленной.
+
+Проверить целостность файла перед восстановлением:
+
+```bash
+cd backups && sha256sum -c atlanta_crm_<дата>.dump.sha256
+```
+
+Без скрипта, вручную (то же самое, но без проверки):
+
 ```bash
 # Дамп базы
-pg_dump -h localhost -U atlanta_user atlanta_crm > backup_$(date +%Y%m%d_%H%M%S).sql
+pg_dump -h localhost -U atlanta_user -Fc atlanta_crm > backup_$(date +%Y%m%d_%H%M%S).dump
 
 # Бэкап загруженных файлов: фото каталога, чертежи, документы, вложения клиентов
 tar czf uploads_backup_$(date +%Y%m%d).tar.gz /opt/atlanta-crm/server/uploads/
 
 # Восстановление из дампа
-psql -h localhost -U atlanta_user atlanta_crm < backup_XXXXXXXX.sql
+pg_restore -h localhost -U atlanta_user -d atlanta_crm --clean --if-exists backup_XXXXXXXX.dump
 ```
 
 Фото каталога после импорта лежат в `server/uploads/images/` под именами
