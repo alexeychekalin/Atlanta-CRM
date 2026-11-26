@@ -3,11 +3,56 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 const auth = require('../middleware/auth');
+const { rateLimit } = require('express-rate-limit');
 
 const router = express.Router();
 
+// Защита от подбора паролей: 10 неудачных попыток за 15 минут с одного IP
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: 'Слишком много попыток входа. Повторите через 15 минут.' },
+});
+
+const {
+  parseSessionTtl, cookieMaxAgeMs, renewThresholdSeconds,
+} = require('../services/session');
+
+// Срок сессии — из SESSION_TTL (см. services/session.js). По умолчанию 7 суток:
+// 12 часов не хватало — менеджеры работали в CRM целый день и теряли сессию.
+// Значение проверяем при загрузке: опечатка в .env должна падать сразу и
+// с понятным текстом, а не на первом входе пользователя.
+const SESSION = parseSessionTtl();
+const TOKEN_TTL = SESSION.value;
+const COOKIE_MAX_AGE_MS = cookieMaxAgeMs(SESSION.seconds);
+const RENEW_AFTER_SECONDS = renewThresholdSeconds(SESSION.seconds);
+
+function setAuthCookie(res, token) {
+  res.cookie('atlanta_token', token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.COOKIE_SECURE === 'true',
+    maxAge: COOKIE_MAX_AGE_MS,
+    path: '/',
+  });
+}
+
+/**
+ * Токен пора продлить? Смотрим на issued-at (iat), которое jsonwebtoken
+ * кладёт в токен: продлеваем не на каждом запросе, а когда прошла половина
+ * срока (SESSION_RENEW_AFTER). Так активная работа не упирается в истечение,
+ * но токен не перевыпускается на каждый чих.
+ */
+function needsRenewal(user) {
+  if (!user || !user.iat) return false;
+  return Date.now() - user.iat * 1000 >= RENEW_AFTER_SECONDS * 1000;
+}
+
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { username, password } = req.body;
 
@@ -46,11 +91,13 @@ router.post('/login', async (req, res) => {
         username: user.username, 
         full_name: user.full_name, 
         role: effectiveRole,
-        permissions: effectivePermissions,
+        tv: user.token_version || 0,
       },
       process.env.JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: TOKEN_TTL }
     );
+
+    setAuthCookie(res, token);
 
     res.json({
       token,
@@ -69,6 +116,12 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// POST /api/auth/logout — очищает httpOnly-cookie
+router.post('/logout', (req, res) => {
+  res.clearCookie('atlanta_token', { path: '/' });
+  res.json({ ok: true });
+});
+
 // GET /api/auth/me
 router.get('/me', auth, async (req, res) => {
   try {
@@ -79,6 +132,7 @@ router.get('/me', auth, async (req, res) => {
         u.full_name, 
         u.role, 
         u.role_id,
+        u.token_version,
         u.created_at,
         r.name as role_name,
         r.display_name as role_display_name,
@@ -92,6 +146,30 @@ router.get('/me', auth, async (req, res) => {
       return res.status(404).json({ error: 'Пользователь не найден' });
     }
     const user = result.rows[0];
+
+    // Скользящая сессия: клиент зовёт /auth/me при каждом открытии CRM, после
+    // сна вкладки и при возврате в окно. Если прошла половина срока — выдаём
+    // новый токен, чтобы работающего человека не выкинуло посреди дня.
+    // Проверка по iat нужна, чтобы не перевыпускать токен на каждый запрос.
+    if (needsRenewal(req.user)) {
+      const freshToken = jwt.sign(
+        {
+          id: user.id,
+          username: user.username,
+          full_name: user.full_name,
+          role: user.role_name || user.role,
+          tv: user.token_version || 0,
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: TOKEN_TTL }
+      );
+      setAuthCookie(res, freshToken);
+      // Клиент хранит токен ещё и в localStorage — без него после перезагрузки
+      // останется только cookie, и запросы через Authorization перестанут
+      // продлеваться. Отдаём новый токен в ответе, клиент обновит хранилище.
+      res.locals.renewedToken = freshToken;
+    }
+
     res.json({
       id: user.id,
       username: user.username,
@@ -100,6 +178,8 @@ router.get('/me', auth, async (req, res) => {
       role_display_name: user.role_display_name || user.role,
       permissions: user.role_permissions || {},
       created_at: user.created_at,
+      // новый токен — только если сессию продлили; клиент заменит свой
+      ...(res.locals.renewedToken ? { token: res.locals.renewedToken } : {}),
     });
   } catch (err) {
     console.error('Ошибка получения пользователя:', err);

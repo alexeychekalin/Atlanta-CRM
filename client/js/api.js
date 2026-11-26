@@ -49,31 +49,15 @@ const API = {
       return sp && sp.view === true;
     }
 
-    const permissions = user.permissions;
-    if (!permissions) {
-      if (user.role === 'manager') {
-        if (section === 'settings') return false;
-        if (action === 'delete' && (section === 'clients' || section === 'components')) return false;
-        return true;
-      }
-      if (user.role === 'technologist') {
-        if (section === 'reports' || section === 'settings') return false;
-        if (action === 'delete' && (section === 'orders' || section === 'clients')) return false;
-        return true;
-      }
-      if (user.role === 'viewer') {
-        return action === 'view' && section !== 'settings';
-      }
-      return false;
-    }
-
+    // Права приходят с сервера из БД; при их отсутствии доступ закрыт
+    const permissions = user.permissions || {};
     const sectionPerms = permissions[section];
     if (!sectionPerms) return false;
 
     if (action === 'view') {
-      return sectionPerms.view !== false;
+      return sectionPerms.view === true;
     }
-    return !!sectionPerms[action];
+    return sectionPerms[action] === true;
   },
 
   getRoleDisplayName() {
@@ -120,6 +104,7 @@ const API = {
     const config = {
       method,
       headers,
+      credentials: 'same-origin',
     };
 
     if (body) {
@@ -128,19 +113,37 @@ const API = {
 
     const response = await fetch(this.baseUrl + path, config);
 
-    if (response.status === 401) {
+    if (response.status === 401 && !path.startsWith('/auth/login')) {
       // Гость — не перезагружаем, просто показываем ошибку
       if (this.isGuest()) {
         throw new Error('Требуется авторизация');
       }
       this.removeToken();
-      window.location.reload();
+      // Сбрасываем httpOnly-cookie, иначе после перезагрузки снова придёт 401
+      fetch(this.baseUrl + '/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+      // Показываем экран входа с пояснением; hash сохраняется, поэтому после
+      // повторного входа пользователь вернётся на ту же страницу.
+      try { sessionStorage.setItem('atlanta_session_expired', '1'); } catch (e) { /* private mode */ }
+      if (window.App && typeof App.showLogin === 'function') {
+        App.showLogin();
+      } else {
+        window.location.reload();
+      }
       throw new Error('Сессия истекла');
     }
 
     if (isBlob) {
       if (!response.ok) {
-        throw new Error('Ошибка экспорта');
+        // Сервер отвечает JSON-ошибкой и на скачивание (пустой архив, нет прав) —
+        // показываем её текст вместо общего «Ошибка экспорта».
+        let message = 'Ошибка экспорта';
+        try {
+          const data = await response.json();
+          if (data && data.error) message = data.error;
+        } catch (e) {
+          /* ответ не JSON — оставляем общий текст */
+        }
+        throw new Error(message);
       }
       return response.blob();
     }
@@ -148,7 +151,11 @@ const API = {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.error || 'Произошла ошибка');
+      const error = new Error(data.error || 'Произошла ошибка');
+      // Статус и тело ответа нужны UI, например чтобы отличить 409 «дубликат файла»
+      error.status = response.status;
+      error.data = data;
+      throw error;
     }
 
     return data;
@@ -158,6 +165,10 @@ const API = {
   post(path, body) { return this.request('POST', path, body); },
   put(path, body) { return this.request('PUT', path, body); },
   del(path) { return this.request('DELETE', path); },
+  // `delete` — зарезервированное слово, но ключом объекта оно законно:
+  // оставлено псевдонимом к `del`, чтобы вызовы API.delete(...) не падали
+  // с «API.delete is not a function».
+  delete(path) { return this.request('DELETE', path); },
   patch(path, body) { return this.request('PATCH', path, body); },
   getBlob(path) { return this.request('GET', path, null, true); },
   upload(path, formData) { return this.request('POST', path, formData); },
@@ -178,5 +189,6 @@ const API = {
 
   logout() {
     this.removeToken();
+    fetch(this.baseUrl + '/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
   },
 };

@@ -38,11 +38,17 @@ async function migrate() {
         permissions: {
           dashboard: { view: true },
           orders: { view: true, edit: true, delete: true },
+          proposals: { view: true, edit: true, delete: true },
           clients: { view: true, edit: true, delete: true },
+          // Заявки с сайта: админ видит, обрабатывает и удаляет спам
+          leads: { view: true, edit: true, delete: true },
           calculator: { view: true, edit: true },
           drawings: { view: true, edit: true, delete: true },
           components: { view: true, edit: true, delete: true },
+          equipment: { view: true, edit: true, delete: true },
           reports: { view: true, export: true },
+          // Библиотека документов: админ создаёт папки, грузит и удаляет файлы
+          documents: { view: true, edit: true, delete: true },
           settings: { view: true, edit: true },
         },
       },
@@ -54,11 +60,16 @@ async function migrate() {
         permissions: {
           dashboard: { view: true },
           orders: { view: true, edit: true, delete: false },
+          proposals: { view: true, edit: true, delete: false },
           clients: { view: true, edit: true, delete: false },
+          leads: { view: true, edit: true, delete: false },
           calculator: { view: true, edit: true },
           drawings: { view: true, edit: true, delete: false },
           components: { view: true, edit: false, delete: false },
+          equipment: { view: true, edit: false, delete: false },
           reports: { view: true, export: true },
+          // Документы: сотрудники смотрят и скачивают, меняет администратор
+          documents: { view: true, edit: false, delete: false },
           settings: { view: false, edit: false },
         },
       },
@@ -70,11 +81,15 @@ async function migrate() {
         permissions: {
           dashboard: { view: true },
           orders: { view: true, edit: false, delete: false },
+          proposals: { view: true, edit: false, delete: false },
           clients: { view: true, edit: false, delete: false },
+          leads: { view: true, edit: false, delete: false },
           calculator: { view: true, edit: true },
           drawings: { view: true, edit: true, delete: true },
           components: { view: true, edit: true, delete: true },
+          equipment: { view: true, edit: false, delete: false },
           reports: { view: false, export: false },
+          documents: { view: true, edit: false, delete: false },
           settings: { view: false, edit: false },
         },
       },
@@ -86,11 +101,15 @@ async function migrate() {
         permissions: {
           dashboard: { view: true },
           orders: { view: true, edit: false, delete: false },
+          proposals: { view: true, edit: false, delete: false },
           clients: { view: true, edit: false, delete: false },
+          leads: { view: true, edit: false, delete: false },
           calculator: { view: true, edit: false },
           drawings: { view: true, edit: false, delete: false },
           components: { view: true, edit: false, delete: false },
+          equipment: { view: true, edit: false, delete: false },
           reports: { view: true, export: true },
+          documents: { view: true, edit: false, delete: false },
           settings: { view: false, edit: false },
         },
       },
@@ -103,25 +122,29 @@ async function migrate() {
           dashboard: { view: false },
           orders: { view: false, edit: false, delete: false },
           clients: { view: false, edit: false, delete: false },
+          leads: { view: false, edit: false, delete: false },
           calculator: { view: false, edit: false },
           drawings: { view: false, edit: false, delete: false },
           components: { view: false, edit: false, delete: false },
           equipment: { view: false, edit: false, delete: false },
           proposals: { view: false, edit: false, delete: false },
           reports: { view: false, export: false },
+          documents: { view: false, edit: false, delete: false },
           settings: { view: false, edit: false },
         },
       },
     ];
 
     for (const r of defaultRoles) {
+      // Новые разделы добавляем, но уже настроенные администратором права не перезаписываем
       await db.query(`
         INSERT INTO roles (name, display_name, description, is_system, permissions)
         VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (name) DO UPDATE SET
           display_name = EXCLUDED.display_name,
           is_system = EXCLUDED.is_system,
-          description = EXCLUDED.description;
+          description = EXCLUDED.description,
+          permissions = EXCLUDED.permissions || roles.permissions;
       `, [r.name, r.display_name, r.description, r.is_system, JSON.stringify(r.permissions)]);
     }
     console.log('✅ Базовые роли заполнены/обновлены');

@@ -96,7 +96,7 @@ const DashboardPage = {
                     <tr style="cursor:pointer" onclick="OrdersPage.viewOrder(${o.id})" title="Нажмите для просмотра заказа">
                       <td class="font-mono">${o.order_number}</td>
                       <td>${Table.formatDate(o.order_date)}</td>
-                      <td>${o.client_name || '—'}</td>
+                      <td>${esc(o.client_name) || '—'}</td>
                       <td>${Table.statusBadge(o.status)}</td>
                       <td class="text-right">${Table.formatMoney(o.total)}</td>
                     </tr>
@@ -180,7 +180,7 @@ const DashboardPage = {
               ${statusStats.map(s => `
                 <div style="display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;background:${s.color}15;border:1px solid ${s.color}30">
                   <span style="width:8px;height:8px;border-radius:50%;background:${s.color}"></span>
-                  <span style="font-size:0.85rem;color:${s.color};font-weight:600">${s.name}</span>
+                  <span style="font-size:0.85rem;color:${esc(s.color)};font-weight:600">${esc(s.name)}</span>
                   <span style="font-size:0.85rem;font-weight:700;color:var(--text-primary)">${s.count}</span>
                 </div>
               `).join('')}
@@ -244,7 +244,7 @@ const DashboardPage = {
               const statusBadge = c.status_name 
                 ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:${c.status_color}15;color:${c.status_color};font-size:0.78rem;font-weight:600;border:1px solid ${c.status_color}30;white-space:nowrap">
                     <span style="width:6px;height:6px;border-radius:50%;background:${c.status_color}"></span>
-                    ${c.status_name}
+                    ${esc(c.status_name)}
                   </span>`
                 : '<span style="color:var(--text-muted);font-size:0.8rem">—</span>';
 
@@ -258,7 +258,7 @@ const DashboardPage = {
                 <tr style="cursor:pointer" onclick="App.navigateTo('client-profile', ${c.id})">
                   <td>${avatar}</td>
                   <td>
-                    <div style="font-weight:600">${c.name}</div>
+                    <div style="font-weight:600">${esc(c.name)}</div>
                     <div style="font-size:0.75rem;color:var(--text-muted)">${c.phone || c.email || ''}</div>
                   </td>
                   <td>${statusBadge}</td>

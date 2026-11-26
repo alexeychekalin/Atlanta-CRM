@@ -9,6 +9,135 @@
 | Диск | 10 GB | 20 GB |
 | ОС | Ubuntu 22.04 LTS | Ubuntu 24.04 LTS |
 
+> 📘 Пошаговый сценарий «сервер + домен + сайт + поддомен crm + HTTPS»
+> с чек-листом проверки — в [`docs/deploy-vps.md`](docs/deploy-vps.md).
+
+---
+
+## 🧩 Варианты наполнения базы
+
+Одна и та же сборка разворачивается с разным набором данных. Выбирать нужно **на этапе
+установки** — всё, что относится к структуре, создаётся в любом случае.
+
+**Всегда создаётся:** таблицы, справочники (статусы клиентов, уровни цен, типы техники,
+категории компонентов), роли и права, пользователи `admin` и `viewer`, принципал «Атланта».
+
+Три переключателя задают, что добавить сверху:
+
+| Переключатель | Что включает | По умолчанию |
+|---|---|---|
+| `WITH_CATALOG=1` | каталог АТЛАНТА-26: 11 категорий, 192 позиции, 1003 модификации, 425 фото в галереях и у исполнений (цены `0`), включая 124 семейства жгутов | выключен |
+| `SEED_DEMO=0` | **выключает** демонстрационные записи: 3 клиента, 5 услуг, 4 заказа | демо включено |
+| `SKIP_PRESEED=1` | **выключает** 8 реальных клиентов из предзаполнения с карточками предприятий | предзаполнение включено |
+
+Отсюда четыре готовых рецепта:
+
+| Вариант | Что в базе | Команда |
+|---|---|---|
+| **Полная витрина** — показать систему целиком | всё: клиенты, демо-заказы, каталог | `sudo WITH_CATALOG=1 ./deploy.sh` |
+| **Рабочая** — запуск в производство | реальные клиенты и каталог, без демо-мусора | `sudo WITH_CATALOG=1 SEED_DEMO=0 ./deploy.sh` |
+| **Пустая** — каталог заполнят вручную | клиенты и справочники, каталог пуст | `sudo SEED_DEMO=0 ./deploy.sh` |
+| **Совсем чистая** — структура под свой импорт | только структура, справочники и `admin` | `sudo SEED_DEMO=0 SKIP_PRESEED=1 ./deploy.sh` |
+
+Переключатели можно комбинировать свободно:
+
+```bash
+# всё, кроме каталога
+sudo SEED_DEMO=0 ./deploy.sh
+
+# каталог и клиенты, но и демо-заказы тоже (если нужна витрина на реальных клиентах)
+sudo WITH_CATALOG=1 ./deploy.sh
+```
+
+### Как это устроено
+
+Контрагентов и каталог загружает **один скрипт** — `server/src/db/data.js` (`npm run db:data`).
+`deploy.sh` вызывает его один раз после миграций, поэтому данные приезжают вместе и одной сводкой:
+
+| Переменная | Что делает |
+|---|---|
+| `WITH_CATALOG=1` | добавляет каталог АТЛАНТА-26 — жгуты входят в него (124 семейства, 581 исполнение) |
+| `SKIP_PRESEED=1` | не загружает 14 контрагентов из карточек предприятий |
+
+Оба импорта идемпотентны: контрагенты ищутся по ИНН (без ИНН — по названию), позиции каталога —
+по артикулу, исполнения — по коду внутри семейства. Повторный запуск ничего не дублирует и не
+перезаписывает правки из интерфейса. В конце печатается сводка по фактическим счётчикам:
+
+```
+📊 Итого в базе: клиенты 11, позиции каталога 192, модификации 1003
+```
+
+Если после деплоя в логе есть «Наполнение: часть данных не загрузилась» — скрипт вернул
+ненулевой код, причина напечатана выше (раньше ошибки предзаполнения скрывались).
+
+### Догрузить данные позже
+
+Пустую версию можно догнать до полной без переустановки: импорт идемпотентен, цены и правки
+из интерфейса не затираются, у существующих позиций дозаполняются только пустые поля.
+
+```bash
+cd /opt/atlanta-crm/server
+WITH_CATALOG=1 npm run db:data   # контрагенты + каталог (идемпотентно)
+touch .catalog-enabled           # чтобы update.sh обновлял каталог и дальше
+```
+
+Точечно: `npm run db:catalog` — только каталог, `npm run db:preseed` — только контрагенты.
+Контрагентов можно догрузить и в пустую версию: `npm run db:preseed`.
+
+Исполнения А.3731.010 (183 позиции из чертежа) заливаются тем же `npm run db:catalog`:
+новые коды добавляются, у уже заведённых дозаполняется только пустой артикул.
+Названия прежних восьми строк обновляются через `rename_from` — если название
+правили в карточке, правка остаётся. Порядок исполнений в карточке и калькуляторе
+ставится по фактическому применению (чертежи клиентов + изделия изготовителя),
+поэтому перед первым показом стоит прогнать миграции — они добавляют индексы
+`modification_id`, без которых агрегат считается по всей таблице:
+
+```bash
+cd /opt/atlanta-crm/server
+npm run db:migrate   # индексы применения; update.sh делает это сам
+npm run db:catalog   # 183 исполнения А.3731.010
+```
+
+Пустые поля уже заведённых карточек (`db:data` вызывает предзаполнение с `--fill-empty`)
+дополняются из `clients.json` автоматически: правки из интерфейса не затираются, а новые
+реквизиты из присланных карточек доезжают до базы при обновлении.
+
+Перезаписать реквизиты целиком можно только по явной команде:
+`npm run db:preseed -- --refresh --dry-run` покажет расхождения, `--refresh` их запишет.
+Непустые значения из `clients.json` перезаписывают поля карточки, пустые — никогда.
+
+Без маркера `server/.catalog-enabled` скрипт обновления каталог не трогает. Обратная
+операция (убрать каталог) не предусмотрена — позиции удаляются только вручную.
+
+### Проверить, что получилось
+
+```bash
+cd /opt/atlanta-crm/server
+node -e "
+const db = require('./src/db');
+(async () => {
+  for (const t of ['clients','orders','components','component_modifications','component_categories'])
+    console.log(t, (await db.query('SELECT count(*)::int c FROM ' + t)).rows[0].c);
+  const sql = \"SELECT count(DISTINCT c.id)::int AS families, count(cm.id)::int AS executions \" +
+    \"FROM components c JOIN component_categories cc ON cc.id = c.category_id \" +
+    \"LEFT JOIN component_modifications cm ON cm.component_id = c.id \" +
+    \"WHERE cc.name = 'Электропровода (жгуты)'\";
+  console.log('жгуты', (await db.query(sql)).rows[0]);
+  await db.close();
+})();
+"
+```
+
+Ожидаемые числа для полной витрины: клиенты 11 (3 демо + 8 из предзаполнения), заказы 4,
+позиции каталога 192, модификации 1003, жгуты — 124 семейства и 581 исполнение.
+Для рабочей версии — клиенты 8, заказы 0, каталог 192, жгуты те же 124 / 581.
+
+> Пароли `admin/admin123` и `viewer/viewer123` — стартовые. Смените их сразу после установки.
+> Повторный `./deploy.sh` пересоздаёт пользователей и **сбрасывает пароль `admin` на
+> `admin123`** (так устроен `seed.js`); `update.sh` этого не делает.
+>
+> Цены в каталоге не публикуются: после импорта `price = 0`, их заполняют в интерфейсе.
+
 ---
 
 ## Вариант 1: Быстрый запуск через скрипт
@@ -22,17 +151,20 @@ cd /opt/atlanta-crm
 
 # 2. Сделайте скрипт исполняемым и запустите
 chmod +x deploy.sh
-sudo ./deploy.sh
+sudo WITH_CATALOG=1 SEED_DEMO=0 ./deploy.sh     # любой рецепт из таблицы выше
 ```
 
 Скрипт выполнит:
 - Установку Node.js 20, PostgreSQL 17, Nginx
 - Создание базы данных и пользователя
 - Применение схемы и всех миграций
-- Заполнение тестовых данных (seed)
+- Наполнение базы по выбранному варианту одним шагом: контрагенты и каталог (см. раздел выше); выбранный набор печатается в шапке
 - Настройку Nginx (проксирование порт 80 → 3000)
 - Создание systemd-сервиса для автозапуска
 - Настройку UFW-файрвола
+
+Переменные окружения передаются перед `./deploy.sh` — `sudo` их пробрасывает:
+`sudo WITH_CATALOG=1 SEED_DEMO=0 SKIP_PRESEED=1 ./deploy.sh`.
 
 ---
 
@@ -80,8 +212,7 @@ EOF
 ### Шаг 5. Загрузка и установка проекта
 
 ```bash
-# Клонируйте проект
-git clone https://github.com/alexeychekalin/AtlantaCRM-deploy.git /opt/atlanta-crm
+git clone https://github.com/alexeychekalin/Atlanta-CRM.git /opt/atlanta-crm
 cd /opt/atlanta-crm
 
 # Установите зависимости
@@ -99,23 +230,31 @@ NODE_ENV=production
 EOF
 ```
 
-### Шаг 7. Инициализация базы данных
+### Шаг 7. Инициализация базы данных под выбранный вариант
+
+Схему, миграции, роли и справочники накатывают npm-скрипты — тот же путь, что и в `deploy.sh`:
 
 ```bash
-cd /opt/atlanta-crm
+cd /opt/atlanta-crm/server
 
-# Основная схема
-PGPASSWORD=ЗАМЕНИТЕ_НА_СВОЙ_ПАРОЛЬ psql -h localhost -U atlanta_user -d atlanta_crm -f server/src/db/schema.sql
+# пустая версия: структура, справочники, пользователи, клиенты из предзаполнения
+npm run db:init
 
-# Миграции (все безопасны для повторного запуска)
-for migration in server/src/db/migration_*.sql; do
-  echo "Applying: $migration"
-  PGPASSWORD=ЗАМЕНИТЕ_НА_СВОЙ_ПАРОЛЬ psql -h localhost -U atlanta_user -d atlanta_crm -f "$migration"
-done
+# полная версия: то же + каталог компонентов (включая жгуты)
+npm run db:init:full
 
-# Тестовые данные (опционально)
-cd server && node src/db/seed.js && cd ..
+# данные одним шагом после структуры: контрагенты + каталог
+WITH_CATALOG=1 npm run db:data
+
+# без демо-записей (3 клиента, 5 услуг, 4 заказа) и/или без предзаполнения клиентов
+SEED_DEMO=0 npm run db:init
+SKIP_PRESEED=1 SEED_DEMO=0 npm run db:init
 ```
+
+`db:init` = `seed.js` (схема, пользователи, принципал, демо-данные) → `migrate.js` (миграции по
+реестру `schema_migrations`) → `migrate_roles.js` → `preseed.js` (14 контрагентов), плюс `db:catalog`
+в полной версии. `db:data` делает то же наполнение одним шагом (контрагенты → каталог → сводка).
+Все шаги безопасно запускать повторно: существующие записи не дублируются.
 
 ### Шаг 8. Проверка запуска
 
@@ -161,13 +300,31 @@ sudo systemctl status atlanta-crm
 
 ### Шаг 10. Настройка Nginx (проксирование)
 
+Прокси на CRM и статику сайта раскладывает один скрипт — два `server`-блока:
+
 ```bash
 sudo apt install -y nginx
 
+# сайт на основном домене, CRM на поддомене crm.<домен>
+sudo DOMAIN=ваш-домен.ru ./scripts/setup-nginx.sh
+
+# CRM на произвольном поддомене
+sudo DOMAIN=ваш-домен.ru CRM_HOST=system.ваш-домен.ru ./scripts/setup-nginx.sh
+
+# без домена: сайт на :80 (по IP), CRM на :8080
+sudo ./scripts/setup-nginx.sh
+```
+
+Скрипт берёт шаблоны из `deploy/nginx/` (`site.conf`, `crm.conf`), подставляет домен
+и корень сайта, проверяет `nginx -t` и перезагружает nginx. Запускать повторно безопасно.
+
+Ручной вариант того же конфига для CRM:
+
+```bash
 sudo tee /etc/nginx/sites-available/atlanta-crm > /dev/null <<'EOF'
 server {
     listen 80;
-    server_name ваш-домен.ru;  # Или IP сервера
+    server_name crm.ваш-домен.ru;  # или IP сервера
 
     client_max_body_size 50M;
 
@@ -197,6 +354,8 @@ sudo systemctl restart nginx
 sudo ufw allow 22/tcp    # SSH
 sudo ufw allow 80/tcp    # HTTP
 sudo ufw allow 443/tcp   # HTTPS (для будущего SSL)
+# только если домена нет и CRM живёт на :8080
+sudo ufw allow 8080/tcp
 sudo ufw --force enable
 ```
 
@@ -204,24 +363,169 @@ sudo ufw --force enable
 
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d ваш-домен.ru
+sudo certbot --nginx -d ваш-домен.ru -d www.ваш-домен.ru -d crm.ваш-домен.ru
+
+# после HTTPS сессия CRM должна идти только по защищённой cookie
+sed -i 's/^COOKIE_SECURE=.*/COOKIE_SECURE=true/' /opt/atlanta-crm/server/.env
+sudo systemctl restart atlanta-crm
 ```
+
+### Заявки с сайта
+
+Форма на сайте отправляет заявку в CRM — `POST /api/public/leads`. Дальше CRM
+сохраняет её в раздел «Заявки» и уведомляет Telegram и почту. Настройка
+подробно описана в README («Заявки с сайта: подключить Telegram и почту»),
+здесь — что важно именно на сервере.
+
+```bash
+cd /opt/atlanta-crm
+nano server/.env
+```
+
+```bash
+# Telegram: бот пишет в группу отдела продаж и в личку администратору
+TELEGRAM_BOT_TOKEN=123456789:AA…
+TELEGRAM_CHAT_IDS=-1001234567890,123456789
+CRM_PUBLIC_URL=https://crm.ваш-домен.ru
+
+# Сайт и CRM на разных доменах — иначе браузер отрежет ответ формы
+CORS_ORIGINS=https://atlanta.ru,https://www.atlanta.ru
+```
+
+Проверка после перезапуска: в логе `Telegram: уведомления включены, получателей 2`.
+
+```bash
+sudo systemctl restart atlanta-crm
+sudo journalctl -u atlanta-crm -n 20 | grep -i telegram
+
+# тестовая заявка (создаст настоящую запись в CRM)
+curl -X POST https://crm.ваш-домен.ru/api/public/leads \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Проверка","phone":"+7 900 000-00-00","message":"тест"}'
+```
+
+#### Если уведомления в Telegram не приходят
+
+Проверка без ожидания новой заявки — одной командой на сервере:
+
+```bash
+cd /opt/atlanta-crm/server && npm run telegram:check
+# с пробным сообщением в каждый чат
+npm run telegram:check -- --send
+```
+
+Скрипт читает `server/.env`, проверяет токен (`getMe`), видит ли бот каждый
+чат (`getChat`) и может ли писать (`sendMessage`), и объясняет причину:
+кавычки вокруг токена, chat_id не из той группы, бот не добавлен в группу
+или не имеет прав. В карточке заявки причина тоже видна — под строкой
+«✗ Не отправлено».
+
+#### Установка через systemd: где живут переменные
+
+Сервис запускается как `/usr/bin/node server/src/index.js`, а `src/index.js`
+в первой строке читает **`server/.env`**. Значит для systemd-установки все
+переменные — только там, `/etc/systemd/system/atlanta-crm.service` для этого
+править не нужно (в нём достаточно `Environment=NODE_ENV=production`).
+
+Проверить, что видит именно сервис, а не ваша оболочка:
+
+```bash
+sudo systemctl show atlanta-crm -p Environment | tr ' ' '\n'
+sudo -u www-data env -i PATH=/usr/bin:/bin \
+  node -e "require('dotenv').config({path:'/opt/atlanta-crm/server/.env'}); \
+  console.log(require('/opt/atlanta-crm/server/src/services/telegram').describeConfig())"
+sudo journalctl -u atlanta-crm -n 30 | grep -i -E 'telegram|почта'
+```
+
+В логе при старте всегда есть строка `Telegram: …` — в ней либо «включены,
+получателей N», либо конкретная причина, почему нет. После `./update.sh`
+такая же строка печатается последним шагом.
+
+Куда смотреть, если правили настройки:
+
+- `.env` — **это `server/.env`**, а не корневой `.env` (корневой нужен только
+  `docker-compose`). Сервер читает именно `server/.env`.
+- после правки — `sudo systemctl restart atlanta-crm`: без перезапуска
+  процесс работает со старым окружением.
+- `TELEGRAM_CHAT_IDS` — через запятую, без пробелов внутри id: у супергруппы
+  id начинается с `-100`, у личного чата это просто число.
+- бот должен быть **добавлен в группу**; если он был добавлен позже, chat_id
+  группы мог смениться — возьмите актуальный через `getUpdates`.
+- токен нельзя брать в кавычки: `TELEGRAM_BOT_TOKEN=123:AA…`, а не `"123:AA…"`
+  (кавычки попадут в URL и Telegram ответит 404).
+
+В Docker-варианте переменные должны быть в **корневом** `.env` (его читает
+`docker-compose` и передаёт в контейнер) — из `server/.env` контейнер их не
+увидит.
+
+Файлы заявок лежат в `server/uploads/leads` (в git не попадают, как и все
+загрузки). Лимит одного файла — 10 МБ, поэтому `client_max_body_size` в nginx
+для CRM уже 50 МБ и менять его не нужно.
+
+Если Telegram заблокирован в сети сервера, заявки всё равно сохраняются: в
+карточке будет «✗ не отправлено», кнопка «📨 Уведомить» отправит ещё раз.
+
+### Сколько живёт сессия
+
+По умолчанию 7 суток, и срок скользящий: пока сотрудник работает в CRM, сессия
+продлевается сама (при открытии, при возврате во вкладку и раз в час). Чтобы
+изменить срок, добавьте в `/opt/atlanta-crm/server/.env`:
+
+```bash
+SESSION_TTL=30d      # 30m, 12h, 7d, 1w или просто часы: 12
+# SESSION_RENEW_AFTER=12h   # когда продлевать; по умолчанию половина срока
+```
+
+и перезапустите сервис (`sudo systemctl restart atlanta-crm`). Некорректное
+значение не пустит сервер в работу и напишет, что именно не так. Смена пароля
+всё равно завершает старые сессии — так и задумано.
+
+---
+
+## Демо без PostgreSQL (PGlite)
+
+Для показа системы на ноутбуке ставить PostgreSQL не нужно: база собирается в WASM и лежит
+в `.pglite` в корне проекта.
+
+```bash
+cd server
+
+npm run demo:init          # демо-данные без каталога
+npm run demo:init:full     # демо-данные + каталог АТЛАНТА-26
+npm run demo               # http://localhost:3000
+
+npm run demo:catalog       # догрузить каталог в уже созданную демо-базу
+```
+
+Учётные записи те же: `admin/admin123`, `manager/manager123`, `viewer/viewer123`.
+Каталог данных переопределяется `PGLITE_DIR=/path/to/data npm run demo`.
+Демо-база — только для разработки и показа, для боевой установки она не подходит.
 
 ---
 
 ## Альтернатива: Docker Compose
 
-Если на VPS установлен Docker, можно развернуть одной командой:
-
 ```bash
-git clone https://github.com/alexeychekalin/AtlantaCRM-deploy.git /opt/atlanta-crm
+git clone https://github.com/alexeychekalin/Atlanta-CRM.git /opt/atlanta-crm
 cd /opt/atlanta-crm
 
-# Запуск (PostgreSQL + App)
-docker-compose up -d --build
+cat > .env <<EOF
+POSTGRES_PASSWORD=$(openssl rand -hex 16)
+JWT_SECRET=$(openssl rand -hex 32)
+EOF
 
-# Инициализация данных
-docker-compose exec app node server/src/db/seed.js
+docker-compose up -d --build
+```
+
+`docker-compose` монтирует только `schema.sql`. Миграции и наполнение выполняются в контейнере
+после старта — по тем же рецептам:
+
+```bash
+# пустая версия
+docker-compose exec app sh -c "cd server && node src/db/migrate.js && SEED_DEMO=0 node src/db/seed.js && node src/db/migrate_roles.js && node src/db/preseed.js"
+
+# полная версия (добавить каталог)
+docker-compose exec app sh -c "cd server && node src/db/catalog.js"
 ```
 
 ---
@@ -249,29 +553,271 @@ sudo systemctl stop atlanta-crm
 
 ```bash
 cd /opt/atlanta-crm
-git pull origin main
+git pull
+sudo ./update.sh
+```
 
-# Обновить зависимости
-cd server && npm ci --omit=dev && cd ..
+`update.sh` обновляет зависимости, применяет новые миграции, догружает клиентов из
+предзаполнения (существующие не дублируются) и обновляет каталог, **только если он был
+включён при установке** (маркер `server/.catalog-enabled`). Демо-записи и пароли
+пользователей обновление не трогает. Код он не забирает: `git pull` — отдельным шагом,
+до запуска.
 
-# Применить новые миграции
-for migration in server/src/db/migration_*.sql; do
-  PGPASSWORD=ваш_пароль psql -h localhost -U atlanta_user -d atlanta_crm -f "$migration"
-done
+Пятым шагом `update.sh` собирает сайт завода и раскладывает его в `SITE_ROOT`
+(по умолчанию `/var/www/atlanta`). Шаг включается сам, если в `SITE_ROOT` уже лежит наш
+сайт (`index.html` и `search.json`), или флагом `WITH_SITE=1`; `WITH_SITE=0` его
+выключает. Копируются только изменившиеся файлы, лишние удаляются (`--prune`), так что
+выкладка занимает секунды и не требует FTP.
 
-# Перезапустить
+| Переменная | Что задаёт | По умолчанию |
+|---|---|---|
+| `WITH_SITE=1` / `WITH_SITE=0` | включить / выключить сборку и выкладку сайта | сам, если сайт уже лежит в `SITE_ROOT` |
+| `SITE_ROOT` | папка, куда складывается сайт | `/var/www/atlanta` |
+| `SITE_DOMAIN` | домен для канонических ссылок и `sitemap.xml` | из `site/content.json` |
+
+```bash
+cd /opt/atlanta-crm && git pull && sudo WITH_CATALOG=1 ./update.sh
+sudo WITH_SITE=1 SITE_DOMAIN=https://atlanta.ru ./update.sh   # сайт заведомо нужен
+sudo WITH_SITE=0 ./update.sh                                  # только CRM
+```
+
+Если Pillow не установлен, сайт не собирается, но CRM обновляется — в логе будет
+подсказка `pip3 install --break-system-packages pillow`.
+
+Догрузить каталог на установке, где его не было:
+
+```bash
+cd /opt/atlanta-crm && git pull && sudo WITH_CATALOG=1 ./update.sh
+```
+
+### Фото изделий: привести к одному виду
+
+Новые фото нормализуются сами при загрузке (PNG/WebP сохраняются как JPEG). Уже загруженные —
+разовой командой; оригиналы сохраняются в `server/.photo-backup/<дата>`, оттуда их можно вернуть.
+При переименовании `.png` → `.jpg` ссылки в базе обновляются автоматически:
+
+```bash
+cd /opt/atlanta-crm/server
+sudo -u www-data npm run db:normalize-photos -- --dry-run   # сколько файлов изменится
+sudo -u www-data npm run db:normalize-photos -- --all       # + фото без ссылок в базе
+sudo -u www-data npm run db:normalize-photos -- --restore=.photo-backup/2026-11-21_09-35-32
+```
+
+Команда пишет в `server/uploads`, поэтому её запускают от владельца файлов; повторный
+запуск безопасен — нормализованные файлы пропускаются по метке в EXIF.
+
+### Фото изделий: что происходит при обновлении
+
+Обновление (`update.sh` → `src/db/data.js` → импорт каталога) **больше не трогает фото
+позиций, которые уже есть в базе**. Раньше импорт заново прикладывал снимки из
+`catalog.json`, и всё, что убрали в карточке позиции, возвращалось при следующем
+`./update.sh`.
+
+Как это устроено:
+
+- удаление фото в карточке — не `DELETE`, а отметка `deleted_at` (миграция
+  `migration_component_photo_state.sql`). Импорт видит отметку и снимок не возвращает;
+- обложка (`components.image_path`) всегда указывает на живое фото: убрали обложку —
+  встаёт первое оставшееся, убрали последнее — обложки нет, и импорт её не восстановит;
+- вернуть убранное можно в карточке позиции: «Фотографии изделия» → «Убранные фото (N) —
+  вернуть». Там же видно, что снимок убран, а не потерян.
+
+**Новые снимки к уже заведённым позициям** приходят из каталога только по явной команде —
+обычное обновление их пропускает (иначе любая правка в карточке откатывалась бы):
+
+```bash
+cd /opt/atlanta-crm/server
+sudo -u www-data npm run db:catalog-photos            # показать, что нового в каталоге
+sudo -u www-data npm run db:catalog-photos -- --apply # приложить новые снимки
+```
+
+Убранные в карточке снимки эта команда тоже не возвращает — только кнопка «вернуть».
+
+**Сайт.** Фото живут в CRM, а сайт собирается из `catalog.json`, поэтому `update.sh`
+после обновления данных сам выгружает снимки обратно (`scripts/catalog/export_images.js
+--prune`) — снимает с сайта ровно то, что убрали в карточке, и не трогает позиции,
+которых в базе нет. Затем на шаге 5 собирается сайт.
+
+Выгрузка фото **не зависит** от `WITH_CATALOG`: импорт каталога и фото в карточках —
+разные вещи. Раньше шаг стоял внутри `if [ "$WITH_CATALOG" = "1" ]`, и если каталог
+импортировали не через `update.sh` (или установка была без этого флага), правки фото
+не доезжали до сайта вовсе.
+
+Порядок снимков на сайте теперь совпадает с карточкой: переставили фото или сменили
+обложку в CRM — так же будет на сайте. Снимки, которых в карточке уже нет, уходят в
+конец галереи, а не пропадают: в `catalog.json` бывают позиции, которых в базе нет.
+
+Сборка пережимает фото заново, если изменилось содержимое исходника, даже когда файл
+приехал со старым временем (`git checkout`, `rsync`, распаковка). Отпечатки исходников
+лежат в `site/.image-cache/` и в веб-корень не попадают.
+
+Руками, если нужно:
+
+```bash
+cd /opt/atlanta-crm/server
+npm run db:export-site      # фото + ссылки ГИСП из карточек → catalog.json
+npm run db:export-images -- --prune   # только фото
+```
+
+После выгрузки `catalog.json` меняется в рабочем дереве — это нормально: файл
+отслеживается git, и `git reset --hard` вернёт его к версии из репозитория (снимки из
+базы при этом не потеряются, повторная выгрузка их вернёт).
+
+**Если `sudo: ./update.sh: command not found`, а файл на месте** — у скрипта нет права на
+исполнение. В коммитах до 09.11.2026 `update.sh` лежал в git с режимом `644`, поэтому после
+`git pull` его нельзя было запустить через `./`. Право на исполнение уже вернули в git, а на
+сервере до следующего обновления хватит одной команды:
+
+```bash
+sudo chmod +x update.sh && sudo WITH_CATALOG=1 ./update.sh
+# или, не трогая права:
+sudo WITH_CATALOG=1 bash update.sh
+```
+
+Другая причина той же ошибки — файл правили на Windows и в нём CRLF; тогда bash пишет
+`/bin/bash^M: bad interpreter`. Лечится `sed -i 's/\r$//' update.sh`.
+
+### `git pull` пишет «Already up to date», а обновлений нет
+
+Почти всегда это значит, что репозиторий стоит **не на той ветке**. Пока работа не влита
+в `main`, все изменения лежат в ветке `arena/65030bab-atlanta-crm`, а `main` на GitHub
+не двигается.
+
+`git reset --hard origin/arena/65030bab-atlanta-crm`, выполненный на ветке `main`,
+переносит саму ветку `main` на этот коммит. Дальше `git pull` сравнивает её с
+`origin/main` (там по-прежнему старый коммит), ничего нового не находит и пишет
+«Already up to date» — при этом новые коммиты из рабочей ветки так и не приезжают.
+
+Проверить, где стоит сервер:
+
+```bash
+cd /opt/atlanta-crm
+git fetch origin --prune
+git status -sb        # первая строка: ветка и отставание от origin
+git log --oneline -1  # какой коммит развёрнут
+```
+
+Поставить репозиторий на рабочую ветку и вернуть `main` туда, где он на GitHub:
+
+```bash
+cd /opt/atlanta-crm
+git fetch origin --prune
+git checkout -B arena/65030bab-atlanta-crm origin/arena/65030bab-atlanta-crm
+git branch --set-upstream-to=origin/arena/65030bab-atlanta-crm
+git branch -f main origin/main      # безопасно: мы уже не на main
+git status -sb                      # ожидаем «## arena/... ...origin/arena/...»
+```
+
+После этого `git pull` в этой папке тянет именно рабочую ветку. `update.sh` в начале
+печатает ветку, коммит, все ветки `origin` и отставание — расхождение видно сразу,
+даже если `git pull` молчит.
+
+**Что `git reset --hard` стирает, а что нет.** Стирает незакоммиченные правки в
+отслеживаемых файлах — например `server/src/db/catalog/catalog.json` после
+`npm run db:export-images` на сервере. Не трогает ничего из `.gitignore` и всё, что вне
+git: `server/.env`, `server/uploads/` (фото товаров и файлы клиентов),
+`server/.catalog-enabled`, `node_modules/`, `site/dist/` и базу PostgreSQL. Если после
+reset фотографии пропали из `catalog.json` — они не потеряны: `cd server && npm run
+db:export-site` заново выгрузит их из базы вместе со ссылками ГИСП.
+
+Порядок после таких правок: код на нужной ветке → `sudo WITH_CATALOG=1 ./update.sh`
+(миграции и перезапуск) → при необходимости `cd server && npm run db:preseed -- --refresh`.
+
+Вручную, без обновления кода:
+
+```bash
+cd /opt/atlanta-crm/server
+node src/db/migrate.js      # новые миграции
+node src/db/preseed.js      # новые клиенты из предзаполнения
+node src/db/preseed.js -- --refresh   # ...и обновить реквизиты существующих карточек
+node src/db/catalog.js      # новые позиции каталога (цены сохраняются)
 sudo systemctl restart atlanta-crm
 ```
 
+Сайт статический и сам не пересобирается: изменения в каталоге и текстах появляются
+только после повторной публикации. Фото и ссылки на ГИСП, добавленные в карточках CRM,
+сначала переносятся в каталог (`npm run db:export-site` — фото + ГИСП), потом собирается сайт.
+
+### Выкладка сайта без FTP
+
+```bash
+cd /opt/atlanta-crm
+sudo WITH_SITE=1 SITE_DOMAIN=https://ваш-домен.ru ./update.sh    # собрать + выложить
+# или по отдельности:
+python3 site/build.py --domain https://ваш-домен.ru --publish /var/www/atlanta --prune
+python3 site/publish.py --to /var/www/atlanta --dry-run          # что изменится
+```
+
+`site/publish.py` (его вызывает `--publish`) сравнивает файлы по содержимому и
+отправляет только изменившиеся: обычно 5–20 файлов вместо 1071. Приёмник — папка,
+`ftp://`/`ftps://` или `user@host:/путь` (rsync). Пароль FTP берётся из
+`SITE_FTP_PASSWORD`. Это же лекарство от «FTP-сервер падает»: одно соединение,
+повтор при обрыве, докачка недописанного файла и проверка размера после загрузки.
+
+Ссылки на реестр можно завести и списком: `server/scripts/catalog/gisp-links.json` +
+`npm run db:apply-gisp` (при желании — `npm run db:import-gisp`, чтобы они появились в CRM). С машины разработчика:
+
+```bash
+./scripts/deploy-site.sh root@103.80.87.197 --domain https://ваш-домен.ru
+```
+
+Если сборка идёт на сервере — `cd /opt/atlanta-crm && python3 site/build.py --domain https://ваш-домен.ru`,
+затем разложить содержимое `site/dist` в корень сайта (`/var/www/atlanta` по умолчанию).
+
 ## 🛟 Резервное копирование
+
+**Перед любой заливкой каталога или миграцией — сначала бэкап.**
+
+```bash
+cd /opt/atlanta-crm && sudo ./scripts/backup-db.sh
+```
+
+Скрипт берёт `DATABASE_URL` из `server/.env` и делает три вещи:
+
+1. `pg_dump -Fc` — дамп базы (включая роли и владельцев) в `backups/`;
+2. **проверяет дамп** через `pg_restore --list`: читается ли файл и есть ли в нём
+   таблицы `components`, `component_modifications`, `clients`, `drawings`, `leads`;
+   если дамп битый или пустой — скрипт завершается с ошибкой и ничего не объявляет успехом;
+3. пакует `server/uploads/` (фото каталога, чертежи, документы клиентов) в архив
+   и кладёт рядом `.sha256` на оба файла.
+
+Держит последние 7 копий (`--keep N`), лишние удаляет. Каталог можно сменить:
+`--dir /mnt/backups`. Только база: `--no-uploads`.
+
+Восстановление (сервис остановить, иначе приложение пишет в базу во время отката):
+
+```bash
+cd /opt/atlanta-crm
+sudo systemctl stop atlanta-crm
+PGPASSWORD='<пароль из server/.env>' pg_restore -h localhost -U atlanta_user -d atlanta_crm \
+  --clean --if-exists --single-transaction backups/atlanta_crm_<дата>.dump
+tar xzf backups/uploads_<дата>.tar.gz -C server
+sudo systemctl start atlanta-crm
+```
+
+`--clean --if-exists` удаляет старые таблицы и заливает данные заново —
+база возвращается ровно к состоянию на момент дампа. `--single-transaction`
+означает «всё или ничего»: при обрыве база остаётся прежней, а ненаполовину восстановленной.
+
+Проверить целостность файла перед восстановлением:
+
+```bash
+cd backups && sha256sum -c atlanta_crm_<дата>.dump.sha256
+```
+
+Без скрипта, вручную (то же самое, но без проверки):
 
 ```bash
 # Дамп базы
-pg_dump -h localhost -U atlanta_user atlanta_crm > backup_$(date +%Y%m%d_%H%M%S).sql
+pg_dump -h localhost -U atlanta_user -Fc atlanta_crm > backup_$(date +%Y%m%d_%H%M%S).dump
 
-# Бэкап загруженных файлов
+# Бэкап загруженных файлов: фото каталога, чертежи, документы, вложения клиентов
 tar czf uploads_backup_$(date +%Y%m%d).tar.gz /opt/atlanta-crm/server/uploads/
 
 # Восстановление из дампа
-psql -h localhost -U atlanta_user atlanta_crm < backup_XXXXXXXX.sql
+pg_restore -h localhost -U atlanta_user -d atlanta_crm --clean --if-exists backup_XXXXXXXX.dump
 ```
+
+Фото каталога после импорта лежат в `server/uploads/images/` под именами
+`catalog_<sha256:16>.<ext>`. Если их нет в бэкапе, каталог восстановится без картинок —
+повторный `npm run db:catalog` дозальёт только пустые `image_path`.

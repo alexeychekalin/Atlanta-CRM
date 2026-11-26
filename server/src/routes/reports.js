@@ -1,10 +1,10 @@
 const express = require('express');
 const db = require('../db');
 const auth = require('../middleware/auth');
+const { hasPermission } = require('../middleware/role');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 const path = require('path');
-const fs = require('fs');
 
 const router = express.Router();
 
@@ -34,9 +34,9 @@ router.get('/summary', auth, async (req, res) => {
     const summaryQuery = `
       SELECT
         COUNT(*) as total_orders,
-        COALESCE(SUM(o.subtotal), 0) as total_subtotal,
-        COALESCE(SUM(o.commission_amount), 0) as total_commission,
-        COALESCE(SUM(o.total), 0) as total_amount,
+        COALESCE(SUM(o.subtotal) FILTER (WHERE o.status <> 'cancelled'), 0) as total_subtotal,
+        COALESCE(SUM(o.commission_amount) FILTER (WHERE o.status <> 'cancelled'), 0) as total_commission,
+        COALESCE(SUM(o.total) FILTER (WHERE o.status <> 'cancelled'), 0) as total_amount,
         COUNT(CASE WHEN o.status = 'new' THEN 1 END) as new_count,
         COUNT(CASE WHEN o.status = 'in_progress' THEN 1 END) as in_progress_count,
         COUNT(CASE WHEN o.status = 'paid' THEN 1 END) as paid_count,
@@ -51,9 +51,9 @@ router.get('/summary', auth, async (req, res) => {
       SELECT
         TO_CHAR(o.order_date, 'YYYY-MM') as month,
         COUNT(*) as orders_count,
-        COALESCE(SUM(o.subtotal), 0) as subtotal,
-        COALESCE(SUM(o.commission_amount), 0) as commission,
-        COALESCE(SUM(o.total), 0) as total
+        COALESCE(SUM(o.subtotal) FILTER (WHERE o.status <> 'cancelled'), 0) as subtotal,
+        COALESCE(SUM(o.commission_amount) FILTER (WHERE o.status <> 'cancelled'), 0) as commission,
+        COALESCE(SUM(o.total) FILTER (WHERE o.status <> 'cancelled'), 0) as total
       FROM orders o
       ${where}
       GROUP BY TO_CHAR(o.order_date, 'YYYY-MM')
@@ -94,6 +94,7 @@ router.get('/by-client', auth, async (req, res) => {
       params.push(principal_id);
       conditions.push(`o.principal_id = $${params.length}`);
     }
+    conditions.push(`o.status <> 'cancelled'`);
 
     const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
@@ -135,6 +136,7 @@ router.get('/by-principal', auth, async (req, res) => {
       params.push(date_to);
       conditions.push(`o.order_date <= $${params.length}`);
     }
+    conditions.push(`o.status <> 'cancelled'`);
 
     const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
@@ -188,6 +190,8 @@ router.get('/orders-detail', auth, async (req, res) => {
     if (status) {
       params.push(status);
       conditions.push(`o.status = $${params.length}`);
+    } else {
+      conditions.push(`o.status <> 'cancelled'`);
     }
 
     const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
@@ -210,7 +214,7 @@ router.get('/orders-detail', auth, async (req, res) => {
 });
 
 // GET /api/reports/export/excel
-router.get('/export/excel', auth, async (req, res) => {
+router.get('/export/excel', auth, hasPermission('reports', 'export'), async (req, res) => {
   try {
     const { date_from, date_to, principal_id } = req.query;
     const conditions = [];
@@ -228,6 +232,7 @@ router.get('/export/excel', auth, async (req, res) => {
       params.push(principal_id);
       conditions.push(`o.principal_id = $${params.length}`);
     }
+    conditions.push(`o.status <> 'cancelled'`);
 
     const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
@@ -339,7 +344,7 @@ router.get('/export/excel', auth, async (req, res) => {
 });
 
 // GET /api/reports/export/pdf
-router.get('/export/pdf', auth, async (req, res) => {
+router.get('/export/pdf', auth, hasPermission('reports', 'export'), async (req, res) => {
   try {
     const { date_from, date_to, principal_id } = req.query;
     const conditions = [];
@@ -357,6 +362,7 @@ router.get('/export/pdf', auth, async (req, res) => {
       params.push(principal_id);
       conditions.push(`o.principal_id = $${params.length}`);
     }
+    conditions.push(`o.status <> 'cancelled'`);
 
     const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 

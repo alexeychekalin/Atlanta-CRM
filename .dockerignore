@@ -1,0 +1,34 @@
+# Зависимости и локальные артефакты не должны попадать в образ
+node_modules
+server/node_modules
+**/node_modules
+
+# Секреты
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+!server/.env.example
+
+# Пользовательские файлы и dev-данные
+server/uploads
+uploads
+.pglite
+server/.pglite
+
+# Git, документация, dev-скрипты
+.git
+.gitignore
+.github
+docs
+*.md
+!README.md
+
+# Мусор ОС/редакторов
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+coverage
+.nyc_output

@@ -7,6 +7,7 @@ const App = {
   pageMap: {
     dashboard: { title: 'Дашборд', render: () => DashboardPage.render() },
     orders: { title: 'Заказы', render: () => OrdersPage.render() },
+    leads: { title: 'Заявки с сайта', render: () => LeadsPage.render() },
     clients: { title: 'Клиенты', render: () => ClientsPage.render() },
     'client-profile': { title: 'Карточка клиента', render: (id) => ClientProfilePage.render(id), sidebarPage: 'clients' },
     drawings: { title: 'Рассчитанные чертежи', render: () => DrawingsPage.render() },
@@ -16,6 +17,7 @@ const App = {
     reports: { title: 'Отчёты', render: () => ReportsPage.render() },
     proposals: { title: 'Коммерческие предложения', render: () => ProposalsPage.render() },
     equipment: { title: 'Подбор компонентов', render: () => EquipmentPage.render() },
+    documents: { title: 'Документы', render: (param) => DocumentsPage.render(param) },
     settings: { title: 'Настройки', render: () => SettingsPage.render() },
   },
 
@@ -98,9 +100,30 @@ const App = {
     Modal.init();
     LoginPage.init();
 
+    // Кнопка «назад»/«вперёд» и ручное изменение hash
+    window.addEventListener('hashchange', () => {
+      if (location.hash === this._expectedHash) return;
+      if (!API.getToken() && !API.isGuest()) return;
+      this._routeFromHash();
+    });
+
     // Проверяем авторизацию
     if (API.getToken()) {
+      // Обновляем профиль и права с сервера (роль могла измениться).
+      // Заодно сервер продлевает сессию, если прошла половина срока.
+      this.refreshSession();
       this.showApp();
+      this.refreshLeadsBadge();
+      // Вкладка спала или её свернули на ночь: при возврате продлеваем сессию,
+      // чтобы человек не попал на экран входа посреди работы
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && API.getToken()) this.refreshSession();
+      });
+      // И раз в час, пока вкладка открыта: смена может длиться дольше срока
+      // токена, а человек так и не перезагрузит страницу
+      setInterval(() => {
+        if (document.visibilityState === 'visible' && API.getToken()) this.refreshSession();
+      }, 60 * 60 * 1000);
     } else if (API.isGuest()) {
       // Гостевой режим уже активирован ранее
       this.showApp();
@@ -154,12 +177,64 @@ const App = {
     this.showLogin();
   },
 
+  /**
+   * Обновить профиль с сервера. Сервер по ходу дела продлевает сессию
+   * (скользящий срок), поэтому вызываем не только при загрузке: при возврате
+   * во вкладку и после долгой паузы. Ошибку молча глотаем — если сессия
+   * действительно истекла, следующий запрос покажет экран входа.
+   */
+  /**
+   * Счётчик новых заявок в меню: сколько человек ни разу не открыл.
+   * Менеджер не должен узнавать о заявке, только зайдя в раздел.
+   * Тихо пропускаем ошибку — счётчик не повод ломать загрузку CRM.
+   */
+  refreshLeadsBadge() {
+    if (!API.can('leads', 'view')) return;
+    API.get('/leads?status=new')
+      .then(res => {
+        const count = (res.counts && res.counts.new) || 0;
+        const badge = document.getElementById('leads-badge');
+        if (!badge) return;
+        badge.textContent = count > 99 ? '99+' : String(count);
+        badge.hidden = count === 0;
+      })
+      .catch(() => { /* нет прав или сеть — просто без счётчика */ });
+  },
+
+  refreshSession() {
+    return API.get('/auth/me')
+      .then(user => {
+        // Сервер вернул новый токен — сохраняем, иначе localStorage останется
+        // со старым и после перезагрузки сессия снова укоротится
+        if (user && user.token) {
+          API.setToken(user.token);
+          delete user.token;
+        }
+        API.setUser(user);
+        this.updateNavPermissions();
+        return user;
+      })
+      .catch(() => null);
+  },
+
   showLogin() {
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('app').style.display = 'none';
     document.getElementById('login-username').value = '';
     document.getElementById('login-password').value = '';
     document.getElementById('login-error').style.display = 'none';
+
+    // Пояснение, если пользователя разлогинило из-за истёкшей сессии
+    let expired = null;
+    try { expired = sessionStorage.getItem('atlanta_session_expired'); } catch (e) { /* private mode */ }
+    if (expired) {
+      const errorEl = document.getElementById('login-error');
+      if (errorEl) {
+        errorEl.textContent = 'Сессия истекла — войдите снова. Открытая страница сохранится.';
+        errorEl.style.display = 'block';
+      }
+      try { sessionStorage.removeItem('atlanta_session_expired'); } catch (e) { /* private mode */ }
+    }
 
     // Кнопка «Продолжить как гость»
     let guestBtn = document.getElementById('guest-mode-btn');
@@ -211,20 +286,31 @@ const App = {
     Table.loadVATSettings();
 
     this.updateNavPermissions();
-    const startPage = this.getFirstAllowedPage();
-    this.navigateTo(startPage);
+
+    // Восстанавливаем страницу из URL (F5, ссылка, кнопка «назад»)
+    if (location.hash && location.hash.length > 1) {
+      this._routeFromHash();
+    } else {
+      const startPage = this.getFirstAllowedPage();
+      this.navigateTo(startPage, null, { skipHash: true });
+      history.replaceState(null, '', '#' + startPage);
+    }
   },
 
   updateNavPermissions() {
     const sectionMap = {
       dashboard: 'dashboard',
       orders: 'orders',
+      leads: 'leads',
       clients: 'clients',
       drawings: 'drawings',
       products: 'drawings',
       components: 'components',
       calculator: 'calculator',
       reports: 'reports',
+      proposals: 'proposals',
+      equipment: 'equipment',
+      documents: 'documents',
       settings: 'settings',
     };
 
@@ -246,30 +332,80 @@ const App = {
   },
 
   getFirstAllowedPage() {
-    const pages = ['dashboard', 'orders', 'clients', 'drawings', 'components', 'calculator', 'reports', 'settings'];
+    const pages = ['dashboard', 'leads', 'orders', 'proposals', 'clients', 'drawings', 'calculator', 'components', 'equipment', 'reports', 'documents', 'settings'];
     for (const p of pages) {
       if (API.can(p, 'view')) return p;
     }
     return 'dashboard';
   },
 
-  navigateTo(page, param) {
+  _skipHashUpdate: false,
+
+  // Разбор строки маршрута: 'client-profile/5', 'calculator?drawing=3'
+  _parseRoute(route) {
+    let rest = String(route || '').replace(/^#/, '');
+    let param = null;
+    if (rest.includes('?')) {
+      const [base, qs] = rest.split('?');
+      rest = base;
+      param = {};
+      new URLSearchParams(qs).forEach((v, k) => { param[k] = v; });
+    }
+    const slash = rest.indexOf('/');
+    if (slash !== -1) {
+      const id = decodeURIComponent(rest.slice(slash + 1));
+      rest = rest.slice(0, slash);
+      if (param) param.id = id; else param = id;
+    }
+    return { page: rest, param };
+  },
+
+  _buildHash(page, param) {
+    if (param === null || param === undefined || param === '') return page;
+    if (typeof param === 'object') {
+      const qs = new URLSearchParams();
+      Object.entries(param).forEach(([k, v]) => {
+        if (v !== null && v !== undefined && v !== '') qs.set(k, v);
+      });
+      const str = qs.toString();
+      return str ? `${page}?${str}` : page;
+    }
+    return `${page}/${encodeURIComponent(param)}`;
+  },
+
+  _routeFromHash() {
+    if (!location.hash || location.hash === '#') {
+      this.navigateTo(this.getFirstAllowedPage(), null, { skipHash: true });
+      return;
+    }
+    const { page, param } = this._parseRoute(location.hash);
+    this.navigateTo(page, param, { skipHash: true });
+  },
+
+  navigateTo(page, param, opts = {}) {
     // Разбираем query-параметры из строки вида 'calculator?drawing=5&client=3'
-    let queryParams = null;
-    if (typeof page === 'string' && page.includes('?')) {
-      const [basePage, qs] = page.split('?');
-      page = basePage;
-      queryParams = {};
-      new URLSearchParams(qs).forEach((v, k) => { queryParams[k] = v; });
-      if (!param) param = queryParams;
+    if (typeof page === 'string' && (page.includes('?') || page.includes('/'))) {
+      const parsed = this._parseRoute(page);
+      page = parsed.page;
+      if (!param) param = parsed.param;
     }
 
     const pageConfig = this.pageMap[page];
     if (!pageConfig) return;
 
+    // Синхронизируем адресную строку: F5 и «назад» сохраняют страницу
+    if (!opts.skipHash) {
+      const hash = '#' + this._buildHash(page, param);
+      if (location.hash !== hash) {
+        this._expectedHash = hash;
+        location.hash = hash.slice(1);
+      }
+    }
+
     const sectionMap = {
       dashboard: 'dashboard',
       orders: 'orders',
+      leads: 'leads',
       clients: 'clients',
       'client-profile': 'clients',
       drawings: 'drawings',
@@ -279,6 +415,7 @@ const App = {
       calculator: 'calculator',
       reports: 'reports',
       proposals: 'proposals',
+      documents: 'documents',
       settings: 'settings',
     };
 
@@ -414,11 +551,11 @@ const App = {
         html += `<div class="search-result-group">`;
         html += `<div class="search-result-group-label">${typeLabels[type] || type}</div>`;
         items.forEach((item, idx) => {
-          html += `<div class="search-result-item" data-url="${item.url}" onclick="App._onSearchSelect('${item.url}')">
-            <div class="search-result-icon">${item.icon}</div>
+          html += `<div class="search-result-item" data-url="${esc(item.url)}">
+            <div class="search-result-icon">${esc(item.icon)}</div>
             <div class="search-result-info">
               <div class="search-result-title">${this._highlightMatch(item.title, q)}</div>
-              <div class="search-result-subtitle">${item.subtitle || ''}</div>
+              <div class="search-result-subtitle">${esc(item.subtitle)}</div>
             </div>
           </div>`;
         });
@@ -426,6 +563,9 @@ const App = {
       }
 
       results.innerHTML = html;
+      results.querySelectorAll('.search-result-item').forEach(el => {
+        el.addEventListener('click', () => this._onSearchSelect(el.dataset.url));
+      });
       results.style.display = '';
     } catch (err) {
       results.innerHTML = '<div class="search-no-results">Ошибка поиска</div>';
@@ -434,9 +574,11 @@ const App = {
   },
 
   _highlightMatch(text, q) {
-    if (!text || !q) return text || '';
-    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return text.replace(new RegExp(`(${escaped})`, 'gi'), '<mark style="background:var(--accent-teal);color:#fff;border-radius:2px;padding:0 2px">$1</mark>');
+    if (!text) return '';
+    const safeText = esc(text);
+    if (!q) return safeText;
+    const escaped = esc(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return safeText.replace(new RegExp(`(${escaped})`, 'gi'), '<mark style="background:var(--accent-teal);color:#fff;border-radius:2px;padding:0 2px">$1</mark>');
   },
 
   _onSearchSelect(url) {
